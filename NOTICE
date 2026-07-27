@@ -1,0 +1,23 @@
+partcad-ldraw
+=============
+
+This PartCAD package exposes the LDraw parts library as PartCAD parts.
+
+The code in this repository (the `ldraw_repo.py` repository plugin, the `ldraw`
+partType wrapper `ldraw.py`, the PartCAD configuration and the tests) is:
+
+    Copyright 2026 PartCAD
+    Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+The LDraw parts library is NOT included in this repository. Category lists,
+part lists, part metadata and part geometry (the `.dat` files) are fetched on
+demand from the LDraw Parts Library at build time:
+
+    LDraw(TM) - https://www.ldraw.org / https://library.ldraw.org
+    The LDraw parts are contributed by the LDraw community and are, per part,
+    licensed under CC BY 4.0 or the Creative Commons Attribution License (CCAL);
+    the exact license and author of each part are recorded in that part's `.dat`
+    header and are surfaced by this package.
+
+LDraw is a trademark of the Estate of James Jessiman. This package is not
+affiliated with or endorsed by the LDraw.org team.

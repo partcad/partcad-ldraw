@@ -1,0 +1,49 @@
+# PartCAD package: the LDraw parts library as an external repository.
+#
+# Published as //pub/universe/lego/ldraw: this package is //pub/universe/lego
+# and its single external dependency 'ldraw' is the library root, whose children
+# (served by the ldraw_repo plugin) are the LDraw categories. Each category
+# holds parts of type ':ldraw' (see the 'ldraw' partType and ldraw.py).
+name: //pub/universe/lego
+
+desc: |
+  The LDraw parts library (https://library.ldraw.org) exposed as parametric
+  PartCAD parts. Categories, part lists and part metadata are fetched from
+  ldraw.org on demand and cached; part geometry is meshed from the LDraw .dat
+  files on render. Nothing is vendored.
+url: https://library.ldraw.org/
+
+# Requires the PartCAD version that introduced partTypes and plugin-backed
+# (external) packages.
+partcad: ">=0.7.146"
+
+docs:
+  name: LDraw for PartCAD
+  usage: |
+    ```shell
+    pc list packages //pub/universe/lego/ldraw
+    pc list parts //pub/universe/lego/ldraw/Brick
+    pc inspect //pub/universe/lego/ldraw/Brick:3001
+    ```
+
+dependencies:
+  # The LDraw library root. Its children (the categories) are reported by the
+  # plugin's 'deps', so this one dependency yields the whole category tree.
+  ldraw:
+    type: external
+    plugin: :ldraw_repo
+    desc: The LDraw parts library, with one sub-package per category.
+
+repositories:
+  ldraw_repo:
+    type: basic
+    path: ldraw_repo.py
+    desc: Serves LDraw categories and parts, fetching from ldraw.org on demand.
+
+partTypes:
+  # The ':ldraw' part type: a wrapper that meshes an LDraw .dat into a shape.
+  # Also served by the plugin for each category sub-package, so ':ldraw' parts
+  # there resolve; declared here too for standalone use of the root package.
+  ldraw:
+    kind: wrapper
+    path: ldraw.py
