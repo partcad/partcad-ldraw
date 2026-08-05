@@ -1,0 +1,14 @@
+# Two 2x4 bricks, mated stud->anti-stud and perfectly aligned. The upper brick
+# sits exactly one brick-height (9.6 mm) above the lower one.
+links:
+  - part: brick-2x4
+    name: lower
+
+  - part: brick-2x4
+    name: upper
+    connect:
+      with: lego-anti-stud
+      withInstance: c0r0
+      name: lower
+      to: lego-stud
+      toInstance: c0r0
