@@ -47,3 +47,44 @@ partTypes:
   ldraw:
     kind: wrapper
     path: ldraw.py
+
+sketches:
+  # The stud footprint (LEGO stud is 4.8 mm in diameter), used to visualise the
+  # stud / anti-stud ports.
+  stud-sketch:
+    type: basic
+    circle: 2.4
+
+interfaces:
+  # The LEGO connection: a stud (male) mates the anti-stud recess (female) of the
+  # part above it. The plugin (ldraw_repo.py) attaches these to every rectangular
+  # Brick / Plate / Tile it serves, one instance per stud, at coordinates derived
+  # from the part's "<type> A x B" name.
+  #
+  # Coordinates are in the meshed part-space (the wrapper meshes each .dat as
+  # (x, -y, z) * 0.4, so +Y is up). A stud port's Z points up (+Y) out of the top
+  # plane (y = 0); an anti-stud port's Z points down (-Y) into the part's bottom
+  # plane (y = -9.6 mm for a brick, -3.2 mm for a plate or tile). With that
+  # pairing the 180-degree mate flip about [1,1,0] cancels the rotation, so the
+  # upper part is translated by exactly stud_pos - anti_stud_pos: aligned studs
+  # stack cleanly and a different stud gives an 8 mm-grid offset.
+  stud:
+    desc: A LEGO stud (male). Its Z axis points up (+Y), out of the top surface.
+    ports:
+      stud:
+        sketch: stud-sketch
+    mates:
+      anti-stud:
+        # The stud seats fully; the stacking height is carried by the anti-stud
+        # port's y (the part's own bottom plane), so no travel along Z is needed.
+        moveZ:
+          min: 0
+          max: 0
+          default: 0
+  anti-stud:
+    desc: >-
+      A LEGO anti-stud recess (female) on the underside of a part. Its Z axis
+      points down (-Y), into the opening that receives a stud.
+    ports:
+      anti:
+        sketch: stud-sketch

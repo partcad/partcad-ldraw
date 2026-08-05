@@ -1,44 +1,44 @@
 # Bricks + plate + tile of different sizes joined by interface mating:
-#   - a 2x4 brick base,
-#   - two 2x2 bricks seated on its left and right halves,
-#   - a 2x4 plate bridging across both 2x2 bricks,
-#   - a 2x2 tile capping the plate.
+#   - a 2x4 brick base (3001),
+#   - two 2x2 bricks (3003) seated on its left and right halves,
+#   - a 2x4 plate (3020) bridging across both 2x2 bricks,
+#   - a 2x2 tile (3068) capping the plate.
 links:
-  - part: brick-2x4
+  - part: //pub/universe/lego/ldraw/Brick:3001
     name: base
 
-  - part: brick-2x2
+  - part: //pub/universe/lego/ldraw/Brick:3003
     name: capL
     connect:
-      with: lego-anti-stud
+      with: //pub/universe/lego:anti-stud
       withInstance: c0r0
       name: base
-      to: lego-stud
+      to: //pub/universe/lego:stud
       toInstance: c0r0
 
-  - part: brick-2x2
+  - part: //pub/universe/lego/ldraw/Brick:3003
     name: capR
     connect:
-      with: lego-anti-stud
+      with: //pub/universe/lego:anti-stud
       withInstance: c0r0
       name: base
-      to: lego-stud
+      to: //pub/universe/lego:stud
       toInstance: c2r0
 
-  - part: plate-2x4
+  - part: //pub/universe/lego/ldraw/Plate:3020
     name: deck
     connect:
-      with: lego-anti-stud
+      with: //pub/universe/lego:anti-stud
       withInstance: c0r0
       name: capL
-      to: lego-stud
+      to: //pub/universe/lego:stud
       toInstance: c0r0
 
-  - part: tile-2x2
+  - part: //pub/universe/lego/ldraw/Tile:3068
     name: roof
     connect:
-      with: lego-anti-stud
+      with: //pub/universe/lego:anti-stud
       withInstance: c0r0
       name: deck
-      to: lego-stud
+      to: //pub/universe/lego:stud
       toInstance: c1r0

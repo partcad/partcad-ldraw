@@ -179,6 +179,91 @@ def _dat_header(pid):
     return _parse_header(text)
 
 
+# --- LEGO stud / anti-stud interfaces ---------------------------------------
+#
+# Every rectangular Brick / Plate / Tile carries the LEGO connection interfaces
+# (declared in the root package as //pub/universe/lego:stud and :anti-stud), one
+# instance per stud. The stud grid is derived analytically from the part's
+# "<type> A x B" description - no geometry is fetched - so this stays cheap even
+# when a whole category is enumerated. LEGO uses a 20 LDU (8 mm) stud grid; the
+# wrapper meshes a .dat as (x, -y, z) * 0.4, so +Y is up, the top plane is y = 0,
+# and a part is A studs deep (Z) by B studs long (X).
+_STUD_MM = 8.0  # stud pitch in the meshed part-space (20 LDU * 0.4)
+_STUD_IFACE = "//pub/universe/lego:stud"
+_ANTI_IFACE = "//pub/universe/lego:anti-stud"
+# body height in the meshed part-space (mm) and whether the top face has studs
+_LEGO_KINDS = {
+    "brick": (9.6, True),
+    "plate": (3.2, True),
+    "tile": (3.2, False),  # a tile is smooth on top: anti-studs only
+}
+# "<type> A x B", optionally followed by a variant suffix ("with Groove", ...).
+# A third "x C" is rejected so a taller "Brick 1 x 2 x 5" is not mistaken for a
+# plain 1 x 2 (its height, and thus its anti-stud plane, would be wrong).
+_DIM_RE = re.compile(r"^(Brick|Plate|Tile)\s+(\d+)\s*x\s*(\d+)(?!\s*x\s*\d)", re.IGNORECASE)
+# A renamed part is a stub whose description redirects to its replacement, e.g.
+# "~Moved to 3068b"; follow it so the classic ids (3023, 3068, ...) still get
+# interfaces from the replacement's "<type> A x B" name.
+_MOVED_RE = re.compile(r"^~?Moved to (\S+)", re.IGNORECASE)
+
+
+def _effective_desc(desc, depth=0):
+    """Follow '~Moved to <id>' redirects to the real part's description."""
+    if not desc or depth > 3:
+        return desc
+    m = _MOVED_RE.match(desc.strip())
+    if not m:
+        return desc
+    target = _dat_header(m.group(1))
+    if target and target[0]:
+        return _effective_desc(target[0], depth + 1)
+    return desc
+
+
+def _grid_positions(n):
+    """The n stud centers along one axis, centered on the origin, in mm."""
+    return [round((i - (n - 1) / 2.0) * _STUD_MM, 4) for i in range(n)]
+
+
+def _lego_implements(desc):
+    """The 'implements' block (stud + anti-stud instances) for a rectangular
+    Brick / Plate / Tile, derived from its "<type> A x B" description, or None.
+
+    A is the depth in studs (along Z), B the length in studs (along X). Instances
+    are named c<col>r<row> (column along X, row along Z), so an assembly can pick
+    a specific stud to offset one part on another's grid.
+    """
+    if not desc:
+        return None
+    m = _DIM_RE.match(desc.strip())
+    if not m:
+        return None
+    kind = m.group(1).lower()
+    depth, length = int(m.group(2)), int(m.group(3))
+    if not (1 <= depth <= 48 and 1 <= length <= 48):
+        return None
+    height, has_studs = _LEGO_KINDS[kind]
+    xs = _grid_positions(length)  # X (the B / length axis)
+    zs = _grid_positions(depth)  # Z (the A / depth axis)
+    y_bottom = round(-height, 4)
+
+    implements = {}
+    if has_studs:
+        studs = {}
+        for ci, x in enumerate(xs):
+            for ri, z in enumerate(zs):
+                # stud on the top plane (y=0), Z -> +Y (up): 270 deg about [1,0,0]
+                studs["c%dr%d" % (ci, ri)] = [[x, 0, z], [1, 0, 0], 270]
+        implements[_STUD_IFACE] = studs
+    antis = {}
+    for ci, x in enumerate(xs):
+        for ri, z in enumerate(zs):
+            # anti-stud on the bottom plane, Z -> -Y (down): 120 deg about [1,1,-1]
+            antis["c%dr%d" % (ci, ri)] = [[x, y_bottom, z], [1, 1, -1], 120]
+    implements[_ANTI_IFACE] = antis
+    return implements
+
+
 def _part_config(pid, meta):
     desc, author, lic = meta if meta else (None, None, None)
     config = {"type": ":ldraw", "dat": pid + ".dat"}
@@ -188,6 +273,9 @@ def _part_config(pid, meta):
         config["author"] = author
     if lic:
         config["license"] = lic
+    implements = _lego_implements(_effective_desc(desc))
+    if implements:
+        config["implements"] = implements
     return config
 
 
