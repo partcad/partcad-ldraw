@@ -33,6 +33,10 @@ dependencies:
     type: external
     plugin: :ldraw_repo
     desc: The LDraw parts library, with one sub-package per category.
+    # Bump whenever ldraw_repo.py changes the shape of the data it returns, so
+    # stale entries cached by an older plugin are invalidated. v1 added the LEGO
+    # stud / anti-stud interfaces to every Brick / Plate / Tile config.
+    cacheVersion: 1
 
 repositories:
   ldraw_repo:
