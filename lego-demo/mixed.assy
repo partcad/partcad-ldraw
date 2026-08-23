@@ -1,0 +1,34 @@
+# Different sizes joined into an arch: a 2x4 brick base (3001), two 2x2 bricks
+# (3003) standing on its left and right halves as pillars, and a 2x4 brick
+# bridging across both pillars two brick-heights up. Everything is connected
+# purely by stud->anti-stud interface mating.
+links:
+  - part: //pub/universe/lego/ldraw/Brick:3001
+    name: base
+
+  - part: //pub/universe/lego/ldraw/Brick:3003
+    name: pillarL
+    connect:
+      with: //pub/universe/lego:anti-stud
+      withInstance: c0r0
+      name: base
+      to: //pub/universe/lego:stud
+      toInstance: c0r0
+
+  - part: //pub/universe/lego/ldraw/Brick:3003
+    name: pillarR
+    connect:
+      with: //pub/universe/lego:anti-stud
+      withInstance: c0r0
+      name: base
+      to: //pub/universe/lego:stud
+      toInstance: c2r0
+
+  - part: //pub/universe/lego/ldraw/Brick:3001
+    name: bridge
+    connect:
+      with: //pub/universe/lego:anti-stud
+      withInstance: c0r0
+      name: pillarL
+      to: //pub/universe/lego:stud
+      toInstance: c0r0

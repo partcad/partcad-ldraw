@@ -1,0 +1,33 @@
+# A staircase of 1x4 bricks (LDraw 3010). Each step connects its left-most
+# anti-stud (c0r0) to the third stud (c2r0) of the step below, so every step
+# rises one brick (9.6 mm) and shifts two studs (16 mm) along X.
+links:
+  - part: //pub/universe/lego/ldraw/Brick:3010
+    name: step0
+
+  - part: //pub/universe/lego/ldraw/Brick:3010
+    name: step1
+    connect:
+      with: //pub/universe/lego:anti-stud
+      withInstance: c0r0
+      name: step0
+      to: //pub/universe/lego:stud
+      toInstance: c2r0
+
+  - part: //pub/universe/lego/ldraw/Brick:3010
+    name: step2
+    connect:
+      with: //pub/universe/lego:anti-stud
+      withInstance: c0r0
+      name: step1
+      to: //pub/universe/lego:stud
+      toInstance: c2r0
+
+  - part: //pub/universe/lego/ldraw/Brick:3010
+    name: step3
+    connect:
+      with: //pub/universe/lego:anti-stud
+      withInstance: c0r0
+      name: step2
+      to: //pub/universe/lego:stud
+      toInstance: c2r0

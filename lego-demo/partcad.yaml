@@ -1,0 +1,43 @@
+name: //pub/universe/lego/lego-demo
+desc: |
+  Building LEGO assemblies with the PartCAD ASSY file format.
+
+  The LDraw parts served by //pub/universe/lego already carry the LEGO
+  stud / anti-stud interfaces (attached by the ldraw_repo plugin to every
+  rectangular Brick, Plate and Tile). These assemblies therefore reference the
+  original LDraw parts directly and join them purely through those interfaces
+  with `connect:` - no hand-placed coordinates, no local part definitions.
+
+  Run pc from the repository root and address these assemblies as
+  lego-demo:<name>.
+
+assemblies:
+  # Two 2x4 bricks mated stud->anti-stud, perfectly aligned (a column two
+  # brick-heights tall).
+  stack:
+    type: assy
+    path: stack.assy
+    manufacturable: false
+
+  # Four 1x4 bricks, each offset two studs along X and raised one brick,
+  # chained by interface mating.
+  staircase:
+    type: assy
+    path: staircase.assy
+    manufacturable: false
+
+  # Different sizes joined into an arch: a 2x4 base, two 2x2 pillars, and a 2x4
+  # brick bridging across both pillars.
+  mixed:
+    type: assy
+    path: mixed.assy
+    manufacturable: false
+
+  # Bricks + plate + tile: a 2x4 base carries two 2x2 bricks, a 2x4 plate bridges
+  # across both, and a 2x2 tile caps it. (Uses the Plate and Tile LDraw
+  # categories, whose full catalogs the plugin enumerates and caches on first
+  # use, so the first build of this assembly is slow.)
+  pyramid:
+    type: assy
+    path: pyramid.assy
+    manufacturable: false
