@@ -35,8 +35,10 @@ dependencies:
     desc: The LDraw parts library, with one sub-package per category.
     # Bump whenever ldraw_repo.py changes the shape of the data it returns, so
     # stale entries cached by an older plugin are invalidated. v1 added the LEGO
-    # stud / anti-stud interfaces to every Brick / Plate / Tile config.
-    cacheVersion: 1
+    # stud / anti-stud interfaces to every Brick / Plate / Tile config; v2 added
+    # the Technic interfaces (pin, pin hole, axle, axle hole) and the stud grid
+    # of the Technic bricks that carry them.
+    cacheVersion: 2
 
 repositories:
   ldraw_repo:
@@ -56,6 +58,14 @@ sketches:
   # The stud footprint (LEGO stud is 4.8 mm in diameter), used to visualise the
   # stud / anti-stud ports.
   stud-sketch:
+    type: basic
+    circle: 2.4
+
+  # The Technic footprint, used to visualise the pin / hole / axle ports. A
+  # Technic pin is 4.8 mm across and an axle's cross section is inscribed in the
+  # same circle, so one outline serves both; a "basic" sketch is a single
+  # outline, and the cross itself is not one.
+  technic-sketch:
     type: basic
     circle: 2.4
 
@@ -85,6 +95,8 @@ interfaces:
           min: 0
           max: 0
           default: 0
+          type: move
+          dir: [0, 0, 1]
   anti-stud:
     desc: >-
       A LEGO anti-stud recess (female) on the underside of a part. Its Z axis
@@ -92,3 +104,112 @@ interfaces:
     ports:
       anti:
         sketch: stud-sketch
+
+  # --- Technic ---------------------------------------------------------------
+  #
+  # The other half of the LEGO system: round pin holes, cross-shaped axle holes,
+  # and the pins and axles that go into them. The plugin attaches these to the
+  # Technic bricks, beams, axles and pins it serves, at coordinates derived from
+  # each part's name (see "_technic_implements" in ldraw_repo.py).
+  #
+  # A Technic hole is 4.8 mm across and goes right through a part that is one
+  # stud (8 mm) thick, so it has two mouths and a part carries one instance per
+  # mouth. As with the studs above, a port sits on the surface where the two
+  # parts touch, with its Z axis pointing out of its own part, so that the mate
+  # flip brings the two together instead of turning one of them around.
+  technic-pin-hole:
+    desc: >-
+      A round Technic hole, 4.8 mm across, as found in a Technic brick or a
+      beam. One instance per mouth of the hole; the Z axis of each points out of
+      the part along the axis of the hole.
+    ports:
+      hole:
+        sketch: technic-sketch
+    parameters:
+      # What is left free once a pin is in: a pin in a round hole turns. (A pin
+      # "with Friction" turns too - it just holds the angle it is left at.)
+      turnZ:
+        min: -180
+        max: 180
+        default: 0
+        type: turn
+        dir: [0, 0, 1]
+      # An axle in a round hole also slides; a pin's collar stops it, so this
+      # says nothing about pins. See 'technic-axle' below.
+      moveZ:
+        min: -256
+        max: 256
+        default: 0
+        type: move
+        dir: [0, 0, 1]
+    motion:
+      type: continuous
+      axis: [0, 0, 1]
+    # A round hole takes an axle too, and lets it spin: that is what makes an
+    # axle through a beam an axle rather than a pin. Declared here rather than
+    # on 'technic-axle' because an interface states one mate, and the axle's own
+    # is the cross hole that drives it.
+    mates: technic-axle
+
+  technic-pin:
+    desc: >-
+      One end of a Technic pin. The port sits on the plane of the pin's collar -
+      what stops the pin and rests against the face of the part it goes into -
+      with its Z axis pointing out along the pin, the way the pin travels in.
+    ports:
+      pin:
+        sketch: technic-sketch
+    parameters:
+      turnZ:
+        min: -180
+        max: 180
+        default: 0
+        type: turn
+        dir: [0, 0, 1]
+    # The collar seats against the face, so the depth is not free: a pin either
+    # is in the hole or is not.
+    mates: technic-pin-hole
+
+  technic-axle-hole:
+    desc: >-
+      A cross-shaped Technic axle hole. One instance per mouth of the hole; the
+      Z axis of each points out of the part along the axis of the hole. An axle
+      in it slides but cannot turn.
+    ports:
+      hole:
+        sketch: technic-sketch
+    parameters:
+      # Where the axle sits along the hole; see 'technic-axle' below.
+      moveZ:
+        min: -256
+        max: 256
+        default: 0
+        type: move
+        dir: [0, 0, 1]
+    motion:
+      type: prismatic
+      axis: [0, 0, 1]
+
+  technic-axle:
+    desc: >-
+      One end of a Technic axle. Its Z axis points along the axle towards the
+      other end, so connecting it puts that end in the mouth of a hole and lays
+      the shaft through it; 'moveZ' is how much further the axle is pushed in.
+    ports:
+      axle:
+        sketch: technic-sketch
+    parameters:
+      # An axle is held by nothing along its length, so where it sits in the
+      # hole is free: 0 leaves the end of the axle in the mouth of the hole,
+      # a positive value drives it further through and a negative one draws it
+      # back out. The bound is the longest axle LDraw has (32L, 256 mm); the
+      # real limit is the length of the axle in hand.
+      moveZ:
+        min: -256
+        max: 256
+        default: 0
+        type: move
+        dir: [0, 0, 1]
+    # The cross hole is what drives an axle; the round hole it also fits is
+    # declared by 'technic-pin-hole' above.
+    mates: technic-axle-hole

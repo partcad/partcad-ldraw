@@ -27,13 +27,42 @@ Two mechanisms are combined:
    resolves to this partType. The wrapper fetches the part's `.dat`, recursively
    resolves its sub-parts, meshes the triangles/quads, and returns the shape.
 
+## Interfaces
+
+The parts arrive knowing how they connect. The plugin attaches PartCAD
+interfaces — declared in this package's `partcad.yaml` — to every part whose
+LDraw name says exactly what it is, so an assembly can snap the original LDraw
+parts together with `connect:` instead of placing them by hand:
+
+| Interface | Attached to | One instance per |
+| --- | --- | --- |
+| `stud` / `anti-stud` | every rectangular `Brick`, `Plate` and `Tile`, and the Technic bricks below | stud, on the top and the bottom plane |
+| `technic-pin-hole` | `Technic Brick 1 x N with Hole(s)`, `Technic Beam N` | mouth of each round hole |
+| `technic-axle-hole` | `Technic Brick 1 x N with ... Axlehole` | mouth of the cross hole |
+| `technic-pin` | `Technic Pin`, `Technic Pin Long`, `Technic Pin 1/2`, and their friction variants | end of the pin |
+| `technic-axle` | `Technic Axle N` | end of the shaft |
+
+Every position is derived analytically from the part's name — no geometry is
+fetched — so attaching them costs nothing even when a whole category is
+enumerated. What a connection leaves free is declared with it: a pin turns in a
+round hole (`turnZ`), and an axle slides through one (`moveZ`).
+
+Coverage is deliberately narrow. A name that says more than the rule knows — a
+bent beam, an axle with a stop, a brick with an open centre — is left alone
+rather than guessed at, because its features are not where the plain name would
+put them.
+
+`lego-demo/` builds five assemblies out of this, and its `README.md` describes
+the interfaces in detail.
+
 ## Layout
 
 | Path | Purpose |
 | --- | --- |
-| `partcad.yaml` | `//pub/universe/lego`; the `ldraw` external dependency (the library), the `ldraw_repo` repository, and the `ldraw` partType. |
-| `ldraw_repo.py` | Repository plugin: categories, paginated part lists, `.dat`-header metadata, the partType, and the wrapper file. |
+| `partcad.yaml` | `//pub/universe/lego`; the `ldraw` external dependency (the library), the `ldraw_repo` repository, the `ldraw` partType, and the LEGO interfaces. |
+| `ldraw_repo.py` | Repository plugin: categories, paginated part lists, `.dat`-header metadata, the interfaces each part implements, the partType, and the wrapper file. |
 | `ldraw.py` | The `:ldraw` partType wrapper: fetch + recursively mesh a `.dat`. |
+| `lego-demo/` | Assemblies built purely out of those interfaces. |
 
 ## Usage
 
@@ -46,6 +75,10 @@ pc list parts //pub/universe/lego/ldraw/Brick
 
 # Render any LDraw part to an image
 pc inspect //pub/universe/lego/ldraw/Brick:3001
+
+# The interfaces a part implements, and the assemblies built out of them
+pc info //pub/universe/lego/ldraw/Technic:3701
+pc inspect -a lego-demo:technic
 ```
 
 ## Caching
