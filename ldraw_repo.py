@@ -319,6 +319,10 @@ def _brick_implements(desc):
 #   Technic Pin [Long]                 one pin end per side of the collar(s)
 #   Technic Pin 1/2                    a pin one way, a stud the other
 #
+# "Technic Pin 3/4" is deliberately not among them: it is a full pin one way and
+# a half one (connect3.dat) the other, and its name does not say which end is
+# which, so "left" and "right" would promise a symmetry it does not have.
+#
 # A part whose name says anything else (a bent beam, an axle with a stop, a
 # liftarm, a plate with holes at its ends) is left alone: its features are not
 # where the plain name would put them.
@@ -466,7 +470,7 @@ _TECHNIC_RULES = (
         _technic_pin_long,
     ),
     (re.compile(r"^Technic\s+Pin\s+1/2$", re.IGNORECASE), _technic_pin_half),
-    (re.compile(r"^Technic\s+Pin(?:\s+3/4)?(?:\s+with\s+Friction(?:\s+and\s+Slots?)?)?$", re.IGNORECASE), _technic_pin),
+    (re.compile(r"^Technic\s+Pin(?:\s+with\s+Friction(?:\s+and\s+Slots?)?)?$", re.IGNORECASE), _technic_pin),
 )
 
 

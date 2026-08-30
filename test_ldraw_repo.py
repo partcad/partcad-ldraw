@@ -183,7 +183,7 @@ def test_technic_axle_ends_point_at_each_other():
 
 def test_technic_pins():
     # A 2-module pin: one collar, in the middle, with a pin either side of it.
-    for desc in ("Technic Pin", "Technic Pin with Friction and Slots", "Technic Pin  3/4"):
+    for desc in ("Technic Pin", "Technic Pin with Friction", "Technic Pin with Friction and Slots"):
         pins = plugin._lego_implements(desc)[PIN]
         assert pins["left"] == [[0, 0, 0], [0, 1, 0], 270]
         assert pins["right"] == [[0, 0, 0], [0, 1, 0], 90]
@@ -207,6 +207,9 @@ def test_a_name_that_says_more_than_the_rule_knows_gets_nothing():
         "Technic Axle  5.5 with Stop",
         "Technic Pin Long with Stop Bush",
         "Technic Plate  1 x  4 with Holes",
+        # A full pin one way and a half one the other, which "left" and "right"
+        # would not tell apart.
+        "Technic Pin  3/4",
     ):
         assert plugin._lego_implements(desc) is None, desc
 
@@ -429,6 +432,10 @@ def test_the_demo_assemblies_name_instances_and_parameters_that_exist():
                     assert instance in implements[interface], "%s has no instance %s" % (where, instance)
                 for param in params or {}:
                     short = interface.rsplit(":", 1)[1]
+                    if short not in declared:
+                        continue  # another package declares it; not this one's to check
+                    # Only 'parameters' is settable: PartCAD ignores everything in
+                    # a 'mates' entry but the description and the port selectors.
                     assert param in declared[short].get("parameters", {}), "%s has no parameter %s" % (where, param)
                 checked += 1
     assert checked > 0

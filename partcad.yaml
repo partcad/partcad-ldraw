@@ -87,16 +87,13 @@ interfaces:
     ports:
       stud:
         sketch: stud-sketch
-    mates:
-      anti-stud:
-        # The stud seats fully; the stacking height is carried by the anti-stud
-        # port's y (the part's own bottom plane), so no travel along Z is needed.
-        moveZ:
-          min: 0
-          max: 0
-          default: 0
-          type: move
-          dir: [0, 0, 1]
+    # The stud seats fully, and the stacking height is carried by the anti-stud
+    # port's y (the part's own bottom plane), so the connection has no freedom to
+    # declare. It could not be declared here in any case: PartCAD reads only the
+    # description and the port selectors out of a mate, so a parameter written
+    # here would be silently ignored rather than settable from an assembly.
+    # Freedom that is real goes under 'parameters', as the Technic ones below do.
+    mates: anti-stud
   anti-stud:
     desc: >-
       A LEGO anti-stud recess (female) on the underside of a part. Its Z axis
