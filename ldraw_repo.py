@@ -53,6 +53,7 @@ _HTTP_RETRIES = 4
 
 
 def _cache_dir():
+    """Where fetched LDraw files are kept: $PARTCAD_LDRAW_CACHE, else under XDG."""
     base = os.environ.get("PARTCAD_LDRAW_CACHE")
     if not base:
         xdg = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
@@ -61,6 +62,7 @@ def _cache_dir():
 
 
 def _http_get(url):
+    """The body of 'url' as text, retried with a backoff; None if every try fails."""
     for attempt in range(_HTTP_RETRIES):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": _UA})
@@ -523,6 +525,7 @@ def _lego_implements(desc, pid=None):
 
 
 def _part_config(pid, meta):
+    """The PartCAD config of one part: its wrapper, its .dat, and what it implements."""
     desc, author, lic = meta if meta else (None, None, None)
     config = {"type": ":ldraw", "dat": pid + ".dat"}
     if desc:
@@ -558,6 +561,7 @@ _PART_TYPE = {"kind": "wrapper", "path": "ldraw.py"}
 
 
 def _ldraw_py_b64():
+    """The 'ldraw.py' wrapper, base64-encoded, as the 'files/' key serves it."""
     with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ldraw.py"), "rb") as f:
         return base64.b64encode(f.read()).decode()
 
@@ -566,6 +570,11 @@ def _ldraw_py_b64():
 
 
 def get(key):
+    """Answer one key of the repository protocol; None if this package has no such key.
+
+    The top level holds only the categories, and each category holds the parts
+    of that category and the 'ldraw' partType that renders them.
+    """
     cats = _categories()
     first, _, sub = key.partition("/")
 
@@ -735,6 +744,7 @@ _GEAR_RE = re.compile(
 
 
 def _quaternion_of(axis, angle_deg):
+    """The unit quaternion of a turn of 'angle_deg' about 'axis'."""
     half = math.radians(angle_deg) / 2.0
     norm = math.sqrt(sum(v * v for v in axis)) or 1.0
     s = math.sin(half) / norm
@@ -742,6 +752,7 @@ def _quaternion_of(axis, angle_deg):
 
 
 def _quaternion_product(a, b):
+    """The quaternion product 'a * b': the turn 'b', then the turn 'a'."""
     aw, ax, ay, az = a
     bw, bx, by, bz = b
     return (
@@ -818,10 +829,12 @@ def _diameter_instance(text):
 
 
 def _wheel_implements(m):
+    """Wheel W x D: the rim, which a tyre of the same diameter goes onto."""
     return {_WHEEL_IFACE: {_diameter_instance(m.group(2)): _port((0, 0, 0), _Z_TO_PLUS_Z)}}
 
 
 def _tyre_implements(m):
+    """Tyre W/ A x D: the bore, at the origin its wheel puts the rim at."""
     return {_TYRE_IFACE: {_diameter_instance(m.group(3)): _port((0, 0, 0), _TYRE_ROT)}}
 
 
@@ -878,10 +891,12 @@ def _fetch_ldraw_file(name):
 
 
 def _matrix_product(a, b):
+    """The 3x3 matrix product 'a . b'."""
     return tuple(tuple(sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)) for i in range(3))
 
 
 def _matrix_apply(a, v):
+    """The 3-vector 'a . v'."""
     return tuple(sum(a[i][k] * v[k] for k in range(3)) for i in range(3))
 
 
