@@ -39,7 +39,7 @@ dependencies:
     # the Technic interfaces (pin, pin hole, axle, axle hole) and the stud grid
     # of the Technic bricks that carry them; v3 added the gear, minifig, Duplo,
     # wheel/tyre and RJ12 interfaces.
-    cacheVersion: 3
+    cacheVersion: 4
 
 repositories:
   ldraw_repo:
@@ -127,6 +127,12 @@ interfaces:
     # here would be silently ignored rather than settable from an assembly.
     # Freedom that is real goes under 'parameters', as the Technic ones below do.
     mates: anti-stud
+    # One stud in one anti-stud turns freely about the stud: a 1 x 1 plate on a
+    # single stud spins. It takes a second stud to hold an angle, and that is a
+    # property of the pair of connections, not of this one.
+    motion:
+      type: continuous
+      axis: [0, 0, 1]
   anti-stud:
     desc: >-
       A LEGO anti-stud recess (female) on the underside of a part. Its Z axis
@@ -147,6 +153,9 @@ interfaces:
   # mouth. As with the studs above, a port sits on the surface where the two
   # parts touch, with its Z axis pointing out of its own part, so that the mate
   # flip brings the two together instead of turning one of them around.
+    motion:
+      type: continuous
+      axis: [0, 0, 1]
   technic-pin-hole:
     desc: >-
       A round Technic hole, 4.8 mm across, as found in a Technic brick or a
@@ -199,6 +208,10 @@ interfaces:
     # The collar seats against the face, so the depth is not free: a pin either
     # is in the hole or is not.
     mates: technic-pin-hole
+    # The same freedom the hole states from its side.
+    motion:
+      type: continuous
+      axis: [0, 0, 1]
 
   technic-axle-hole:
     desc: >-
@@ -250,6 +263,11 @@ interfaces:
   # 19.2 mm tall, with 9.6 mm studs. It is a separate pair of interfaces rather
   # than a parameter of the system stud because the two do not mate: a Duplo
   # stud does not fit a system anti-stud.
+    # An axle slides through a cross hole and is driven by it rather than
+    # turning in it, so the freedom left is along the axle, not about it.
+    motion:
+      type: prismatic
+      axis: [0, 0, 1]
   duplo-stud:
     desc: >-
       A Duplo stud (male), 9.6 mm across on a 16 mm grid. Its Z axis points up
@@ -258,6 +276,9 @@ interfaces:
       stud:
         sketch: duplo-stud-sketch
     mates: duplo-anti-stud
+    motion:
+      type: continuous
+      axis: [0, 0, 1]
   duplo-anti-stud:
     desc: >-
       A Duplo anti-stud recess (female) on the underside of a Duplo part. Its Z
@@ -271,6 +292,9 @@ interfaces:
   # A minifig is a stack of four parts with two joints of its own between them,
   # and an ordinary stud at the top of the head that carries the hat or hair.
   # Both joints turn: a minifig's head and legs are meant to be posed.
+    motion:
+      type: continuous
+      axis: [0, 0, 1]
   minifig-neck:
     desc: >-
       The neck stud on top of a minifig torso (male). Its Z axis points up (+Y),
@@ -287,6 +311,9 @@ interfaces:
         type: turn
         dir: [0, 0, 1]
     mates: minifig-neck-socket
+    motion:
+      type: continuous
+      axis: [0, 0, 1]
   minifig-neck-socket:
     desc: >-
       The socket under a minifig head (female). Its Z axis points down (-Y), out
@@ -301,6 +328,10 @@ interfaces:
         default: 0
         type: turn
         dir: [0, 0, 1]
+    # A minifig head turns all the way round on its neck.
+    motion:
+      type: continuous
+      axis: [0, 0, 1]
 
   minifig-waist:
     desc: >-
@@ -317,6 +348,9 @@ interfaces:
         type: turn
         dir: [0, 0, 1]
     mates: minifig-waist-socket
+    motion:
+      type: continuous
+      axis: [0, 0, 1]
   minifig-waist-socket:
     desc: >-
       The opening in the bottom of a minifig torso (female). Its Z axis points
@@ -341,6 +375,9 @@ interfaces:
   # a tooth port and a gap port together therefore separates the two gears by
   # the sum of their pitch radii, which is exactly the centre distance the pair
   # is cut for, and lines their teeth up in the bargain.
+    motion:
+      type: continuous
+      axis: [0, 0, 1]
   gear-tooth:
     desc: >-
       One tooth of a Technic gear, at the pitch circle, Z pointing outwards.
@@ -351,6 +388,15 @@ interfaces:
     # The two are the same connection seen from either side, so the mate is
     # stated once, here.
     mates: gear-gap
+    # A meshed pair turns: each gear about its own axle, and the two coupled by
+    # the mesh. PartCAD states a joint one interface at a time, so what is said
+    # here is the turn this contact leaves free; the coupling between the two
+    # gears is what 'mimic' is for, once a connection can name the other joint.
+    # The axle is [1, 1, 0] in a tooth port's own frame, and the same in every
+    # tooth's - that constancy is what makes this frame the right one.
+    motion:
+      type: continuous
+      axis: [0.7071068, 0.7071068, 0]
   gear-gap:
     desc: >-
       One gap between two teeth of a Technic gear, at the pitch circle, Z
@@ -368,6 +414,9 @@ interfaces:
   # ("d30"), so an assembly names the size it means and a mismatched pair is
   # visible in the ASSY file - PartCAD gates compatibility by interface, not by
   # dimension, so it cannot reject one for you.
+    motion:
+      type: continuous
+      axis: [0.7071068, 0.7071068, 0]
   wheel-rim:
     desc: >-
       The rim of a wheel that a tyre is fitted to (male). One instance, on the
@@ -376,6 +425,9 @@ interfaces:
       rim:
         sketch: wheel-sketch
     mates: tyre-bore
+    # A tyre on a rim does not turn on it; the pair turns on an axle instead.
+    motion:
+      type: fixed
   tyre-bore:
     desc: >-
       The bore of a tyre, which fits over a wheel's rim (female). One instance,
@@ -391,6 +443,8 @@ interfaces:
   # or sensor. Mechanically it is a plug in a hole like any other - the plug's
   # shoulder stops against the face of the socket - so it is a port pair, even
   # though what travels through it is a signal rather than a load.
+    motion:
+      type: fixed
   rj12-plug:
     desc: >-
       The plug on the end of a Mindstorms cable (male). Its port is the shoulder
@@ -399,6 +453,9 @@ interfaces:
       plug:
         sketch: rj12-sketch
     mates: rj12-socket
+    # A plug in its socket is held by the latch and does not move in it.
+    motion:
+      type: fixed
   rj12-socket:
     desc: >-
       A Mindstorms cable socket (female), on a brick, a motor or a sensor. Its
@@ -406,3 +463,5 @@ interfaces:
     ports:
       socket:
         sketch: rj12-sketch
+    motion:
+      type: fixed

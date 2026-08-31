@@ -601,6 +601,33 @@ _FAKE_LIBRARY = {
     # a part whose hole is inside its own subpart
     "3700.dat": "0 Technic Brick\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 s/3700s01.dat\n",
     "s/3700s01.dat": "0 ~subpart\n1 16 0 10 10 1 0 0 0 0 1 0 -1 0 peghole.dat\n",
+    # a 2 x 2 brick drawn the way LDraw draws one: a group of studs on top, a
+    # tube underneath, and a cylinder that is neither.
+    "3003.dat": (
+        "0 Brick  2 x  2\n"
+        "1 16 0 0 0 1 0 0 0 1 0 0 0 1 stug-2x2.dat\n"
+        "1 16 0 -24 0 1 0 0 0 1 0 0 0 1 stud4.dat\n"
+        "1 16 0 0 0 1 0 0 0 1 0 0 0 1 4-4cyli.dat\n"
+    ),
+    # the corner brick: three studs, on an origin a rectangular part never uses
+    "2357.dat": (
+        "0 Brick  2 x  2 Corner\n"
+        "1 16 0 0 0 1 0 0 0 1 0 0 0 1 stud.dat\n"
+        "1 16 0 0 20 1 0 0 0 1 0 0 0 1 stud.dat\n"
+        "1 16 20 0 0 1 0 0 0 1 0 0 0 1 stud.dat\n"
+    ),
+    # a stud that does not face up: the headlight brick's second stud
+    "4070.dat": (
+        "0 Brick  1 x  1 with Headlight\n"
+        "1 16 0 0 0 1 0 0 0 1 0 0 0 1 stud.dat\n"
+        "1 16 0 10 -6 1 0 0 0 0 -1 0 1 0 stud.dat\n"
+    ),
+    # a part whose studs belong to another building system
+    "3011.dat": (
+        "0 Duplo Brick  2 x  4\n"
+        "1 16 0 0 0 1 0 0 0 1 0 0 0 1 stug20-2x2.dat\n"
+        "1 16 0 0 0 1 0 0 0 1 0 0 0 1 stud7.dat\n"
+    ),
 }
 
 
@@ -674,3 +701,81 @@ def test_an_orientation_survives_the_round_trip():
         assert _Placement((0, 0, 0), _rot(again[0], again[1])).axis((1, 2, 3)) == pytest.approx(
             _Placement((0, 0, 0), rotation).axis((1, 2, 3)), abs=1e-6
         )
+
+
+def test_a_stud_primitive_says_what_it_is():
+    # LDraw's own vocabulary: "Stud" is male, "Stud Tube ..." the socket under
+    # it, "Stud Group A x B" a grid of either, and Duplo is another system.
+    assert plugin._stud_primitive("stud.dat") == ("stud", plugin._ORIGIN_ONLY)
+    assert plugin._stud_primitive("stud2a.dat") == ("stud", plugin._ORIGIN_ONLY)
+    assert plugin._stud_primitive("stud4.dat") == ("tube", plugin._ORIGIN_ONLY)
+    assert plugin._stud_primitive("stud3.dat") == ("tube", plugin._ORIGIN_ONLY)
+    # the low-resolution spellings fold onto the ones they alias
+    assert plugin._stud_primitive("stu24a.dat") == ("tube", plugin._ORIGIN_ONLY)
+    assert plugin._stud_primitive("stu2.dat") == ("stud", plugin._ORIGIN_ONLY)
+    # ...and anything that is not a stud at all is left for the walk
+    assert plugin._stud_primitive("4-4cyli.dat") == (None, None)
+    assert plugin._stud_primitive("peghole.dat") == (None, None)
+
+
+def test_a_stud_group_is_expanded_and_not_fetched():
+    kind, offsets = plugin._stud_primitive("stug-1x4.dat")
+    assert kind == "stud"
+    # A x B is A along Z by B along X, the same way a brick's name reads
+    assert sorted(offsets) == [(-30.0, 0.0, 0.0), (-10.0, 0.0, 0.0), (10.0, 0.0, 0.0), (30.0, 0.0, 0.0)]
+    assert sorted(plugin._stud_primitive("stug-4x1.dat")[1]) == [
+        (0.0, 0.0, -30.0),
+        (0.0, 0.0, -10.0),
+        (0.0, 0.0, 10.0),
+        (0.0, 0.0, 30.0),
+    ]
+    # a group is named after what it groups, so the tubes and the other
+    # building systems classify themselves
+    assert plugin._stud_primitive("stug4-2x2.dat")[0] == "tube"
+    assert plugin._stud_primitive("stug10-2x2.dat")[0] == "stud"  # cut for a round 2 x 2
+    assert plugin._stud_primitive("stug20-2x2.dat") == (None, None)  # Duplo
+    assert plugin._stud_primitive("stug19-1x2.dat") == (None, None)  # Scala
+    # "stug4.dat" is an alias for "stug-4x4", not a group of four
+    assert len(plugin._stud_primitive("stug4.dat")[1]) == 16
+
+
+def test_a_rectangular_part_keeps_the_studs_its_name_gave_it(fake_library):
+    from_name = plugin._lego_implements("Brick  2 x  2")[STUD]
+    from_geometry = plugin._lego_implements("Brick  2 x  2", "3003")[STUD]
+    # identical, names and ports both: reading the geometry must not renumber
+    # the grid that assemblies already refer to
+    assert from_geometry == from_name
+    assert sorted(from_geometry) == ["c0r0", "c0r1", "c1r0", "c1r1"]
+
+
+def test_the_corner_brick_gets_the_studs_it_has(fake_library):
+    implements = plugin._lego_implements("Brick  2 x  2 Corner", "2357")
+    studs = implements[STUD]
+    # three, not the four the name implies, and on the part's own origin
+    assert len(studs) == 3
+    assert sorted(p[0] for p in studs.values()) == [[0.0, 0.0, 0.0], [0.0, 0.0, 8.0], [8.0, 0.0, 0.0]]
+    # the anti-stud grid still comes from the name; the tubes are read but not
+    # yet served
+    assert len(implements[ANTI]) == 4
+
+
+def test_a_stud_that_does_not_face_up_is_still_a_stud(fake_library):
+    studs = plugin._lego_implements("Brick  1 x  1 with Headlight", "4070")[STUD]
+    assert len(studs) == 2
+    facings = sorted(tuple(port[1]) + (port[2],) for port in studs.values())
+    # one up the way a name-derived stud faces, one out the front
+    assert list(plugin._Z_TO_PLUS_Y[0]) + [plugin._Z_TO_PLUS_Y[1]] in [list(f[:3]) + [f[3]] for f in facings]
+    assert len({f for f in facings}) == 2
+
+
+def test_another_building_system_is_not_a_stud(fake_library):
+    # Duplo studs are Duplo's; the system stud interface must not claim them
+    implements = plugin._lego_implements("Duplo Brick  2 x  4", "3011")
+    assert STUD not in (implements or {})
+
+
+def test_the_name_rule_stands_when_the_walk_runs_out_of_budget(monkeypatch, fake_library):
+    monkeypatch.setattr(plugin, "_GEOMETRY_FILES", 0)
+    assert plugin._geometry_stud_implements("3003") is None
+    # ...so the part keeps the studs its name gives it rather than losing them
+    assert sorted(plugin._lego_implements("Brick  2 x  2", "3003")[STUD]) == ["c0r0", "c0r1", "c1r0", "c1r1"]

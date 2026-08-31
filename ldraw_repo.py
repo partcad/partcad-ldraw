@@ -282,7 +282,10 @@ def _grid_positions(n):
 def _port(position, orientation):
     """An OCCT location: a port at 'position' turned by 'orientation'."""
     axis, angle = orientation
-    return [[round(float(v), 4) for v in position], list(axis), angle]
+    # '+ 0.0' turns a negative zero back into a zero: a position mirrored out of
+    # the geometry can arrive as -0.0, which is equal to 0.0 but does not read
+    # like it in the config this ends up in.
+    return [[round(float(v), 4) + 0.0 for v in position], list(axis), angle]
 
 
 def _stud_instances(depth, length, height, has_studs):
@@ -511,9 +514,10 @@ def _lego_implements(desc, pid=None):
     Technic families, a gear, a Duplo brick, a minifig part, a wheel or a tyre -
     so the first match wins and nothing is fetched.
 
-    The Mindstorms parts are the exception, and are read from their geometry;
-    that needs the part's id as well as its name, so a caller without one gets
-    only what the name gives.
+    The studs are the exception, and are read from the part's geometry, which
+    is the only thing that knows where they actually are; so are the Mindstorms
+    connectors. Both need the part's id as well as its name, so a caller
+    without one gets only what the name gives.
     """
     if not desc:
         return None
@@ -521,7 +525,28 @@ def _lego_implements(desc, pid=None):
     implements = _brick_implements(desc) or _name_implements(desc)
     if implements is None and pid and _ELECTRIC_RE.match(desc):
         implements = _electric_implements(pid)
+    if pid:
+        implements = _with_geometry_studs(implements, pid)
     return implements
+
+
+def _with_geometry_studs(implements, pid):
+    """Replace the name-derived studs with the ones the part actually has.
+
+    Only the studs: the anti-stud grid underneath still comes from the name,
+    because an underside tube sits between four studs rather than under one and
+    turning those into ports is a separate piece of work. When the walk cannot
+    see the whole part it returns None and the name's answer is left alone.
+    """
+    studs = _geometry_stud_implements(pid)
+    if studs is None:
+        return implements
+    implements = dict(implements) if implements else {}
+    if studs:
+        implements[_STUD_IFACE] = studs
+    else:
+        implements.pop(_STUD_IFACE, None)
+    return implements or None
 
 
 def _part_config(pid, meta):
@@ -912,13 +937,18 @@ def _parse_references(text):
     return references
 
 
-def _geometry_connectors(pid):
-    """Every connector in a part's geometry, as (interface, position, axis).
+def _walk_geometry(pid, visit):
+    """Breadth first over a part's geometry, one parallel fetch per level.
 
-    Breadth first, one parallel fetch per level, never descending into a
-    primitive. Positions and axes come back in LDraw coordinates.
+    'visit(base, matrix, position)' is called for every reference the walk
+    meets, with the reference's own basename and its placement in the part's
+    frame; returning True claims it as a leaf. What is not claimed is followed
+    when it names a part and dropped when it names a primitive.
+
+    Returns True when the walk ran out of references rather than out of budget.
+    That is what lets a caller tell "this part has none" from "I did not get to
+    look", which matters when the answer is used instead of a name rule.
     """
-    found = []
     # (name, matrix, translation) of what is still to be read
     level = [(pid + ".dat", _IDENTITY_MATRIX, (0.0, 0.0, 0.0))]
     # A file is fetched once but traversed as often as it is referenced: the same
@@ -926,10 +956,15 @@ def _geometry_connectors(pid):
     # which is how a cable ends up with a plug at each end.
     bodies_by_name = {}
     budget = _GEOMETRY_FILES
+    complete = True
     for _ in range(_GEOMETRY_DEPTH + 1):
-        if not level or budget <= 0:
-            break
-        level = level[:budget]
+        if not level:
+            return complete
+        if budget <= 0:
+            return False
+        if len(level) > budget:
+            complete = False
+            level = level[:budget]
         budget -= len(level)
         wanted = list(dict.fromkeys(name for name, _, _ in level if name not in bodies_by_name))
         if wanted:
@@ -945,23 +980,41 @@ def _geometry_connectors(pid):
                 composed = _matrix_product(matrix, child_matrix)
                 moved = _matrix_apply(matrix, child_translation)
                 position = tuple(moved[i] + translation[i] for i in range(3))
-                connector = _GEOMETRY_CONNECTORS.get(name.split("/")[-1])
-                if connector is not None:
-                    for interface, mouth, axis in connector:
-                        offset = _matrix_apply(composed, mouth)
-                        found.append(
-                            (
-                                interface,
-                                tuple(position[i] + offset[i] for i in range(3)),
-                                _matrix_apply(composed, axis),
-                                composed,
-                            )
-                        )
+                if visit(name.split("/")[-1], composed, position):
                     continue
                 if not _PART_REF_RE.match(name):
                     continue  # a primitive: a leaf, and never fetched
                 following.append((name, composed, position))
         level = following
+    return complete and not level
+
+
+def _geometry_connectors(pid):
+    """Every connector in a part's geometry, as (interface, position, axis).
+
+    Breadth first, one parallel fetch per level, never descending into a
+    primitive. Positions and axes come back in LDraw coordinates.
+    """
+    found = []
+
+    def visit(base, composed, position):
+        """Claim a connector primitive and record every mouth it carries."""
+        connector = _GEOMETRY_CONNECTORS.get(base)
+        if connector is None:
+            return False
+        for interface, mouth, axis in connector:
+            offset = _matrix_apply(composed, mouth)
+            found.append(
+                (
+                    interface,
+                    tuple(position[i] + offset[i] for i in range(3)),
+                    _matrix_apply(composed, axis),
+                    composed,
+                )
+            )
+        return True
+
+    _walk_geometry(pid, visit)
     return found
 
 
@@ -1041,6 +1094,198 @@ def _electric_implements(pid):
         counters[interface] = index + 1
         implements.setdefault(interface, {})["%s%d" % (prefix, index)] = _port(place, orientation)
     return implements or None
+
+
+# --- studs read from the geometry -------------------------------------------
+#
+# "Brick | Plate | Tile A x B" says how big a part is, not where its studs are.
+# The two agree for a plain brick and part company everywhere else: a corner
+# brick has three studs on an origin a rectangular one does not use, a "Plate
+# 8 x 8 Round with 2 x 2 Centre Studs" has four rather than sixty-four, and a
+# "Brick 1 x 1 with Studs on Four Sides" has five facing five ways, which no
+# A x B rule can say at all. Counting the geometry of every part the rule
+# matches, 216 of 2476 were getting a grid that is not theirs.
+#
+# So the studs are read from the geometry instead, by the same walk that reads
+# the Mindstorms connectors. That works because LDraw draws every stud with a
+# primitive and says in the primitive's own description what it is - "Stud",
+# "Stud Open", "Stud Tube Solid", "Stud Group 2 x 2", "Stud Duplo Open" - so
+# the classification below is a transcription of a vocabulary LDraw maintains
+# rather than a guess about names. It is spelled out here rather than read at
+# run time precisely so that the walk still never fetches a primitive.
+#
+# The "stu2*" spellings are LDraw's own low-resolution aliases of the "stud*"
+# ones ("stu24a" is "stud4a"), so they are folded onto them instead of doubling
+# the table.
+_LOWRES_STUD_PREFIX = "stu2"
+
+# "Stud", "Stud Open", and the rest of the male stud: what another part's
+# anti-stud goes onto.
+_MALE_STUDS = frozenset(
+    """stud stud-logo stud-logo2 stud-logo3 stud-logo4 stud-logo5 stud10 stud13 stud15 stud17 stud17a
+       stud2 stud2-logo stud2-logo2 stud2-logo3 stud2-logo4 stud2-logo5 stud26 stud2a stud6 stud6a
+       stud9 studa studel studline studp01 studx studxa""".split()
+)
+
+# "Stud Tube ..." and "Stud Underside ...": the socket underneath. Read for the
+# same cost as the studs, and not yet served - a tube sits *between* four studs
+# rather than under one, so turning these into anti-stud ports is its own piece
+# of work. Until then the anti-stud grid keeps coming from the name.
+_STUD_TUBES = frozenset("""stud12 stud12a stud12s stud16 stud16a stud16od stud18a stud21a stud22a stud23 stud23d stud2s
+       stud2s2 stud3 stud3a stud4 stud4a stud4f1n stud4f1s stud4f1w stud4f2n stud4f2s stud4f2w
+       stud4f3n stud4f3s stud4f4n stud4f4s stud4f5n stud4h stud4o stud4od stud4s stud4s2""".split())
+
+# "Stud Group A x B" and its relatives: A studs along Z by B along X on the
+# 20 LDU grid, centred on the origin, exactly the A x B of a brick. Expanded
+# here from the name rather than fetched, which is what keeps a group a leaf.
+# A group is named after what it groups: "stug<x>-AxB" is a grid of "stud<x>",
+# for every <x> LDraw uses - "" and "2" and "el" and "p01" for the male studs,
+# "3" and "4" for the tubes, "10" and "15" for the ones cut for a round 2 x 2,
+# and "7", "8", "19", "20" for Duplo and Scala. So the kind is looked up rather
+# than listed again, which is what keeps a group belonging to another building
+# system out without having to name it twice.
+_STUD_GROUP_RE = re.compile(r"^stug([0-9a-z]*)-(\d+)x(\d+)$", re.IGNORECASE)
+# "stug4.dat" is not a group of four: it is LDraw's alias for "stug-4x4", and
+# "stug4a.dat" for "stug2-4x4".
+_STUD_GROUP_ALIAS_RE = re.compile(r"^stug(\d+)(a?)$", re.IGNORECASE)
+_LDU_STUD_PITCH = 20.0  # the stud grid in LDraw units (8 mm)
+_ORIGIN_ONLY = ((0.0, 0.0, 0.0),)
+_STUD_AXIS = (0.0, -1.0, 0.0)  # a stud points along -Y, which is up in LDraw
+
+# The six axis-aligned facings, so a stud that points the way the name rule
+# would have pointed it comes out with the very same orientation.
+_AXIS_ORIENTATIONS = {
+    (1, 0, 0): _Z_TO_PLUS_X,
+    (-1, 0, 0): _Z_TO_MINUS_X,
+    (0, 1, 0): _Z_TO_PLUS_Y,
+    (0, -1, 0): _Z_TO_MINUS_Y,
+    (0, 0, 1): _Z_TO_PLUS_Z,
+    (0, 0, -1): _Z_TO_MINUS_Z,
+}
+
+
+def _ldu_grid(n):
+    """The n stud centres along one axis of a group, in LDraw units."""
+    return [(i - (n - 1) / 2.0) * _LDU_STUD_PITCH for i in range(n)]
+
+
+def _stud_primitive(base):
+    """('stud' or 'tube', offsets) for a stud primitive, else (None, None).
+
+    'offsets' are where the studs sit inside the primitive, in LDraw units: the
+    origin for a single stud, the whole grid for a group.
+    """
+    if not base.endswith(".dat"):
+        return None, None
+    stem = base[: -len(".dat")].lower()
+    group = _STUD_GROUP_RE.match(stem)
+    if group:
+        kind = _stud_kind("stud" + group.group(1).lower())
+        depth, length = int(group.group(2)), int(group.group(3))
+        if kind is None or not (1 <= depth <= _MAX_STUDS and 1 <= length <= _MAX_STUDS):
+            return None, None
+        return kind, tuple((x, 0.0, z) for x in _ldu_grid(length) for z in _ldu_grid(depth))
+    alias = _STUD_GROUP_ALIAS_RE.match(stem)
+    if alias:
+        side = int(alias.group(1))
+        if not (1 <= side <= _MAX_STUDS):
+            return None, None
+        return "stud", tuple((x, 0.0, z) for x in _ldu_grid(side) for z in _ldu_grid(side))
+    kind = _stud_kind(stem)
+    return (kind, _ORIGIN_ONLY) if kind else (None, None)
+
+
+def _stud_kind(stem):
+    """'stud', 'tube' or None, for a stud primitive's name without its suffix."""
+    if stem.startswith(_LOWRES_STUD_PREFIX):
+        stem = "stud" + stem[len(_LOWRES_STUD_PREFIX) :]
+    if stem in _MALE_STUDS:
+        return "stud"
+    if stem in _STUD_TUBES:
+        return "tube"
+    return None
+
+
+def _geometry_studs(pid):
+    """The male studs in a part's geometry, as (position, axis) in LDraw
+    coordinates, and whether the walk saw the whole part.
+    """
+    found = []
+
+    def visit(base, composed, position):
+        """Claim a stud primitive, recording the male ones where they land."""
+        kind, offsets = _stud_primitive(base)
+        if kind is None:
+            return False
+        if kind == "stud":
+            for offset in offsets:
+                moved = _matrix_apply(composed, offset)
+                found.append(
+                    (
+                        tuple(position[i] + moved[i] for i in range(3)),
+                        _matrix_apply(composed, _STUD_AXIS),
+                    )
+                )
+        return True  # a stud primitive is a leaf whichever kind it is
+
+    return found, _walk_geometry(pid, visit)
+
+
+def _stud_orientation(direction):
+    """The orientation of a stud facing 'direction' in the meshed part space."""
+    length = math.sqrt(sum(v * v for v in direction))
+    if length < 1e-9:
+        return None
+    unit = tuple(v / length for v in direction)
+    key = tuple(round(v) for v in unit)
+    if key in _AXIS_ORIENTATIONS and all(abs(unit[i] - key[i]) < 1e-6 for i in range(3)):
+        return _AXIS_ORIENTATIONS[key]
+    return _orientation_towards(direction, _IDENTITY_MATRIX)
+
+
+def _geometry_stud_implements(pid):
+    """The 'stud' instances of a part read from its geometry, or None when the
+    walk ran out of budget and the name rule should be left to stand.
+
+    An empty result is an answer, not a failure: it says the walk saw the whole
+    part and there is no stud on it.
+    """
+    studs, complete = _geometry_studs(pid)
+    if not complete:
+        return None
+    ports = []
+    for position, axis in studs:
+        place = (
+            round(position[0] * _LDU_MM, 4),
+            round(-position[1] * _LDU_MM, 4),
+            round(position[2] * _LDU_MM, 4),
+        )
+        orientation = _stud_orientation((axis[0], -axis[1], axis[2]))
+        if orientation is not None:
+            ports.append((place, orientation))
+    return _stud_instances_by_grid(ports)
+
+
+def _stud_instances_by_grid(ports):
+    """Name studs c<col>r<row> by where they sit, not by the order they turned
+    up, so a rectangular part keeps exactly the names it has always had.
+
+    Columns run along X and rows along Z, as they do for a name-derived grid.
+    A part whose studs do not fall on one plane can put two of them in the same
+    column and row; the second and later ones take a numbered suffix.
+    """
+    xs = sorted({place[0] for place, _ in ports})
+    zs = sorted({place[2] for place, _ in ports})
+    instances = {}
+    for place, orientation in sorted(ports):
+        name = "c%dr%d" % (xs.index(place[0]), zs.index(place[2]))
+        if name in instances:
+            nth = 2
+            while "%s_%d" % (name, nth) in instances:
+                nth += 1
+            name = "%s_%d" % (name, nth)
+        instances[name] = _port(place, orientation)
+    return instances
 
 
 # The families beyond Technic, each derived from the name in the same way. They

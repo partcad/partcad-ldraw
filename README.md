@@ -71,40 +71,59 @@ guessed at, because its features are not where the plain name would put them.
 Headgear is left out for the same reason: it would be an ordinary anti-stud at
 the head's origin, but no name rule gets past ~96% of the 369 parts.
 
-### The known bound on the stud grid
+### Where the studs come from
 
-`Brick | Plate | Tile A x B` says how big the part is, not where its studs are.
-The two coincide for a plain brick and part company everywhere else, so the grid
-this package serves is wrong for some of the parts it accepts. Counting the
-studs in the geometry of all 2476 parts the rule matches:
+`Brick | Plate | Tile A x B` says how big a part is, not where its studs are.
+The two agree for a plain brick and part company everywhere else, so the studs
+are read from the part's geometry instead — by the same walk that reads the
+Mindstorms connectors below. Counting the geometry of all 2476 parts the name
+rule matches, 216 of them (8.7%, and 39.5% of the Plates) were being given a
+grid that is not theirs:
 
-| | parts | wrong grid |
-| --- | ---: | ---: |
-| `Brick` | 707 | 60 (8.5%) |
-| `Plate` | 370 | 146 (39.5%) |
-| `Tile` | 1399 | 10 (0.7%) |
-| **total** | **2476** | **216 (8.7%)** |
+* `2357` "Brick 2 x 2 Corner" has three studs at `(0,0) (0,20) (20,0)`, where
+  the rule put four at `(±10, ±10)` — a corner brick does not use the centred
+  origin a rectangular one does, so every position was wrong, not just the
+  count;
+* `6177` "Plate 8 x 8 Round with 2 x 2 Centre Studs" was given 64 where it has
+  4;
+* `Brick 1 x 1 with Studs on Four Sides` has five studs facing five ways, which
+  no `A x B` rule can express at all.
 
-It is not only a matter of count. `2357`, "Brick 2 x 2 Corner", has three studs
-at `(0,0) (0,20) (20,0)` where the rule puts four at `(±10, ±10)`: a corner
-brick does not use the centred origin a rectangular one does, so every position
-is wrong. `6177`, "Plate 8 x 8 Round with 2 x 2 Centre Studs", is given 64 where
-it has 4. `Brick 1 x 1 with Studs on Four Sides` has five studs facing five ways,
-which no `A x B` rule can express at all. Sorted by cause, the 216 are: 57 with a
-non-rectangular envelope, 53 with fewer studs than `A x B`, 48 with cutouts, 30
-whose name already states the real stud set, 15 with studs added on a side, 7
-inverted, and 6 with the right count in the wrong places.
-
-Filtering the names does not fix this. A denylist of the shape words — `Corner`,
+Filtering the names cannot fix that: a denylist of the shape words — `Corner`,
 `Round`, `Bent`, `Curved`, `Wedge`, `Triangular`, `Octagonal`, `Headlight` —
-removes 73 of the 216, leaves 143, and takes 372 correct parts with it: 5.1
-correct grids destroyed per wrong one fixed. The fix is to read the studs from
-the geometry, the way the Mindstorms ports below are read; the stud primitives
-say what they are in their own descriptions (`Stud`, `Stud Open`, `Stud Tube
-Solid`, `Stud Group 2 x 2`, `Stud Duplo Open`), so the classifier is a closed
-vocabulary rather than a guess. Measured over the same 2476 parts that costs
-0.30 extra distinct fetches per part, because the subparts and primitives under
-them are shared. Until then the grid above is served as-is.
+removes 73 of the 216, leaves 143, and takes 372 *correct* grids with it.
+
+Reading the geometry works because LDraw draws every stud with a primitive and
+says in that primitive's own description what it is: `Stud`, `Stud Open`, `Stud
+Tube Solid`, `Stud Group 2 x 2`, `Stud Duplo Open`. That is a closed vocabulary
+LDraw maintains, so the plugin carries a transcription of it rather than a guess
+about part names — and carries it as a table, so the walk still never fetches a
+primitive. A group is expanded from its own name (`stug-1x4` is four studs along
+X), and a group is named after what it groups, so `stug20-2x2` (Duplo) and
+`stug19-1x2` (Scala) leave themselves out.
+
+Over the whole library that is:
+
+| | parts |
+| --- | ---: |
+| studs unchanged | 10,507 |
+| studs **gained** — the name rule gave none | **3,362** |
+| studs corrected — both had some, in different places | 539 |
+| studs removed — the part has none | 15 |
+| walk ran out of budget, name rule left to stand | 198 |
+
+The 15 removals are all parts whose name says as much: "Brick 2 x 2 **no Studs**
+with Pin Vertical", "Brick 2 x 4 with **Curved Top**", "Plate 1 x 1 with **Swirl
+on Top**". A rectangular brick comes out byte-identical to what the name gave
+it, instance names included, so an assembly that names `c0r0` keeps working.
+
+It costs 0.30 extra distinct fetches per part over the `Brick`/`Plate`/`Tile`
+families and 1.09 over the whole library, because the subparts and primitives
+beneath them are shared and cached.
+
+**The anti-studs still come from the name.** The same walk reads the underside
+tubes for free, but a tube sits *between* four studs rather than under one, so
+turning them into anti-stud ports is its own piece of work.
 
 ## Reading ports from geometry
 
