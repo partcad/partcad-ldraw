@@ -542,6 +542,12 @@ def _with_geometry_studs(implements, pid):
     if studs is None:
         return implements
     implements = dict(implements) if implements else {}
+    named = implements.get(_STUD_IFACE)
+    if named and sorted(named.values()) == sorted(studs.values()):
+        # The geometry found exactly the studs the name did. Keep the names the
+        # name rule gave them: a minifig head's single stud is "stud", not the
+        # "c0r0" a grid would call it, and an assembly may already say so.
+        return implements or None
     if studs:
         implements[_STUD_IFACE] = studs
     else:

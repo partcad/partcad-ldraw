@@ -622,6 +622,8 @@ _FAKE_LIBRARY = {
         "1 16 0 0 0 1 0 0 0 1 0 0 0 1 stud.dat\n"
         "1 16 0 10 -6 1 0 0 0 0 -1 0 1 0 stud.dat\n"
     ),
+    # a minifig head: one stud, which its name rule calls "stud" and not "c0r0"
+    "3626b.dat": ("0 Minifig Head\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 stud.dat\n"),
     # a part whose studs belong to another building system
     "3011.dat": (
         "0 Duplo Brick  2 x  4\n"
@@ -779,3 +781,14 @@ def test_the_name_rule_stands_when_the_walk_runs_out_of_budget(monkeypatch, fake
     assert plugin._geometry_stud_implements("3003") is None
     # ...so the part keeps the studs its name gives it rather than losing them
     assert sorted(plugin._lego_implements("Brick  2 x  2", "3003")[STUD]) == ["c0r0", "c0r1", "c1r0", "c1r1"]
+
+
+def test_the_geometry_keeps_the_names_the_name_rule_gave(fake_library):
+    # A minifig head's single stud is "stud", not the "c0r0" a grid would call
+    # it, and an assembly hanging a hat on one already says so. When geometry
+    # finds exactly the studs the name did, the naming has to survive.
+    studs = plugin._lego_implements("Minifig Head", "3626b")[STUD]
+    assert sorted(studs) == ["stud"]
+    # ...while a part the name got wrong is renamed onto the grid, because its
+    # studs are not the ones the name described
+    assert sorted(plugin._lego_implements("Brick  2 x  2 Corner", "2357")[STUD]) == ["c0r0", "c0r1", "c1r0"]
