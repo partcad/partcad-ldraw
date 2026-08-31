@@ -11,6 +11,7 @@ real category enumeration end to end.
 """
 
 import importlib.util
+import math
 import os
 
 import pytest
@@ -391,6 +392,12 @@ _DEMO_PARTS = {
     "3705": "Technic Axle  4",
     "32064b": "Technic Brick  1 x  2 with Reduced Axlehole",
     "32316": "Technic Beam  5",
+    "3647": "Technic Gear  8 Tooth",
+    "3648b": "Technic Gear 24 Tooth with Single Axle Hole",
+    "4019": "Technic Gear 16 Tooth",
+    "3815b": "Minifig Hips",
+    "973": "Minifig Torso",
+    "3626b": "Minifig Head",
 }
 
 
@@ -439,3 +446,219 @@ def test_the_demo_assemblies_name_instances_and_parameters_that_exist():
                     assert param in declared[short].get("parameters", {}), "%s has no parameter %s" % (where, param)
                 checked += 1
     assert checked > 0
+
+
+# --- the families beyond Technic --------------------------------------------
+#
+# As above, every coordinate here was read off the LDraw parts: the gears'
+# pitch circles and tooth phase from 3647/4019/69779/3649, the Duplo grid from
+# 3011 and 3437, and the minifig offsets from LDraw's own assembled minifigs
+# (979 and 980), which place the torso 32 LDU above the hips and the head 28
+# above the torso.
+
+DUPLO_STUD = "//pub/universe/lego:duplo-stud"
+DUPLO_ANTI = "//pub/universe/lego:duplo-anti-stud"
+NECK = "//pub/universe/lego:minifig-neck"
+NECK_SOCKET = "//pub/universe/lego:minifig-neck-socket"
+WAIST = "//pub/universe/lego:minifig-waist"
+WAIST_SOCKET = "//pub/universe/lego:minifig-waist-socket"
+GEAR_TOOTH = "//pub/universe/lego:gear-tooth"
+GEAR_GAP = "//pub/universe/lego:gear-gap"
+WHEEL = "//pub/universe/lego:wheel-rim"
+TYRE = "//pub/universe/lego:tyre-bore"
+RJ12_PLUG = "//pub/universe/lego:rj12-plug"
+RJ12_SOCKET = "//pub/universe/lego:rj12-socket"
+
+
+def test_duplo_is_the_stud_system_at_twice_the_size():
+    implements = plugin._lego_implements("Duplo Brick  2 x  4")
+    assert set(implements) == {DUPLO_STUD, DUPLO_ANTI}
+    studs = {tuple(port[0]) for port in implements[DUPLO_STUD].values()}
+    assert studs == {(x, 0.0, z) for x in (-24.0, -8.0, 8.0, 24.0) for z in (-8.0, 8.0)}
+    # ... on a body 19.2 mm deep, both twice the system brick
+    assert {port[0][1] for port in implements[DUPLO_ANTI].values()} == {-19.2}
+
+
+def test_duplo_takes_only_the_plain_name():
+    # A quarter of the suffixed names do not have the full A x B grid.
+    for desc in ("Duplo Brick  2 x  4 with Holes", "Duplo Brick  2 x  2 Hinge Base"):
+        assert plugin._lego_implements(desc) is None, desc
+
+
+def test_minifig_parts_carry_the_joints_of_their_class():
+    head = plugin._lego_implements("Minifig Head with Standard Grin Pattern")
+    torso = plugin._lego_implements("Minifig Torso")
+    hips = plugin._lego_implements("Minifig Hips")
+    assert set(head) == {NECK_SOCKET, STUD}
+    assert set(torso) == {NECK, WAIST_SOCKET}
+    assert set(hips) == {WAIST}
+    # The head's top is an ordinary system stud, so hats and hair need nothing new.
+    assert head[STUD]["stud"] == [[0, 0, 0], [1, 0, 0], 270]
+
+
+def test_a_sculpted_head_is_not_a_standard_one():
+    for desc in ("Minifig Head Yoda with Curved Ears Type 2", "Minifig Torso Brick  2 x  3"):
+        assert plugin._lego_implements(desc) is None, desc
+
+
+def test_gear_teeth_and_gaps_sit_on_the_pitch_circle():
+    implements = plugin._lego_implements("Technic Gear 24 Tooth with Single Axle Hole")
+    assert set(implements) == {GEAR_TOOTH, GEAR_GAP}
+    assert len(implements[GEAR_TOOTH]) == 24 and len(implements[GEAR_GAP]) == 24
+    # One module: the pitch diameter in millimetres is the tooth count.
+    for ports in (implements[GEAR_TOOTH], implements[GEAR_GAP]):
+        for port in ports.values():
+            x, y, z = port[0]
+            assert abs(math.hypot(x, y) - 12.0) < 1e-3 and z == 0
+    # Tooth 0 is on the +X axis and the gap that follows it half a pitch on.
+    assert implements[GEAR_TOOTH]["t0"][0] == [12.0, 0.0, 0]
+    assert implements[GEAR_GAP]["g0"][0] == pytest.approx([11.8973, 1.5663, 0], abs=1e-3)  # half a pitch on: 7.5 deg
+
+
+def test_a_gear_the_system_does_not_cut_is_left_alone():
+    # 641 is the vintage 14-tooth gear, cut to a different module.
+    assert plugin._lego_implements("Technic Gear 14 Tooth") is None
+    # A bevel gear meshes at a right angle, which these ports do not describe.
+    assert plugin._lego_implements("Technic Gear 20 Tooth Bevel") is None
+
+
+def test_wheels_and_tyres_name_the_size_they_fit():
+    wheel = plugin._lego_implements("Wheel 30 x 64 with  7 Pin Holes")
+    tyre = plugin._lego_implements("Tyre 20/ 48 x 30")
+    assert list(wheel[WHEEL]) == ["d64"]
+    assert list(tyre[TYRE]) == ["d30"]
+    assert plugin._lego_implements("Tyre 11.2/ 28 x 17.6 Intermediate")[TYRE]
+    assert list(plugin._lego_implements("Tyre 11.2/ 28 x 17.6 Intermediate")[TYRE]) == ["d17.6"]
+
+
+# --- the connections these ports produce, for the new families ---------------
+
+
+def test_duplo_bricks_stack_a_duplo_height_apart():
+    brick = plugin._lego_implements("Duplo Brick  2 x  4")
+    upper = _connect(_Placement(), brick[DUPLO_STUD]["c0r0"], brick[DUPLO_ANTI]["c0r0"])
+    assert upper.is_upright()
+    assert upper.position() == (0.0, 19.2, 0.0)
+
+
+def test_a_minifig_stacks_the_way_ldraw_draws_one():
+    head = plugin._lego_implements("Minifig Head")
+    torso = plugin._lego_implements("Minifig Torso")
+    hips = plugin._lego_implements("Minifig Hips")
+    on_hips = _connect(_Placement(), hips[WAIST]["waist"], torso[WAIST_SOCKET]["waist"])
+    assert on_hips.is_upright()
+    assert on_hips.position() == (0.0, 12.8, 0.0)  # 32 LDU, as 979 and 980 place it
+    on_torso = _connect(on_hips, torso[NECK]["neck"], head[NECK_SOCKET]["neck"])
+    assert on_torso.is_upright()
+    assert on_torso.position() == (0.0, 24.0, 0.0)  # a further 28 LDU
+
+
+def test_a_tyre_fits_a_wheel_concentrically():
+    wheel = plugin._lego_implements("Wheel 30 x 64 with  7 Pin Holes")
+    tyre = plugin._lego_implements("Tyre 20/ 48 x 30")
+    fitted = _connect(_Placement(), wheel[WHEEL]["d64"], tyre[TYRE]["d30"])
+    # LDraw draws the pair sharing one origin (4266c01, 22253c01, 22969ac01).
+    assert fitted.is_upright()
+    assert fitted.position() == (0.0, 0.0, 0.0)
+
+
+def test_meshing_gears_end_up_a_pitch_radius_apart_and_coplanar():
+    big = plugin._lego_implements("Technic Gear 24 Tooth")
+    small = plugin._lego_implements("Technic Gear  8 Tooth")
+    placed = _connect(_Placement(), big[GEAR_TOOTH]["t0"], small[GEAR_GAP]["g0"])
+    # (24 + 8) / 2 = 16 mm between the centres, which is two studs.
+    assert math.hypot(*placed.position()[:2]) == pytest.approx(16.0, abs=1e-3)
+    # And the small gear's axle stays parallel to the big one's: a mesh that
+    # tipped the second gear would be no mesh at all.
+    assert placed.axis((0, 0, 1)) == pytest.approx((0.0, 0.0, 1.0), abs=1e-6)
+
+
+def test_gears_of_every_size_mesh_at_the_distance_they_are_cut_for():
+    for first, second, distance in ((8, 24, 16.0), (16, 16, 16.0), (24, 40, 32.0), (12, 20, 16.0)):
+        a = plugin._lego_implements("Technic Gear %d Tooth" % first)
+        b = plugin._lego_implements("Technic Gear %d Tooth Double Bevel" % second) or plugin._lego_implements(
+            "Technic Gear %d Tooth" % second
+        )
+        placed = _connect(_Placement(), a[GEAR_TOOTH]["t0"], b[GEAR_GAP]["g0"])
+        assert math.hypot(*placed.position()[:2]) == pytest.approx(distance, abs=1e-3), (first, second)
+
+
+# --- ports read from the geometry -------------------------------------------
+#
+# The walk itself, with the library replaced by a few lines of LDraw: what it
+# fetches, what it refuses to fetch, and that it reads the same subpart twice
+# when a part references it twice.
+
+_FAKE_LIBRARY = {
+    # a part that places one subpart twice, in two places, and one primitive
+    "55804.dat": (
+        "0 Electric Mindstorms NXT Cable 20 cm\n"
+        "1 16 -35 0 0 1 0 0 0 1 0 0 0 1 933c01.dat\n"
+        "1 16 35 0 0 -1 0 0 0 1 0 0 0 -1 933c01.dat\n"
+        "1 16 0 0 0 1 0 0 0 1 0 0 0 1 4-4cyli.dat\n"
+    ),
+    "933c01.dat": "0 ~Plug\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 933.dat\n",
+    # a part whose hole is inside its own subpart
+    "3700.dat": "0 Technic Brick\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 s/3700s01.dat\n",
+    "s/3700s01.dat": "0 ~subpart\n1 16 0 10 10 1 0 0 0 0 1 0 -1 0 peghole.dat\n",
+}
+
+
+@pytest.fixture
+def fake_library(monkeypatch):
+    fetched = []
+
+    def fetch(name):
+        fetched.append(name)
+        return _FAKE_LIBRARY.get(name)
+
+    monkeypatch.setattr(plugin, "_fetch_ldraw_file", fetch)
+    return fetched
+
+
+def test_the_walk_reads_a_subpart_once_per_placement(fake_library):
+    connectors = plugin._geometry_connectors("55804")
+    plugs = [c for c in connectors if c[0] == RJ12_PLUG]
+    # Two plugs, because the cable references the same subpart at both ends;
+    # the second placement is mirrored, so its port faces the other way.
+    assert len(plugs) == 2
+    assert sorted(tuple(round(v) for v in c[1]) for c in plugs) == [(-35, 0, -18), (35, 0, 18)]
+
+
+def test_the_walk_never_fetches_a_primitive(fake_library):
+    plugin._geometry_connectors("55804")
+    assert "4-4cyli.dat" not in fake_library
+    # ... and fetches each file it does need only once
+    assert sorted(fake_library) == ["55804.dat", "933c01.dat"]
+
+
+def test_the_walk_descends_into_subparts(fake_library):
+    connectors = plugin._geometry_connectors("3700")
+    assert "s/3700s01.dat" in fake_library
+    assert [(c[0], tuple(round(v) for v in c[1])) for c in connectors] == [(PIN_HOLE, (0, 10, 10))]
+
+
+def test_a_part_ref_is_a_number_and_a_primitive_is_a_word():
+    for name in ("3001.dat", "3626b.dat", "32064a.dat", "s/3700s01.dat"):
+        assert plugin._PART_REF_RE.match(name), name
+    for name in ("peghole.dat", "4-4cyli.dat", "stud2a.dat", "box5.dat", "connect.dat"):
+        assert not plugin._PART_REF_RE.match(name), name
+
+
+def test_geometry_ports_land_where_the_geometry_says(fake_library):
+    implements = plugin._electric_implements("3700")
+    # LDraw (0, 10, 10) is (0, -4, 4) once the wrapper has meshed it, and the
+    # port faces out of the part, the way the name-derived holes do.
+    port = implements[PIN_HOLE]["h0"]
+    assert port[0] == [0.0, -4.0, 4.0]
+    turned = _Placement.of(port)
+    assert turned.axis((0, 0, 1)) == pytest.approx((0.0, 0.0, 1.0), abs=1e-6)
+
+
+def test_an_orientation_survives_the_round_trip():
+    for axis, angle in (((1, 0, 0), 90), ((0, 1, 0), 270), ((1, 1, -1), 120), ((0, 0, 1), 0)):
+        rotation = _rot(axis, angle)
+        again = plugin._orientation_of_matrix(rotation)
+        assert _Placement((0, 0, 0), _rot(again[0], again[1])).axis((1, 2, 3)) == pytest.approx(
+            _Placement((0, 0, 0), rotation).axis((1, 2, 3)), abs=1e-6
+        )

@@ -37,8 +37,9 @@ dependencies:
     # stale entries cached by an older plugin are invalidated. v1 added the LEGO
     # stud / anti-stud interfaces to every Brick / Plate / Tile config; v2 added
     # the Technic interfaces (pin, pin hole, axle, axle hole) and the stud grid
-    # of the Technic bricks that carry them.
-    cacheVersion: 2
+    # of the Technic bricks that carry them; v3 added the gear, minifig, Duplo,
+    # wheel/tyre and RJ12 interfaces.
+    cacheVersion: 3
 
 repositories:
   ldraw_repo:
@@ -66,6 +67,38 @@ sketches:
   # same circle, so one outline serves both; a "basic" sketch is a single
   # outline, and the cross itself is not one.
   technic-sketch:
+    type: basic
+    circle: 2.4
+
+  # A Duplo stud is twice the system one across: 9.6 mm.
+  duplo-stud-sketch:
+    type: basic
+    circle: 4.8
+
+  # A minifig neck / waist stud, 4.8 mm across like a system stud but drawn
+  # separately because it is a different connection.
+  minifig-sketch:
+    type: basic
+    circle: 2.4
+
+  # One tooth of a Technic gear, at the pitch circle: 4 mm of arc by the 8 mm
+  # the gear is thick.
+  gear-tooth-sketch:
+    type: basic
+    rectangle:
+      side-x: 4.0
+      side-y: 8.0
+
+  # The mouth of an RJ12 socket / the shoulder of its plug (10 x 4.6 mm).
+  rj12-sketch:
+    type: basic
+    rectangle:
+      side-x: 10.0
+      side-y: 4.6
+
+  # A wheel or tyre is placed on its own axis, so its port is drawn as the
+  # 4.8 mm circle every axis in this package is drawn with.
+  wheel-sketch:
     type: basic
     circle: 2.4
 
@@ -210,3 +243,166 @@ interfaces:
     # The cross hole is what drives an axle; the round hole it also fits is
     # declared by 'technic-pin-hole' above.
     mates: technic-axle-hole
+
+  # --- Duplo ------------------------------------------------------------------
+  #
+  # The same connection as a stud, at twice the size: a 16 mm grid on a body
+  # 19.2 mm tall, with 9.6 mm studs. It is a separate pair of interfaces rather
+  # than a parameter of the system stud because the two do not mate: a Duplo
+  # stud does not fit a system anti-stud.
+  duplo-stud:
+    desc: >-
+      A Duplo stud (male), 9.6 mm across on a 16 mm grid. Its Z axis points up
+      (+Y), out of the top surface.
+    ports:
+      stud:
+        sketch: duplo-stud-sketch
+    mates: duplo-anti-stud
+  duplo-anti-stud:
+    desc: >-
+      A Duplo anti-stud recess (female) on the underside of a Duplo part. Its Z
+      axis points down (-Y), out of the opening that receives a stud.
+    ports:
+      anti:
+        sketch: duplo-stud-sketch
+
+  # --- Minifig ----------------------------------------------------------------
+  #
+  # A minifig is a stack of four parts with two joints of its own between them,
+  # and an ordinary stud at the top of the head that carries the hat or hair.
+  # Both joints turn: a minifig's head and legs are meant to be posed.
+  minifig-neck:
+    desc: >-
+      The neck stud on top of a minifig torso (male). Its Z axis points up (+Y),
+      out of the shoulder plane the head's rim rests on.
+    ports:
+      neck:
+        sketch: minifig-sketch
+    parameters:
+      # A minifig head turns on its neck. So does the torso on its hips below.
+      turnZ:
+        min: -180
+        max: 180
+        default: 0
+        type: turn
+        dir: [0, 0, 1]
+    mates: minifig-neck-socket
+  minifig-neck-socket:
+    desc: >-
+      The socket under a minifig head (female). Its Z axis points down (-Y), out
+      of the opening that receives the neck.
+    ports:
+      neck:
+        sketch: minifig-sketch
+    parameters:
+      turnZ:
+        min: -180
+        max: 180
+        default: 0
+        type: turn
+        dir: [0, 0, 1]
+
+  minifig-waist:
+    desc: >-
+      The waist stud on top of a pair of minifig hips (male). Its Z axis points
+      up (+Y), out of the plane the torso sits on.
+    ports:
+      waist:
+        sketch: minifig-sketch
+    parameters:
+      turnZ:
+        min: -180
+        max: 180
+        default: 0
+        type: turn
+        dir: [0, 0, 1]
+    mates: minifig-waist-socket
+  minifig-waist-socket:
+    desc: >-
+      The opening in the bottom of a minifig torso (female). Its Z axis points
+      down (-Y), out of the opening that receives the waist.
+    ports:
+      waist:
+        sketch: minifig-sketch
+    parameters:
+      turnZ:
+        min: -180
+        max: 180
+        default: 0
+        type: turn
+        dir: [0, 0, 1]
+
+  # --- Gears ------------------------------------------------------------------
+  #
+  # A gear mesh is a port pair like any other, once a tooth and a gap are each
+  # taken to be a port: a tooth of one gear sits in a gap of the other. Every
+  # port is on the gear's pitch circle - radius 0.5 mm per tooth, so a 24-tooth
+  # gear has a 12 mm one - with its Z axis pointing radially outwards. Bringing
+  # a tooth port and a gap port together therefore separates the two gears by
+  # the sum of their pitch radii, which is exactly the centre distance the pair
+  # is cut for, and lines their teeth up in the bargain.
+  gear-tooth:
+    desc: >-
+      One tooth of a Technic gear, at the pitch circle, Z pointing outwards.
+      Instances are named t<i>, numbered anticlockwise from the +X axis.
+    ports:
+      tooth:
+        sketch: gear-tooth-sketch
+    # The two are the same connection seen from either side, so the mate is
+    # stated once, here.
+    mates: gear-gap
+  gear-gap:
+    desc: >-
+      One gap between two teeth of a Technic gear, at the pitch circle, Z
+      pointing outwards. Instances are named g<i>, the gap anticlockwise of
+      tooth t<i>.
+    ports:
+      gap:
+        sketch: gear-tooth-sketch
+
+  # --- Wheels -----------------------------------------------------------------
+  #
+  # A tyre goes on a wheel concentrically, and LDraw draws the pair sharing one
+  # origin, so both ports sit on the part's own origin with their Z along the
+  # axle. The instance carries the nominal fitting diameter from the part's name
+  # ("d30"), so an assembly names the size it means and a mismatched pair is
+  # visible in the ASSY file - PartCAD gates compatibility by interface, not by
+  # dimension, so it cannot reject one for you.
+  wheel-rim:
+    desc: >-
+      The rim of a wheel that a tyre is fitted to (male). One instance, on the
+      wheel's own axis, named for the wheel's nominal diameter in mm.
+    ports:
+      rim:
+        sketch: wheel-sketch
+    mates: tyre-bore
+  tyre-bore:
+    desc: >-
+      The bore of a tyre, which fits over a wheel's rim (female). One instance,
+      on the tyre's own axis, named for its nominal fitting diameter in mm.
+    ports:
+      bore:
+        sketch: wheel-sketch
+
+  # --- Mindstorms wiring ------------------------------------------------------
+  #
+  # The one connection the Mindstorms parts have that is theirs rather than
+  # Technic's: the RJ12-style plug on a cable and the socket on a brick, motor
+  # or sensor. Mechanically it is a plug in a hole like any other - the plug's
+  # shoulder stops against the face of the socket - so it is a port pair, even
+  # though what travels through it is a signal rather than a load.
+  rj12-plug:
+    desc: >-
+      The plug on the end of a Mindstorms cable (male). Its port is the shoulder
+      the socket stops it at, with Z pointing the way it goes in.
+    ports:
+      plug:
+        sketch: rj12-sketch
+    mates: rj12-socket
+  rj12-socket:
+    desc: >-
+      A Mindstorms cable socket (female), on a brick, a motor or a sensor. Its
+      port is the mouth of the socket, with Z pointing out of the part.
+    ports:
+      socket:
+        sketch: rj12-sketch

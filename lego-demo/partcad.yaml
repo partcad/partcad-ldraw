@@ -52,3 +52,17 @@ assemblies:
     type: assy
     path: technic.assy
     manufacturable: false
+
+  # A gear train: an 8-tooth and a 16-tooth gear meshed onto a 24-tooth one,
+  # placed by naming a tooth and a gap rather than a centre distance.
+  gears:
+    type: assy
+    path: gears.assy
+    manufacturable: false
+
+  # A minifig, stacked out of its own two joints with the head turned. (Uses
+  # the Minifig LDraw category, which the plugin enumerates on first use.)
+  minifig:
+    type: assy
+    path: minifig.assy
+    manufacturable: false

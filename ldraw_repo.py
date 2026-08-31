@@ -21,6 +21,7 @@ sub-package, e.g. ``Brick/objects/part`` or ``Brick/files/ldraw.py``.
 
 import base64
 import concurrent.futures
+import math
 import os
 import re
 import time
@@ -198,6 +199,7 @@ def _dat_header(pid):
 # A stud port is therefore on the top plane pointing up, and the anti-stud port
 # of the part above it is on that part's own bottom plane pointing down; the two
 # meet, and the parts end up exactly one part-height apart.
+_LDU_MM = 0.4  # 1 LDraw Unit, the scale the wrapper meshes a .dat at
 _STUD_MM = 8.0  # stud pitch in the meshed part-space (20 LDU * 0.4)
 _HALF_STUD_MM = 4.0  # a 1-stud-wide part's axis to either of its faces
 _MAX_STUDS = 48  # sanity bound on a length read out of a name
@@ -207,6 +209,18 @@ _PIN_IFACE = "//pub/universe/lego:technic-pin"
 _PIN_HOLE_IFACE = "//pub/universe/lego:technic-pin-hole"
 _AXLE_IFACE = "//pub/universe/lego:technic-axle"
 _AXLE_HOLE_IFACE = "//pub/universe/lego:technic-axle-hole"
+_DUPLO_STUD_IFACE = "//pub/universe/lego:duplo-stud"
+_DUPLO_ANTI_IFACE = "//pub/universe/lego:duplo-anti-stud"
+_NECK_IFACE = "//pub/universe/lego:minifig-neck"
+_NECK_SOCKET_IFACE = "//pub/universe/lego:minifig-neck-socket"
+_WAIST_IFACE = "//pub/universe/lego:minifig-waist"
+_WAIST_SOCKET_IFACE = "//pub/universe/lego:minifig-waist-socket"
+_GEAR_TOOTH_IFACE = "//pub/universe/lego:gear-tooth"
+_GEAR_GAP_IFACE = "//pub/universe/lego:gear-gap"
+_WHEEL_IFACE = "//pub/universe/lego:wheel-rim"
+_TYRE_IFACE = "//pub/universe/lego:tyre-bore"
+_RJ12_PLUG_IFACE = "//pub/universe/lego:rj12-plug"
+_RJ12_SOCKET_IFACE = "//pub/universe/lego:rj12-socket"
 
 # Port orientations, as the (axis, angle) half of an OCCT location: each turns
 # the port's Z axis onto one of the part's own axes.
@@ -221,6 +235,10 @@ _Z_TO_MINUS_Z = ((1, 0, 0), 180)
 # composing it back is what leaves a stud/anti-stud mate a pure translation.
 # Plain _Z_TO_MINUS_Y would stack the bricks correctly but turned 90 degrees.
 _ANTI_STUD_ROT = ((1, 1, -1), 120)
+# The mate flip itself, for a pair whose two ports sit on the same point facing
+# along the same axis: composing it back leaves the connection an identity, which
+# is how LDraw draws a tyre on a wheel and a hat on a head.
+_TYRE_ROT = ((1, 1, 0), 180)
 
 # body height in the meshed part-space (mm) and whether the top face has studs
 _LEGO_KINDS = {
@@ -474,26 +492,34 @@ _TECHNIC_RULES = (
 )
 
 
-def _technic_implements(desc):
-    """The instances of a Technic part, or None if its name is not one of the
-    families above."""
-    for pattern, builder in _TECHNIC_RULES:
+def _name_implements(desc):
+    """The instances a part's name determines, or None if it names no family."""
+    for pattern, builder in _TECHNIC_RULES + _OTHER_RULES:
         m = pattern.match(desc)
         if m:
             return builder(m)
     return None
 
 
-def _lego_implements(desc):
+def _lego_implements(desc, pid=None):
     """The 'implements' block for a part, or None.
 
-    A description is either a plain rectangular Brick / Plate / Tile or one of
-    the Technic families; nothing is both, so the first match wins.
+    Almost every part is served by its name alone: a description belongs to at
+    most one family - a plain rectangular Brick / Plate / Tile, one of the
+    Technic families, a gear, a Duplo brick, a minifig part, a wheel or a tyre -
+    so the first match wins and nothing is fetched.
+
+    The Mindstorms parts are the exception, and are read from their geometry;
+    that needs the part's id as well as its name, so a caller without one gets
+    only what the name gives.
     """
     if not desc:
         return None
     desc = desc.strip()
-    return _brick_implements(desc) or _technic_implements(desc)
+    implements = _brick_implements(desc) or _name_implements(desc)
+    if implements is None and pid and _ELECTRIC_RE.match(desc):
+        implements = _electric_implements(pid)
+    return implements
 
 
 def _part_config(pid, meta):
@@ -505,7 +531,7 @@ def _part_config(pid, meta):
         config["author"] = author
     if lic:
         config["license"] = lic
-    implements = _lego_implements(_effective_desc(desc))
+    implements = _lego_implements(_effective_desc(desc), pid)
     if implements:
         config["implements"] = implements
     return config
@@ -594,3 +620,431 @@ elif __name__ == "__main__":
         print("  ", pid, "->", cfg)
 else:
     output = {}
+
+
+# --- Duplo ------------------------------------------------------------------
+#
+# The same connection as a stud, at twice the size: LDraw draws a Duplo brick
+# with its studs on a 40 LDU (16 mm) grid and a body 48 LDU (19.2 mm) deep,
+# both exactly double the system brick. Only the plain "Duplo Brick A x B" is
+# taken: of the parts whose name carries a suffix as well, a quarter have a stud
+# grid that is not the full A x B (hinge bases, curved tops, bricks with holes).
+_DUPLO_MM = 16.0  # Duplo stud pitch (40 LDU * 0.4)
+_DUPLO_HEIGHT_MM = 19.2  # Duplo brick body height (48 LDU * 0.4)
+_DUPLO_RE = re.compile(r"^Duplo Brick\s+(\d+)\s*x\s*(\d+)\s*$", re.IGNORECASE)
+
+
+def _duplo_implements(m):
+    """Duplo Brick A x B: the stud grid, on the Duplo scale."""
+    depth, length = int(m.group(1)), int(m.group(2))
+    if not (1 <= depth <= _MAX_STUDS and 1 <= length <= _MAX_STUDS):
+        return None
+    xs = [round((i - (length - 1) / 2.0) * _DUPLO_MM, 4) for i in range(length)]
+    zs = [round((i - (depth - 1) / 2.0) * _DUPLO_MM, 4) for i in range(depth)]
+    y_bottom = round(-_DUPLO_HEIGHT_MM, 4)
+    return {
+        _DUPLO_STUD_IFACE: {
+            "c%dr%d" % (ci, ri): _port((x, 0, z), _Z_TO_PLUS_Y) for ci, x in enumerate(xs) for ri, z in enumerate(zs)
+        },
+        _DUPLO_ANTI_IFACE: {
+            "c%dr%d" % (ci, ri): _port((x, y_bottom, z), _ANTI_STUD_ROT)
+            for ci, x in enumerate(xs)
+            for ri, z in enumerate(zs)
+        },
+    }
+
+
+# --- Minifig ----------------------------------------------------------------
+#
+# A minifig is a stack whose spacing is fixed by the system rather than by any
+# one part's name: LDraw's own assembled minifigs (979, 980) place the torso
+# 32 LDU above the hips and the head 28 LDU above the torso, and put the hat at
+# the head's own origin. So every part of a class carries the same ports no
+# matter what is printed on it, which is what makes hundreds of heads and torsos
+# derivable from a name that says nothing but "Minifig Head".
+#
+# The planes below are those two offsets, split between the two parts of each
+# joint: the head's rim rests on the torso's shoulder (the base of the neck
+# stud, 4 LDU below the top of the torso), and the torso's bottom rests on the
+# hips. The head's top is an ordinary system stud, so a hat is an anti-stud and
+# the pair meets at the origin, exactly as 979 and 980 draw it.
+_NECK_TORSO_MM = 1.6  # LDraw y = -4: the shoulder plane the head's rim sits on
+_NECK_HEAD_MM = -9.6  # LDraw y = 24: the rim around the head's neck socket
+_WAIST_HIPS_MM = 0.0  # LDraw y = 0: the top of the hips
+_WAIST_TORSO_MM = -12.8  # LDraw y = 32: the bottom of the torso
+# A head is standard when its name says nothing but "Minifig Head", "Female" or
+# the pattern printed on it; the sculpted character heads (Yoda, the Simpsons,
+# the cuboid ones) are a different shape and are left alone. A torso likewise,
+# minus the handful that are a different part in all but name. Checked against
+# the geometry of every part the three accept: 326 heads, 613 torsos and 225
+# hips, every one of them where the rule says.
+#
+# Headgear is deliberately absent. It would be an ordinary anti-stud sharing the
+# head's origin, but no name rule gets past about 96% of the 369 parts - police
+# hats, pillboxes and a few "helmets" that are really heads sit differently - and
+# a wrong port is worse than none.
+_MINIFIG_HEAD_RE = re.compile(r"^Minifig Head(?:\s+Female)?(?:\s+with\b.*)?$", re.IGNORECASE)
+_MINIFIG_TORSO_RE = re.compile(r"^Minifig Torso(?!\s+(?:Long|Short|Brick|Skeleton)\b)(?!.*\bIntegral\b)", re.IGNORECASE)
+_MINIFIG_HIPS_RE = re.compile(r"^Minifig Hips\b", re.IGNORECASE)
+
+
+def _minifig_head(m):
+    """A minifig head: a neck socket below, an ordinary system stud on top."""
+    return {
+        _NECK_SOCKET_IFACE: {"neck": _port((0, _NECK_HEAD_MM, 0), _ANTI_STUD_ROT)},
+        _STUD_IFACE: {"stud": _port((0, 0, 0), _Z_TO_PLUS_Y)},
+    }
+
+
+def _minifig_torso(m):
+    """A minifig torso: the neck stud on top, the waist opening below."""
+    return {
+        _NECK_IFACE: {"neck": _port((0, _NECK_TORSO_MM, 0), _Z_TO_PLUS_Y)},
+        _WAIST_SOCKET_IFACE: {"waist": _port((0, _WAIST_TORSO_MM, 0), _ANTI_STUD_ROT)},
+    }
+
+
+def _minifig_hips(m):
+    """A pair of minifig hips: the waist the torso sits on."""
+    return {_WAIST_IFACE: {"waist": _port((0, _WAIST_HIPS_MM, 0), _Z_TO_PLUS_Y)}}
+
+
+# --- Gears ------------------------------------------------------------------
+#
+# A gear mesh is a port pair once each tooth and each gap is a port. LEGO gears
+# are cut to one module: the pitch diameter in millimetres is the tooth count,
+# so the pitch radius is 0.5 mm per tooth and two meshing gears sit (N1 + N2)/2
+# millimetres apart - which is what bringing a tooth port and a gap port
+# together produces, since each is on its own gear's pitch circle with its Z
+# pointing outwards. Tooth centres are at 360k/N degrees and gaps half a pitch
+# from them; both were measured on the LDraw gears themselves, which lie in the
+# XY plane with the axle along Z.
+_GEAR_MODULE_MM = 0.5  # pitch radius per tooth
+# The tooth counts of the modern LEGO gear system. The bound is what keeps the
+# vintage "Technic Gear 14 Tooth" (641), which is cut to a different module, out
+# of a rule its name would otherwise fit.
+_GEAR_TEETH = (8, 12, 16, 20, 24, 28, 36, 40)
+_GEAR_RE = re.compile(
+    r"^Technic Gear\s+(\d+)\s*Tooth" r"(?:\s+Double Bevel)?"
+    # Suffixes that describe the hub rather than the teeth, so the pitch circle
+    # is unchanged. Every part these accept was checked against its geometry.
+    r"(?:\s+Reinforced|\s+Sliding|\s+with Clutch\b.*|\s+Clutch\b.*"
+    r"|\s+with\s+\d+\s+Axleholes?|\s+with Single Axle Hole)*\s*$",
+    re.IGNORECASE,
+)
+
+
+def _quaternion_of(axis, angle_deg):
+    half = math.radians(angle_deg) / 2.0
+    norm = math.sqrt(sum(v * v for v in axis)) or 1.0
+    s = math.sin(half) / norm
+    return (math.cos(half), axis[0] * s, axis[1] * s, axis[2] * s)
+
+
+def _quaternion_product(a, b):
+    aw, ax, ay, az = a
+    bw, bx, by, bz = b
+    return (
+        aw * bw - ax * bx - ay * by - az * bz,
+        aw * bx + ax * bw + ay * bz - az * by,
+        aw * by - ax * bz + ay * bw + az * bx,
+        aw * bz + ax * by - ay * bx + az * bw,
+    )
+
+
+def _orientation_of(quaternion):
+    """An (axis, angle) orientation, as '_port' wants it, from a quaternion."""
+    w, x, y, z = quaternion
+    w = max(-1.0, min(1.0, w))
+    angle = math.degrees(2.0 * math.acos(w))
+    sin_half = math.sqrt(max(0.0, 1.0 - w * w))
+    if sin_half < 1e-9:
+        return ((0, 0, 1), 0)
+    axis = (round(x / sin_half, 6), round(y / sin_half, 6), round(z / sin_half, 6))
+    return (axis, round(angle, 6))
+
+
+# The port frame of a tooth or a gap. Its Z has to point radially outwards, and
+# the roll is not free: a connection turns the source port by 180 degrees about
+# [1,1,0], and for two meshed gears to stay coplanar - axles parallel, which is
+# the whole point - that turn has to come out as a rotation about the axle. That
+# holds exactly when the frame carries [1,1,0] onto the axle, which this one
+# does, while carrying Z onto the outward radius at an angle of zero.
+_ROOT_HALF = math.sqrt(0.5)
+_GEAR_BASE_MATRIX = ((0.0, 0.0, 1.0), (_ROOT_HALF, -_ROOT_HALF, 0.0), (_ROOT_HALF, _ROOT_HALF, 0.0))
+
+
+def _gear_port(index, count, offset_turns):
+    """The port for tooth (offset 0) or gap (offset 0.5) number 'index'."""
+    angle = 360.0 * (index + offset_turns) / count
+    radius = count * _GEAR_MODULE_MM
+    radians = math.radians(angle)
+    position = (round(radius * math.cos(radians), 4), round(radius * math.sin(radians), 4), 0)
+    turn = (
+        (math.cos(radians), -math.sin(radians), 0.0),
+        (math.sin(radians), math.cos(radians), 0.0),
+        (0.0, 0.0, 1.0),
+    )
+    return _port(position, _orientation_of_matrix(_matrix_product(turn, _GEAR_BASE_MATRIX)))
+
+
+def _gear_implements(m):
+    """Technic Gear N Tooth: N tooth ports and N gap ports on the pitch circle."""
+    count = int(m.group(1))
+    if count not in _GEAR_TEETH:
+        return None
+    return {
+        _GEAR_TOOTH_IFACE: {"t%d" % i: _gear_port(i, count, 0.0) for i in range(count)},
+        _GEAR_GAP_IFACE: {"g%d" % i: _gear_port(i, count, 0.5) for i in range(count)},
+    }
+
+
+# --- Wheels and tyres -------------------------------------------------------
+#
+# A tyre goes on a wheel concentrically and LDraw draws the pair sharing one
+# origin (4266c01, 22253c01 and 22969ac01 all place both at 0,0,0), so both
+# ports sit on the origin with their Z along the axle and the mate comes out as
+# the identity. The nominal fitting diameter is in each name - "Wheel W x D" and
+# "Tyre W/ A x D" - and goes into the instance name, so an assembly says which
+# size it means.
+_WHEEL_RE = re.compile(r"^Wheel\s+([\d.]+)\s*x\s*([\d.]+)\b", re.IGNORECASE)
+_TYRE_RE = re.compile(r"^Tyre\s+([\d.]+)\s*/\s*([\d.]+)\s*x\s*([\d.]+)\b", re.IGNORECASE)
+
+
+def _diameter_instance(text):
+    """ "30" or "17.6" -> the instance name "d30" / "d17.6"."""
+    value = float(text)
+    return "d" + (str(int(value)) if value == int(value) else str(value))
+
+
+def _wheel_implements(m):
+    return {_WHEEL_IFACE: {_diameter_instance(m.group(2)): _port((0, 0, 0), _Z_TO_PLUS_Z)}}
+
+
+def _tyre_implements(m):
+    return {_TYRE_IFACE: {_diameter_instance(m.group(3)): _port((0, 0, 0), _TYRE_ROT)}}
+
+
+# --- ports read from the geometry -------------------------------------------
+#
+# The Mindstorms parts are the one family here whose name says nothing about
+# where anything is: "Electric Mindstorms EV3 Large Motor" has no dimensions in
+# it, and none of them puts a single connector in its own .dat - every one is
+# inside a subpart, one to four levels down. So for these, and only these, the
+# ports are read from the geometry.
+#
+# That is affordable because the walk does not have to fetch much. A connector
+# is a *primitive*, and a primitive is identified by the reference line that
+# names it, so primitives are leaves and are never fetched: only the part files
+# and the 's\' subparts are. Each file lists its own references, so the whole of
+# the next level is known as soon as the current one is parsed, and can be
+# fetched in parallel. Measured against the LDraw library, that finds exactly
+# the same connectors as an exhaustive walk while fetching 8 to 27 files for a
+# Mindstorms part instead of 50 to 86, and 2 for an ordinary brick.
+_GEOMETRY_DEPTH = 4  # every Mindstorms connector sits at depth 4 or less
+_GEOMETRY_FILES = 64  # a bound on one part's walk, so a cycle cannot run away
+# What a reference has to look like to be worth fetching: an LDraw part id, or a
+# subpart of one. Everything else is a primitive, and a leaf.
+_PART_REF_RE = re.compile(r"^(?:s/)?\d[0-9a-z]*\.dat$", re.IGNORECASE)
+
+# The connectors this walk understands, and where each one's port is in the
+# primitive's own frame: the mouth (in LDU) and the axis that points out of the
+# part, as a multiple of the primitive's own axes. Each was read off the LDraw
+# parts that use it - the sockets, for instance, against the four faces of the
+# EV3 and NXT bricks and the two motors, whose outer surface they land on
+# exactly.
+_GEOMETRY_CONNECTORS = {
+    # a round Technic hole, mouth at the origin, opening away from +Y
+    "peghole.dat": [(_PIN_HOLE_IFACE, (0, 0, 0), (0, -1, 0))],
+    # a Technic hole through a beam: a mouth at either end of its Y axis
+    "connhole.dat": [
+        (_PIN_HOLE_IFACE, (0, 10, 0), (0, 1, 0)),
+        (_PIN_HOLE_IFACE, (0, -10, 0), (0, -1, 0)),
+    ],
+    # the NXT cable socket: its mouth is 18 LDU back along its own -Z
+    "54732.dat": [(_RJ12_SOCKET_IFACE, (0, 0, -18), (0, 0, -1))],
+    # the EV3 cable socket: mouth at its origin
+    "54732b.dat": [(_RJ12_SOCKET_IFACE, (0, 0, 0), (0, 0, -1))],
+    # the plug on the end of a cable: the shoulder the socket stops it at
+    "933.dat": [(_RJ12_PLUG_IFACE, (0, 0, -18), (0, 0, 1))],
+}
+_ELECTRIC_RE = re.compile(r"^Electric Mindstorms\b", re.IGNORECASE)
+
+
+def _fetch_ldraw_file(name):
+    """An LDraw part or subpart by reference name ('s/3001s01.dat'), cached."""
+    name = name.replace("\\", "/").lower()
+    return _cached(_DAT_URL + name, os.path.join("parts", *name.split("/")))
+
+
+def _matrix_product(a, b):
+    return tuple(tuple(sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)) for i in range(3))
+
+
+def _matrix_apply(a, v):
+    return tuple(sum(a[i][k] * v[k] for k in range(3)) for i in range(3))
+
+
+_IDENTITY_MATRIX = ((1, 0, 0), (0, 1, 0), (0, 0, 1))
+
+
+def _parse_references(text):
+    """The sub-file references of an LDraw file: (name, matrix, translation)."""
+    references = []
+    for line in text.splitlines():
+        fields = line.split()
+        if len(fields) < 15 or fields[0] != "1":
+            continue
+        try:
+            values = [float(v) for v in fields[2:14]]
+        except ValueError:
+            continue
+        matrix = (tuple(values[3:6]), tuple(values[6:9]), tuple(values[9:12]))
+        name = " ".join(fields[14:]).replace("\\", "/").lower()
+        references.append((name, matrix, (values[0], values[1], values[2])))
+    return references
+
+
+def _geometry_connectors(pid):
+    """Every connector in a part's geometry, as (interface, position, axis).
+
+    Breadth first, one parallel fetch per level, never descending into a
+    primitive. Positions and axes come back in LDraw coordinates.
+    """
+    found = []
+    # (name, matrix, translation) of what is still to be read
+    level = [(pid + ".dat", _IDENTITY_MATRIX, (0.0, 0.0, 0.0))]
+    # A file is fetched once but traversed as often as it is referenced: the same
+    # subpart at two different placements is two different sets of connectors,
+    # which is how a cable ends up with a plug at each end.
+    bodies_by_name = {}
+    budget = _GEOMETRY_FILES
+    for _ in range(_GEOMETRY_DEPTH + 1):
+        if not level or budget <= 0:
+            break
+        level = level[:budget]
+        budget -= len(level)
+        wanted = list(dict.fromkeys(name for name, _, _ in level if name not in bodies_by_name))
+        if wanted:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=_HEADER_WORKERS) as pool:
+                for name, body in zip(wanted, pool.map(_fetch_ldraw_file, wanted)):
+                    bodies_by_name[name] = body
+        bodies = [bodies_by_name.get(name) for name, _, _ in level]
+        following = []
+        for (_, matrix, translation), body in zip(level, bodies):
+            if not body:
+                continue
+            for name, child_matrix, child_translation in _parse_references(body):
+                composed = _matrix_product(matrix, child_matrix)
+                moved = _matrix_apply(matrix, child_translation)
+                position = tuple(moved[i] + translation[i] for i in range(3))
+                connector = _GEOMETRY_CONNECTORS.get(name.split("/")[-1])
+                if connector is not None:
+                    for interface, mouth, axis in connector:
+                        offset = _matrix_apply(composed, mouth)
+                        found.append(
+                            (
+                                interface,
+                                tuple(position[i] + offset[i] for i in range(3)),
+                                _matrix_apply(composed, axis),
+                                composed,
+                            )
+                        )
+                    continue
+                if not _PART_REF_RE.match(name):
+                    continue  # a primitive: a leaf, and never fetched
+                following.append((name, composed, position))
+        level = following
+    return found
+
+
+def _orientation_towards(direction, roll_matrix):
+    """An (axis, angle) whose Z is 'direction', keeping the connector's own roll."""
+    length = math.sqrt(sum(v * v for v in direction))
+    if length < 1e-9:
+        return None
+    z_axis = tuple(v / length for v in direction)
+    # X from the connector's own X, made perpendicular to Z; Y completes the frame.
+    x_raw = _matrix_apply(roll_matrix, (1, 0, 0))
+    x_raw = tuple(x_raw[i] * 1.0 for i in range(3))
+    projection = sum(x_raw[i] * z_axis[i] for i in range(3))
+    x_axis = tuple(x_raw[i] - projection * z_axis[i] for i in range(3))
+    scale = math.sqrt(sum(v * v for v in x_axis))
+    if scale < 1e-6:  # X parallel to Z: any perpendicular will do
+        x_axis = (1.0, 0.0, 0.0) if abs(z_axis[0]) < 0.9 else (0.0, 1.0, 0.0)
+        projection = sum(x_axis[i] * z_axis[i] for i in range(3))
+        x_axis = tuple(x_axis[i] - projection * z_axis[i] for i in range(3))
+        scale = math.sqrt(sum(v * v for v in x_axis))
+    x_axis = tuple(v / scale for v in x_axis)
+    y_axis = (
+        z_axis[1] * x_axis[2] - z_axis[2] * x_axis[1],
+        z_axis[2] * x_axis[0] - z_axis[0] * x_axis[2],
+        z_axis[0] * x_axis[1] - z_axis[1] * x_axis[0],
+    )
+    # columns are the images of X, Y and Z
+    return _orientation_of_matrix(tuple((x_axis[i], y_axis[i], z_axis[i]) for i in range(3)))
+
+
+def _orientation_of_matrix(m):
+    """An (axis, angle) orientation from a rotation matrix, via its quaternion."""
+    trace = m[0][0] + m[1][1] + m[2][2]
+    if trace > 0:
+        s = math.sqrt(trace + 1.0) * 2
+        q = (0.25 * s, (m[2][1] - m[1][2]) / s, (m[0][2] - m[2][0]) / s, (m[1][0] - m[0][1]) / s)
+    elif m[0][0] > m[1][1] and m[0][0] > m[2][2]:
+        s = math.sqrt(1.0 + m[0][0] - m[1][1] - m[2][2]) * 2
+        q = ((m[2][1] - m[1][2]) / s, 0.25 * s, (m[0][1] + m[1][0]) / s, (m[0][2] + m[2][0]) / s)
+    elif m[1][1] > m[2][2]:
+        s = math.sqrt(1.0 + m[1][1] - m[0][0] - m[2][2]) * 2
+        q = ((m[0][2] - m[2][0]) / s, (m[0][1] + m[1][0]) / s, 0.25 * s, (m[1][2] + m[2][1]) / s)
+    else:
+        s = math.sqrt(1.0 + m[2][2] - m[0][0] - m[1][1]) * 2
+        q = ((m[1][0] - m[0][1]) / s, (m[0][2] + m[2][0]) / s, (m[1][2] + m[2][1]) / s, 0.25 * s)
+    return _orientation_of(q)
+
+
+def _electric_implements(pid):
+    """The ports of a Mindstorms part, read from its geometry.
+
+    LDraw coordinates become the meshed part space the wrapper produces -
+    (x, -y, z) * 0.4 - and each connector's mouth becomes one instance. A hole
+    contributes one instance per mouth, named h<i>; a socket or a plug is named
+    after what it is, numbered in the order the walk meets them.
+    """
+    connectors = _geometry_connectors(pid)
+    if not connectors:
+        return None
+    implements = {}
+    counters = {}
+    seen = set()
+    for interface, position, axis, roll in sorted(connectors, key=lambda c: (c[0], c[1])):
+        place = (round(position[0] * _LDU_MM, 4), round(-position[1] * _LDU_MM, 4), round(position[2] * _LDU_MM, 4))
+        direction = (axis[0], -axis[1], axis[2])
+        key = (interface, place, tuple(round(v, 3) for v in direction))
+        if key in seen:
+            continue
+        seen.add(key)
+        # the roll matrix travels into the part space the same way
+        flip = ((1, 0, 0), (0, -1, 0), (0, 0, 1))
+        orientation = _orientation_towards(direction, _matrix_product(flip, _matrix_product(roll, flip)))
+        if orientation is None:
+            continue
+        prefix = {_PIN_HOLE_IFACE: "h", _RJ12_SOCKET_IFACE: "socket", _RJ12_PLUG_IFACE: "plug"}[interface]
+        index = counters.get(interface, 0)
+        counters[interface] = index + 1
+        implements.setdefault(interface, {})["%s%d" % (prefix, index)] = _port(place, orientation)
+    return implements or None
+
+
+# The families beyond Technic, each derived from the name in the same way. They
+# are kept apart from the Technic table only because they are a different half
+# of the LEGO system, not because they work differently.
+_OTHER_RULES = (
+    (_GEAR_RE, _gear_implements),
+    (_DUPLO_RE, _duplo_implements),
+    (_MINIFIG_HEAD_RE, _minifig_head),
+    (_MINIFIG_TORSO_RE, _minifig_torso),
+    (_MINIFIG_HIPS_RE, _minifig_hips),
+    (_TYRE_RE, _tyre_implements),
+    (_WHEEL_RE, _wheel_implements),
+)

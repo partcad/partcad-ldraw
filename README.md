@@ -36,24 +36,63 @@ parts together with `connect:` instead of placing them by hand:
 
 | Interface | Attached to | One instance per |
 | --- | --- | --- |
-| `stud` / `anti-stud` | every rectangular `Brick`, `Plate` and `Tile`, and the Technic bricks below | stud, on the top and the bottom plane |
+| `stud` / `anti-stud` | every rectangular `Brick`, `Plate` and `Tile`, the Technic bricks below, and the top of a minifig head | stud, on the top and the bottom plane |
 | `technic-pin-hole` | `Technic Brick 1 x N with Hole(s)`, `Technic Beam N` | mouth of each round hole |
 | `technic-axle-hole` | `Technic Brick 1 x N with ... Axlehole` | mouth of the cross hole |
 | `technic-pin` | `Technic Pin`, `Technic Pin Long`, `Technic Pin 1/2`, and their friction variants | end of the pin |
 | `technic-axle` | `Technic Axle N` | end of the shaft |
+| `gear-tooth` / `gear-gap` | `Technic Gear N Tooth`, including the double-bevel and clutch variants | tooth, and each gap between two |
+| `minifig-neck` / `-socket` | `Minifig Torso` / `Minifig Head` | the one joint |
+| `minifig-waist` / `-socket` | `Minifig Hips` / `Minifig Torso` | the one joint |
+| `duplo-stud` / `duplo-anti-stud` | `Duplo Brick A x B` | stud, on the 16 mm grid |
+| `wheel-rim` / `tyre-bore` | `Wheel W x D` / `Tyre W/ A x D` | part, named for its fitting diameter |
+| `rj12-plug` / `rj12-socket` | the Mindstorms cables, bricks, motors and sensors | plug, and each socket |
 
-Every position is derived analytically from the part's name — no geometry is
+All but the last are derived analytically from the part's name — no geometry is
 fetched — so attaching them costs nothing even when a whole category is
 enumerated. What a connection leaves free is declared with it: a pin turns in a
-round hole (`turnZ`), and an axle slides through one (`moveZ`).
+round hole (`turnZ`), an axle slides through one (`moveZ`), and a minifig's head
+and torso turn on their joints.
+
+**Gears** are the interesting case: a mesh is a port pair once each tooth and
+each gap is a port. LEGO gears are cut to one module, so a port on the pitch
+circle sits half a millimetre per tooth from the centre, and bringing a tooth
+port and a gap port together leaves the two gears the sum of their pitch radii
+apart — the centre distance the pair is cut for — with their teeth lined up.
+
+**Mindstorms** is the one family read from geometry rather than from its name,
+because "Electric Mindstorms EV3 Large Motor" says nothing about where anything
+is. See *Reading ports from geometry* below.
 
 Coverage is deliberately narrow. A name that says more than the rule knows — a
-bent beam, an axle with a stop, a brick with an open centre — is left alone
-rather than guessed at, because its features are not where the plain name would
-put them.
+bent beam, an axle with a stop, a brick with an open centre, a sculpted
+character head, a Duplo brick with a curved top — is left alone rather than
+guessed at, because its features are not where the plain name would put them.
+Headgear is left out for the same reason: it would be an ordinary anti-stud at
+the head's origin, but no name rule gets past ~96% of the 369 parts.
 
-`lego-demo/` builds five assemblies out of this, and its `README.md` describes
-the interfaces in detail.
+## Reading ports from geometry
+
+The Mindstorms parts have no dimensions in their names and put no connector in
+their own `.dat` — every one is inside a subpart, one to four levels down. So
+for these, and only these, the ports are read from the geometry.
+
+That is affordable because of one observation: **a connector is a primitive, and
+a primitive is identified by the reference line that names it**. Primitives are
+therefore leaves and are never fetched — only part files and `s\` subparts are.
+Each file lists its own references, so the whole of the next level is known as
+soon as the current one is parsed, and is fetched in parallel. Measured against
+the LDraw library, that finds exactly the same connectors as an exhaustive walk:
+
+| | files fetched, exhaustive | pruned | connectors found |
+| --- | ---: | ---: | --- |
+| EV3 brick (95646) | 86 | **27** | identical |
+| NXT motor (53787) | 70 | **14** | identical |
+| EV3 medium motor (99455) | 57 | **8** | identical |
+| an ordinary brick (3001) | 10 | **2** | identical |
+
+`lego-demo/` builds seven assemblies out of all this, and its `README.md`
+describes the interfaces in detail.
 
 ## Layout
 
