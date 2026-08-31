@@ -838,7 +838,19 @@ _GEOMETRY_DEPTH = 4  # every Mindstorms connector sits at depth 4 or less
 _GEOMETRY_FILES = 64  # a bound on one part's walk, so a cycle cannot run away
 # What a reference has to look like to be worth fetching: an LDraw part id, or a
 # subpart of one. Everything else is a primitive, and a leaf.
-_PART_REF_RE = re.compile(r"^(?:s/)?\d[0-9a-z]*\.dat$", re.IGNORECASE)
+#
+# The 'u' prefix is part of the vocabulary: 625 of the files under parts/ are
+# named u<digits>, and a handful of them carry connectors (u9449 and u9450, the
+# RCX modules, hold two pin holes each). They are out of reach at the budget
+# above and so this changes nothing today - it is here so that raising the
+# budget does the right thing rather than a surprising one.
+#
+# A hyphen must NOT be allowed in, however tempting 's/883-1.dat' makes it look.
+# The primitives are full of digit-initial hyphenated names - 4-4cyli, 1-4ndis,
+# 2-4disc - and admitting those turns every primitive into something the walk
+# descends into, which exhausts the file budget on geometry that holds no
+# connectors: measured on the EV3 brick, 36 connectors become 4.
+_PART_REF_RE = re.compile(r"^(?:s/)?u?\d[0-9a-z]*\.dat$", re.IGNORECASE)
 
 # The connectors this walk understands, and where each one's port is in the
 # primitive's own frame: the mouth (in LDU) and the axis that points out of the

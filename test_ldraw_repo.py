@@ -645,6 +645,18 @@ def test_a_part_ref_is_a_number_and_a_primitive_is_a_word():
         assert not plugin._PART_REF_RE.match(name), name
 
 
+def test_a_u_prefixed_file_is_a_part_and_a_hyphenated_one_is_not():
+    # 625 files under parts/ are named u<digits>; u9449 and u9450 are the RCX
+    # modules, and each holds two pin holes.
+    for name in ("u9449.dat", "u9208.dat", "s/u9013.dat"):
+        assert plugin._PART_REF_RE.match(name), name
+    # ...but a hyphen stays out, or every digit-initial primitive becomes
+    # something the walk descends into and the file budget goes on geometry
+    # that holds no connectors.
+    for name in ("4-4cyli.dat", "1-4ndis.dat", "2-4disc.dat", "4-4edge.dat"):
+        assert not plugin._PART_REF_RE.match(name), name
+
+
 def test_geometry_ports_land_where_the_geometry_says(fake_library):
     implements = plugin._electric_implements("3700")
     # LDraw (0, 10, 10) is (0, -4, 4) once the wrapper has meshed it, and the

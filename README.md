@@ -71,6 +71,41 @@ guessed at, because its features are not where the plain name would put them.
 Headgear is left out for the same reason: it would be an ordinary anti-stud at
 the head's origin, but no name rule gets past ~96% of the 369 parts.
 
+### The known bound on the stud grid
+
+`Brick | Plate | Tile A x B` says how big the part is, not where its studs are.
+The two coincide for a plain brick and part company everywhere else, so the grid
+this package serves is wrong for some of the parts it accepts. Counting the
+studs in the geometry of all 2476 parts the rule matches:
+
+| | parts | wrong grid |
+| --- | ---: | ---: |
+| `Brick` | 707 | 60 (8.5%) |
+| `Plate` | 370 | 146 (39.5%) |
+| `Tile` | 1399 | 10 (0.7%) |
+| **total** | **2476** | **216 (8.7%)** |
+
+It is not only a matter of count. `2357`, "Brick 2 x 2 Corner", has three studs
+at `(0,0) (0,20) (20,0)` where the rule puts four at `(±10, ±10)`: a corner
+brick does not use the centred origin a rectangular one does, so every position
+is wrong. `6177`, "Plate 8 x 8 Round with 2 x 2 Centre Studs", is given 64 where
+it has 4. `Brick 1 x 1 with Studs on Four Sides` has five studs facing five ways,
+which no `A x B` rule can express at all. Sorted by cause, the 216 are: 57 with a
+non-rectangular envelope, 53 with fewer studs than `A x B`, 48 with cutouts, 30
+whose name already states the real stud set, 15 with studs added on a side, 7
+inverted, and 6 with the right count in the wrong places.
+
+Filtering the names does not fix this. A denylist of the shape words — `Corner`,
+`Round`, `Bent`, `Curved`, `Wedge`, `Triangular`, `Octagonal`, `Headlight` —
+removes 73 of the 216, leaves 143, and takes 372 correct parts with it: 5.1
+correct grids destroyed per wrong one fixed. The fix is to read the studs from
+the geometry, the way the Mindstorms ports below are read; the stud primitives
+say what they are in their own descriptions (`Stud`, `Stud Open`, `Stud Tube
+Solid`, `Stud Group 2 x 2`, `Stud Duplo Open`), so the classifier is a closed
+vocabulary rather than a guess. Measured over the same 2476 parts that costs
+0.30 extra distinct fetches per part, because the subparts and primitives under
+them are shared. Until then the grid above is served as-is.
+
 ## Reading ports from geometry
 
 The Mindstorms parts have no dimensions in their names and put no connector in
