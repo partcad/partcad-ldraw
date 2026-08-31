@@ -467,6 +467,24 @@ def _technic_pin_long(m):
     }
 
 
+def _technic_pin_three_quarter(m):
+    """Technic Pin 3/4: a full pin one way and a half one the other.
+
+    The name does not say which end is which, which is why this was left out
+    while the rules were names alone. LDraw's own geometry does: 32002 places
+    "connect" (Technic Pin 1.0 with Base Collar) toward -X and "connect3"
+    (Technic Pin 0.5) toward +X. Both collars sit on the origin, so the ports
+    are where a full pin's would be; what the geometry settles is which end
+    goes in only half way, and that is now in the instance names.
+    """
+    return {
+        _PIN_IFACE: {
+            "left": _port((0, 0, 0), _Z_TO_MINUS_X),
+            "rightHalf": _port((0, 0, 0), _Z_TO_PLUS_X),
+        }
+    }
+
+
 def _technic_pin_half(m):
     """Technic Pin 1/2: a pin one way and a stud the other, which is what makes
     it the part that joins the stud half of the system to the Technic half."""
@@ -493,6 +511,7 @@ _TECHNIC_RULES = (
         _technic_pin_long,
     ),
     (re.compile(r"^Technic\s+Pin\s+1/2$", re.IGNORECASE), _technic_pin_half),
+    (re.compile(r"^Technic\s+Pin\s+3/4$", re.IGNORECASE), _technic_pin_three_quarter),
     (re.compile(r"^Technic\s+Pin(?:\s+with\s+Friction(?:\s+and\s+Slots?)?)?$", re.IGNORECASE), _technic_pin),
 )
 
@@ -525,9 +544,28 @@ def _lego_implements(desc, pid=None):
     implements = _brick_implements(desc) or _name_implements(desc)
     if implements is None and pid and _ELECTRIC_RE.match(desc):
         implements = _electric_implements(pid)
+    if implements is None and pid and _HEADGEAR_RE.match(desc):
+        implements = _headgear_implements(pid)
     if pid:
         implements = _with_geometry_studs(implements, pid)
     return implements
+
+
+def _with_geometry_anti_studs(implements, pid):
+    """Replace the name-derived anti-studs with the ones the underside has.
+
+    Only when the tubes settle it; otherwise the name's answer stands, because
+    an anti-stud no tube marks may still be there.
+    """
+    anti = _geometry_anti_studs(pid)
+    if not anti:
+        return implements
+    implements = dict(implements) if implements else {}
+    named = implements.get(_ANTI_IFACE)
+    if named and sorted(named.values()) == sorted(anti.values()):
+        return implements or None  # same ports: keep the names they had
+    implements[_ANTI_IFACE] = anti
+    return implements or None
 
 
 def _with_geometry_studs(implements, pid):
@@ -538,6 +576,7 @@ def _with_geometry_studs(implements, pid):
     turning those into ports is a separate piece of work. When the walk cannot
     see the whole part it returns None and the name's answer is left alone.
     """
+    implements = _with_geometry_anti_studs(implements, pid)
     studs = _geometry_stud_implements(pid)
     if studs is None:
         return implements
@@ -1292,6 +1331,144 @@ def _stud_instances_by_grid(ports):
             name = "%s_%d" % (name, nth)
         instances[name] = _port(place, orientation)
     return instances
+
+
+# --- anti-studs read from the geometry ---------------------------------------
+#
+# The underside is a harder read than the top, because LDraw's tubes do not sit
+# where the anti-studs are. "Stud Tube Open" sits at the centre of a 2 x 2 of
+# them and "Stud Tube Solid" between two, so the anti-studs are the corners
+# around a tube rather than the tube itself. Which two a solid tube separates is
+# not in its matrix - LDraw places every one of them the same way up - so the
+# part's own studs say which axis, and a tube whose neighbours are not both on
+# that lattice is not guessed at.
+#
+# The same primitives mean something else on a minifig's hat, where a single
+# flipped open tube *is* the socket rather than the spacer between four. That is
+# why this only runs on a part that has studs of its own to check the lattice
+# against; the headgear rule below handles the other reading explicitly.
+_SOLID_TUBES = ("stud3", "stud3a")  # "Stud Tube Solid": sits between two
+_UNDERSIDE_CROSS = "stud12"  # "Stud Underside Cross": a different feature
+_ANTI_PLANE_OFFSET = (0.0, -4.0, 0.0)  # a tube spans y in [-4, 0] in its own frame
+
+
+def _tube_member(base):
+    """The primitive a stud name stands for; a group resolves to what it groups."""
+    stem = base[: -len(".dat")].lower() if base.lower().endswith(".dat") else base.lower()
+    group = _STUD_GROUP_RE.match(stem)
+    if group:
+        stem = "stud" + group.group(1).lower()
+    else:
+        alias = _STUD_GROUP_ALIAS_RE.match(stem)
+        if alias:
+            stem = "stud2" if alias.group(2) else "stud"
+    if stem.startswith(_LOWRES_STUD_PREFIX):
+        stem = "stud" + stem[len(_LOWRES_STUD_PREFIX) :]
+    return stem
+
+
+def _geometry_anti_studs(pid):
+    """The anti-stud instances of a part read from its underside tubes, or None
+    when the geometry does not settle it and the name should be left to stand.
+
+    None rather than an empty answer on purpose: unlike a stud, whose absence
+    the walk can see, an anti-stud that no tube marks may still be there.
+    """
+    studs, tubes = [], []
+
+    def visit(base, composed, position):
+        """Claim a stud primitive, keeping the tubes and where the studs are."""
+        kind, offsets = _stud_primitive(base)
+        if kind is None:
+            return False
+        for offset in offsets:
+            moved = _matrix_apply(composed, offset)
+            place = tuple(position[i] + moved[i] for i in range(3))
+            (studs if kind == "stud" else tubes).append((_tube_member(base), place, composed))
+        return True
+
+    if not _walk_geometry(pid, visit) or not tubes or not studs:
+        return None
+
+    lattice = {(round(p[0], 1), round(p[2], 1)) for _, p, _ in studs}
+    half = _LDU_STUD_PITCH / 2.0
+    found = {}
+    for stem, place, composed in tubes:
+        if stem == _UNDERSIDE_CROSS:
+            return None  # not a tube between studs; do not guess at the rest
+        far = _matrix_apply(composed, _ANTI_PLANE_OFFSET)
+        # A tube must run straight down the part, or this is not an underside.
+        if abs(far[0]) > 1e-6 or abs(far[2]) > 1e-6 or far[1] <= 0:
+            return None
+        y = place[1] + far[1]
+        x, z = round(place[0], 1), round(place[2], 1)
+        if stem in _SOLID_TUBES:
+            along_x = {(round(x - half, 1), z), (round(x + half, 1), z)}
+            along_z = {(x, round(z - half, 1)), (x, round(z + half, 1))}
+            if along_x <= lattice and not along_z <= lattice:
+                corners = along_x
+            elif along_z <= lattice and not along_x <= lattice:
+                corners = along_z
+            else:
+                return None  # the studs do not say which two this one separates
+        else:
+            corners = {(round(x + dx, 1), round(z + dz, 1)) for dx in (-half, half) for dz in (-half, half)}
+        for corner in corners:
+            found[corner] = y
+    ports = [
+        (
+            (
+                round(x * _LDU_MM, 4),
+                round(-y * _LDU_MM, 4),
+                round(z * _LDU_MM, 4),
+            ),
+            _ANTI_STUD_ROT,
+        )
+        for (x, z), y in found.items()
+    ]
+    return _stud_instances_by_grid(ports)
+
+
+# --- headgear ----------------------------------------------------------------
+#
+# A hat, helmet or hairpiece attaches by one socket over the head's stud, which
+# would be an ordinary anti-stud at the part's origin. It was left out while the
+# rules were names alone, because no name rule gets past ~96% of these 369
+# parts. The geometry says it outright: LDraw draws the socket with a single
+# *open* tube, flipped, whose far end is the part's own origin - the opposite
+# reading of the same primitive from a brick's underside, where an open tube is
+# the spacer between four anti-studs. The name picks the family and the
+# geometry confirms the socket, so neither has to be trusted alone.
+_HEADGEAR_RE = re.compile(r"^Minifig (?:Hat|Headdress|Helmet|Cap|Hair|Headgear)\b", re.IGNORECASE)
+
+
+def _headgear_implements(pid):
+    """The anti-stud of a piece of headgear, read from its socket, or None."""
+    tubes, studs = [], []
+
+    def visit(base, composed, position):
+        """Claim a stud primitive, keeping the tubes and noting any male stud."""
+        kind, offsets = _stud_primitive(base)
+        if kind is None:
+            return False
+        for offset in offsets:
+            moved = _matrix_apply(composed, offset)
+            place = tuple(position[i] + moved[i] for i in range(3))
+            (studs if kind == "stud" else tubes).append((_tube_member(base), place, composed))
+        return True
+
+    if not _walk_geometry(pid, visit) or studs or len(tubes) != 1:
+        return None
+    stem, place, composed = tubes[0]
+    if stem in _SOLID_TUBES or stem == _UNDERSIDE_CROSS:
+        return None
+    far = _matrix_apply(composed, _ANTI_PLANE_OFFSET)
+    mouth = tuple(place[i] + far[i] for i in range(3))
+    # The socket has to open at the part's own origin, which is what makes it
+    # the thing that goes over a head rather than a tube inside a body.
+    if any(abs(v) > 1.0 for v in mouth):
+        return None
+    return {_ANTI_IFACE: {"anti": _port((0.0, 0.0, 0.0), _ANTI_STUD_ROT)}}
 
 
 # The families beyond Technic, each derived from the name in the same way. They

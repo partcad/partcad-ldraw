@@ -210,7 +210,6 @@ def test_a_name_that_says_more_than_the_rule_knows_gets_nothing():
         "Technic Plate  1 x  4 with Holes",
         # A full pin one way and a half one the other, which "left" and "right"
         # would not tell apart.
-        "Technic Pin  3/4",
     ):
         assert plugin._lego_implements(desc) is None, desc
 
@@ -606,7 +605,7 @@ _FAKE_LIBRARY = {
     "3003.dat": (
         "0 Brick  2 x  2\n"
         "1 16 0 0 0 1 0 0 0 1 0 0 0 1 stug-2x2.dat\n"
-        "1 16 0 -24 0 1 0 0 0 1 0 0 0 1 stud4.dat\n"
+        "1 16 0 4 0 1 0 0 0 -5 0 0 0 1 stud4.dat\n"
         "1 16 0 0 0 1 0 0 0 1 0 0 0 1 4-4cyli.dat\n"
     ),
     # the corner brick: three studs, on an origin a rectangular part never uses
@@ -615,6 +614,8 @@ _FAKE_LIBRARY = {
         "1 16 0 0 0 1 0 0 0 1 0 0 0 1 stud.dat\n"
         "1 16 0 0 20 1 0 0 0 1 0 0 0 1 stud.dat\n"
         "1 16 20 0 0 1 0 0 0 1 0 0 0 1 stud.dat\n"
+        "1 16 0 4 10 1 0 0 0 -5 0 0 0 1 stud3.dat\n"
+        "1 16 10 4 0 1 0 0 0 -5 0 0 0 1 stud3.dat\n"
     ),
     # a stud that does not face up: the headlight brick's second stud
     "4070.dat": (
@@ -624,6 +625,20 @@ _FAKE_LIBRARY = {
     ),
     # a minifig head: one stud, which its name rule calls "stud" and not "c0r0"
     "3626b.dat": ("0 Minifig Head\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 stud.dat\n"),
+    # a 1 x 1: one stud and no tube, so nothing contradicts the name
+    "3005.dat": ("0 Brick  1 x  1\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 stud.dat\n"),
+    # a 1 x 2 brick: two studs on top, one SOLID tube between them underneath
+    "3004.dat": (
+        "0 Brick  1 x  2\n"
+        "1 16 -10 0 0 1 0 0 0 1 0 0 0 1 stud.dat\n"
+        "1 16 10 0 0 1 0 0 0 1 0 0 0 1 stud.dat\n"
+        "1 16 0 4 0 1 0 0 0 -5 0 0 0 1 stud3.dat\n"
+    ),
+    # a minifig hat: one OPEN tube, flipped, whose far end is the origin - the
+    # socket itself, not the spacer an open tube means under a brick
+    "30167.dat": ("0 Minifig Hat Wide Brim Flat\n1 16 0 -4 0 1 0 0 0 -1 0 0 0 1 stud4.dat\n"),
+    # ...and one that is not a socket: the tube does not open at the origin
+    "99999.dat": ("0 Minifig Hat Nonsense\n1 16 0 40 0 1 0 0 0 -1 0 0 0 1 stud4.dat\n"),
     # a part whose studs belong to another building system
     "3011.dat": (
         "0 Duplo Brick  2 x  4\n"
@@ -756,9 +771,9 @@ def test_the_corner_brick_gets_the_studs_it_has(fake_library):
     # three, not the four the name implies, and on the part's own origin
     assert len(studs) == 3
     assert sorted(p[0] for p in studs.values()) == [[0.0, 0.0, 0.0], [0.0, 0.0, 8.0], [8.0, 0.0, 0.0]]
-    # the anti-stud grid still comes from the name; the tubes are read but not
-    # yet served
-    assert len(implements[ANTI]) == 4
+    # and the underside matches: the two solid tubes put three anti-studs under
+    # the three studs, where the name put four in a square
+    assert len(implements[ANTI]) == 3
 
 
 def test_a_stud_that_does_not_face_up_is_still_a_stud(fake_library):
@@ -792,3 +807,51 @@ def test_the_geometry_keeps_the_names_the_name_rule_gave(fake_library):
     # ...while a part the name got wrong is renamed onto the grid, because its
     # studs are not the ones the name described
     assert sorted(plugin._lego_implements("Brick  2 x  2 Corner", "2357")[STUD]) == ["c0r0", "c0r1", "c1r0"]
+
+
+def test_an_open_tube_is_four_anti_studs_and_a_solid_one_is_two(fake_library):
+    # 2 x 2: one "Stud Tube Open" at the centre of the four
+    square = plugin._geometry_anti_studs("3003")
+    assert len(square) == 4
+    assert sorted(p[0][:1] + p[0][2:] for p in square.values()) == [[-4.0, -4.0], [-4.0, 4.0], [4.0, -4.0], [4.0, 4.0]]
+    # 1 x 2: one "Stud Tube Solid" between the two, and the studs say which axis
+    strip = plugin._geometry_anti_studs("3004")
+    assert sorted(p[0] for p in strip.values()) == [[-4.0, -9.6, 0.0], [4.0, -9.6, 0.0]]
+
+
+def test_the_anti_studs_sit_on_the_plane_the_tube_reaches():
+    # a tube spans y in [-4, 0] in its own frame, so its far end is the bottom
+    # of the part: 24 LDU for a brick, which is -9.6 mm once meshed
+    assert plugin._ANTI_PLANE_OFFSET == (0.0, -4.0, 0.0)
+
+
+def test_the_corner_brick_gets_the_underside_it_has(fake_library):
+    anti = plugin._lego_implements("Brick  2 x  2 Corner", "2357")[ANTI]
+    # three, under its three studs, not the four the name implies
+    assert len(anti) == 3
+    assert sorted(p[0] for p in anti.values()) == [[0.0, -9.6, 0.0], [0.0, -9.6, 8.0], [8.0, -9.6, 0.0]]
+
+
+def test_a_part_the_tubes_do_not_settle_keeps_the_name_grid(fake_library):
+    # a 1 x 1 has no tube at all, so nothing contradicts the name
+    assert plugin._geometry_anti_studs("3005") is None
+    assert sorted(plugin._lego_implements("Brick  1 x  1", "3005")[ANTI]) == ["c0r0"]
+
+
+def test_headgear_takes_its_socket_from_the_geometry(fake_library):
+    # the same open tube that means "spacer" under a brick means "socket" here,
+    # which is why the name picks the family and the geometry confirms it
+    hat = plugin._lego_implements("Minifig Hat Wide Brim Flat", "30167")
+    assert sorted(hat[ANTI]) == ["anti"]
+    assert hat[ANTI]["anti"][0] == [0.0, 0.0, 0.0]
+    # a tube that does not open at the origin is not a socket, and is left alone
+    assert plugin._lego_implements("Minifig Hat Nonsense", "99999") is None
+
+
+def test_the_three_quarter_pin_says_which_end_is_which():
+    # LDraw places "connect" (a full pin) toward -X and "connect3" (a half one)
+    # toward +X; the name says neither, which is why this needed the geometry
+    pin = plugin._lego_implements("Technic Pin  3/4")[PIN]
+    assert sorted(pin) == ["left", "rightHalf"]
+    assert pin["left"][1:] == [list(plugin._Z_TO_MINUS_X[0]), plugin._Z_TO_MINUS_X[1]]
+    assert pin["rightHalf"][1:] == [list(plugin._Z_TO_PLUS_X[0]), plugin._Z_TO_PLUS_X[1]]

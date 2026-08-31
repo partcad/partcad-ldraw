@@ -68,8 +68,17 @@ Coverage is deliberately narrow. A name that says more than the rule knows — a
 bent beam, an axle with a stop, a brick with an open centre, a sculpted
 character head, a Duplo brick with a curved top — is left alone rather than
 guessed at, because its features are not where the plain name would put them.
-Headgear is left out for the same reason: it would be an ordinary anti-stud at
-the head's origin, but no name rule gets past ~96% of the 369 parts.
+Headgear used to be left out for the same reason — no name rule gets past ~96%
+of the 371 parts — and is now served by name *and* geometry together: the name
+picks the family, and the socket has to be there in the geometry for a port to
+be emitted. LDraw draws it as a single open tube, flipped, whose far end is the
+part's own origin, which is the opposite reading of the same primitive from a
+brick's underside. 284 of the 371 are confirmed that way; the other 87, whose
+geometry shows no single socket, are still left alone.
+
+`Technic Pin 3/4` came back for the same reason. Its name does not say which end
+is the short one, but 32002 places `connect` (Technic Pin 1.0) toward -X and
+`connect3` (Technic Pin 0.5) toward +X, so the instances can be named for it.
 
 ### Where the studs come from
 
@@ -121,9 +130,25 @@ It costs 0.30 extra distinct fetches per part over the `Brick`/`Plate`/`Tile`
 families and 1.09 over the whole library, because the subparts and primitives
 beneath them are shared and cached.
 
-**The anti-studs still come from the name.** The same walk reads the underside
-tubes for free, but a tube sits *between* four studs rather than under one, so
-turning them into anti-stud ports is its own piece of work.
+### Where the anti-studs come from
+
+The same walk, and the same reasoning, with one twist: LDraw's tubes do not sit
+where the anti-studs are. `Stud Tube Open` sits at the centre of a 2 x 2 of them
+and `Stud Tube Solid` between two, so the anti-studs are the corners *around* a
+tube rather than the tube itself, on the plane the tube's far end reaches — 24
+LDU down for a brick, 8 for a plate. Which two a solid tube separates is not in
+its matrix, because LDraw places every one of them the same way up, so the
+part's own studs say which axis and a tube whose neighbours are not both on that
+lattice is not guessed at.
+
+Over the library that leaves 12,738 parts unchanged, corrects 131, adds an
+underside to 1,752 that had none, and — the property that matters — takes one
+away from nobody. The corner brick gets three anti-studs under its three studs
+where the name put four in a square.
+
+Where the tubes do not settle it, the name still stands. That is deliberate and
+not the same rule as for studs: the walk can *see* that a part has no studs, but
+an anti-stud that no tube happens to mark may still be there.
 
 ## Reading ports from geometry
 

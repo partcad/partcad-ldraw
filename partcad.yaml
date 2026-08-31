@@ -39,8 +39,10 @@ dependencies:
     # the Technic interfaces (pin, pin hole, axle, axle hole) and the stud grid
     # of the Technic bricks that carry them; v3 added the gear, minifig, Duplo,
     # wheel/tyre and RJ12 interfaces; v4 moved the studs off the part's name and
-    # onto its geometry, which changes which studs a part carries and where.
-    cacheVersion: 4
+    # onto its geometry, which changes which studs a part carries and where; v5
+    # did the same for the anti-studs underneath, and added the headgear socket
+    # and the 3/4 pin, both of which the geometry settles and a name cannot.
+    cacheVersion: 5
 
 repositories:
   ldraw_repo:
