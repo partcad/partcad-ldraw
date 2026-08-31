@@ -743,26 +743,6 @@ _GEAR_RE = re.compile(
 )
 
 
-def _quaternion_of(axis, angle_deg):
-    """The unit quaternion of a turn of 'angle_deg' about 'axis'."""
-    half = math.radians(angle_deg) / 2.0
-    norm = math.sqrt(sum(v * v for v in axis)) or 1.0
-    s = math.sin(half) / norm
-    return (math.cos(half), axis[0] * s, axis[1] * s, axis[2] * s)
-
-
-def _quaternion_product(a, b):
-    """The quaternion product 'a * b': the turn 'b', then the turn 'a'."""
-    aw, ax, ay, az = a
-    bw, bx, by, bz = b
-    return (
-        aw * bw - ax * bx - ay * by - az * bz,
-        aw * bx + ax * bw + ay * bz - az * by,
-        aw * by - ax * bz + ay * bw + az * bx,
-        aw * bz + ax * by - ay * bx + az * bw,
-    )
-
-
 def _orientation_of(quaternion):
     """An (axis, angle) orientation, as '_port' wants it, from a quaternion."""
     w, x, y, z = quaternion
@@ -942,11 +922,11 @@ def _geometry_connectors(pid):
         wanted = list(dict.fromkeys(name for name, _, _ in level if name not in bodies_by_name))
         if wanted:
             with concurrent.futures.ThreadPoolExecutor(max_workers=_HEADER_WORKERS) as pool:
-                for name, body in zip(wanted, pool.map(_fetch_ldraw_file, wanted)):
+                for name, body in zip(wanted, pool.map(_fetch_ldraw_file, wanted), strict=True):
                     bodies_by_name[name] = body
         bodies = [bodies_by_name.get(name) for name, _, _ in level]
         following = []
-        for (_, matrix, translation), body in zip(level, bodies):
+        for (_, matrix, translation), body in zip(level, bodies, strict=True):
             if not body:
                 continue
             for name, child_matrix, child_translation in _parse_references(body):
