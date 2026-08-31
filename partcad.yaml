@@ -38,7 +38,8 @@ dependencies:
     # stud / anti-stud interfaces to every Brick / Plate / Tile config; v2 added
     # the Technic interfaces (pin, pin hole, axle, axle hole) and the stud grid
     # of the Technic bricks that carry them; v3 added the gear, minifig, Duplo,
-    # wheel/tyre and RJ12 interfaces.
+    # wheel/tyre and RJ12 interfaces; v4 moved the studs off the part's name and
+    # onto its geometry, which changes which studs a part carries and where.
     cacheVersion: 4
 
 repositories:
@@ -140,6 +141,9 @@ interfaces:
     ports:
       anti:
         sketch: stud-sketch
+    motion:
+      type: continuous
+      axis: [0, 0, 1]
 
   # --- Technic ---------------------------------------------------------------
   #
@@ -153,9 +157,6 @@ interfaces:
   # mouth. As with the studs above, a port sits on the surface where the two
   # parts touch, with its Z axis pointing out of its own part, so that the mate
   # flip brings the two together instead of turning one of them around.
-    motion:
-      type: continuous
-      axis: [0, 0, 1]
   technic-pin-hole:
     desc: >-
       A round Technic hole, 4.8 mm across, as found in a Technic brick or a
@@ -286,15 +287,15 @@ interfaces:
     ports:
       anti:
         sketch: duplo-stud-sketch
+    motion:
+      type: continuous
+      axis: [0, 0, 1]
 
   # --- Minifig ----------------------------------------------------------------
   #
   # A minifig is a stack of four parts with two joints of its own between them,
   # and an ordinary stud at the top of the head that carries the hat or hair.
   # Both joints turn: a minifig's head and legs are meant to be posed.
-    motion:
-      type: continuous
-      axis: [0, 0, 1]
   minifig-neck:
     desc: >-
       The neck stud on top of a minifig torso (male). Its Z axis points up (+Y),
@@ -365,6 +366,9 @@ interfaces:
         default: 0
         type: turn
         dir: [0, 0, 1]
+    motion:
+      type: continuous
+      axis: [0, 0, 1]
 
   # --- Gears ------------------------------------------------------------------
   #
@@ -375,9 +379,6 @@ interfaces:
   # a tooth port and a gap port together therefore separates the two gears by
   # the sum of their pitch radii, which is exactly the centre distance the pair
   # is cut for, and lines their teeth up in the bargain.
-    motion:
-      type: continuous
-      axis: [0, 0, 1]
   gear-tooth:
     desc: >-
       One tooth of a Technic gear, at the pitch circle, Z pointing outwards.
@@ -405,6 +406,9 @@ interfaces:
     ports:
       gap:
         sketch: gear-tooth-sketch
+    motion:
+      type: continuous
+      axis: [0.7071068, 0.7071068, 0]
 
   # --- Wheels -----------------------------------------------------------------
   #
@@ -414,9 +418,6 @@ interfaces:
   # ("d30"), so an assembly names the size it means and a mismatched pair is
   # visible in the ASSY file - PartCAD gates compatibility by interface, not by
   # dimension, so it cannot reject one for you.
-    motion:
-      type: continuous
-      axis: [0.7071068, 0.7071068, 0]
   wheel-rim:
     desc: >-
       The rim of a wheel that a tyre is fitted to (male). One instance, on the
@@ -435,6 +436,8 @@ interfaces:
     ports:
       bore:
         sketch: wheel-sketch
+    motion:
+      type: fixed
 
   # --- Mindstorms wiring ------------------------------------------------------
   #
@@ -443,8 +446,6 @@ interfaces:
   # or sensor. Mechanically it is a plug in a hole like any other - the plug's
   # shoulder stops against the face of the socket - so it is a port pair, even
   # though what travels through it is a signal rather than a load.
-    motion:
-      type: fixed
   rj12-plug:
     desc: >-
       The plug on the end of a Mindstorms cable (male). Its port is the shoulder
