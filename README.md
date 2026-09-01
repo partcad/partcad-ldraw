@@ -189,6 +189,43 @@ the LDraw library, that finds exactly the same connectors as an exhaustive walk:
 | EV3 medium motor (99455) | 57 | **8** | identical |
 | an ordinary brick (3001) | 10 | **2** | identical |
 
+### The Technic connectors come from the geometry too
+
+Every part's peg holes, axle holes, pins and axles are read the same way. The
+name rules that used to be the only source reached **80** parts; the geometry
+reaches every part that draws a connector, and adds **1,520** of them — 9,931
+port instances in all. Not one part loses a port it had, and every one of the 80
+comes out byte-identical, instance names included, so an assembly that says
+`left` or `h0-top` keeps working.
+
+That took the vocabulary being read rather than guessed at, because a Technic
+feature is not one primitive the way a stud is:
+
+| primitive | is | ports |
+| --- | --- | ---: |
+| `peghole` … `peghole6` | a mouth cap on the surface | 1 |
+| `beamhole`, `connhole`, `connhol2` | a hole right through | 2 |
+| `connect*`, `confric*` | one end of a pin | 1 |
+| `axle` | a shaft, stretched by its matrix | 2 |
+| `confricrib*`, `connectcollar*`, `connectslit*` | pieces of a pin | 0 |
+| `confric8`, `confric9` | the *middle* of a long pin | 0 |
+
+The last two rows are the trap. `6558`, "Technic Pin Long with Friction and
+Slot", places a "Middle Slotted" section at the same spot as its left end, and
+counting it gives the pin a third port on top of the two it has.
+
+Two conventions had to be matched rather than invented. A pin's port sits at the
+primitive's own origin, not on the collar face 2 LDU along it — `43093` puts its
+collar disc at the origin, and moving the port would shift every pin joint by
+0.8 mm. And an axle's two end ports face *inward*, at each other, because an
+axle is pushed into a hole; there is a test named for it.
+
+`connhol3` ("Connector Hole One-Sided", 355 uses) and `axlehol8` ("Axle
+Perimeter", 380 uses) are deliberately left out: which end of the first is a
+mouth is not settled, and whether the second appears once per axle is not
+established. Leaving them out costs coverage on the parts that use only those;
+guessing would put ports in the wrong place, which is worse.
+
 Those parts carry axle holes as well as peg holes, and an axle hole is not one
 primitive. LDraw draws it as a profile that its placement matrix stretches
 through the part — the two mouths are the two ends of that stretch — and most of

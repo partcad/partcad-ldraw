@@ -542,13 +542,35 @@ def _lego_implements(desc, pid=None):
         return None
     desc = desc.strip()
     implements = _brick_implements(desc) or _name_implements(desc)
-    if implements is None and pid and _ELECTRIC_RE.match(desc):
-        implements = _electric_implements(pid)
+    if pid:
+        implements = _with_geometry_technic(implements, pid)
     if implements is None and pid and _HEADGEAR_RE.match(desc):
         implements = _headgear_implements(pid)
     if pid:
         implements = _with_geometry_studs(implements, pid)
     return implements
+
+
+_TECHNIC_IFACES = (_PIN_IFACE, _PIN_HOLE_IFACE, _AXLE_IFACE, _AXLE_HOLE_IFACE, _RJ12_SOCKET_IFACE, _RJ12_PLUG_IFACE)
+
+
+def _with_geometry_technic(implements, pid):
+    """Replace the name-derived Technic ports with the ones the part has.
+
+    The name rules reach 80 parts; the geometry reaches every part that draws a
+    connector, which is where they actually are. Where the two agree the name's
+    instance names stand, so an assembly that says 'left' or 'h0' keeps working.
+    """
+    found = _geometry_connector_implements(pid)
+    if not found:
+        return implements
+    implements = dict(implements) if implements else {}
+    for interface, instances in found.items():
+        named = implements.get(interface)
+        if named and sorted(named.values()) == sorted(instances.values()):
+            continue  # same ports: keep the names they had
+        implements[interface] = instances
+    return implements or None
 
 
 def _with_geometry_anti_studs(implements, pid):
@@ -986,6 +1008,78 @@ for _axle_hole in (
 ):
     _GEOMETRY_CONNECTORS[_axle_hole + ".dat"] = list(_AXLE_HOLE_MOUTHS)
 del _axle_hole
+
+# The rest of the Technic vocabulary, on the same footing. Every entry below was
+# checked by reading it back against the parts whose ports were derived from
+# their names and verified by hand: 3673, 4274, 32002 and 32556 for the pins,
+# 3700, 32000 and 32316 for the holes, 3705 for the axles. Positions agree
+# exactly, not just counts.
+#
+# A peg hole is a mouth cap sitting on the surface, so it is one port; the beam
+# and connector holes run right through and are two, at the ends of their own Y.
+for _peg_hole in ("peghole", "peghole2", "peghole3", "peghole4", "peghole5", "peghole6"):
+    _GEOMETRY_CONNECTORS[_peg_hole + ".dat"] = [(_PIN_HOLE_IFACE, (0, 0, 0), (0, -1, 0))]
+del _peg_hole
+for _through, _half_length in (("beamhole", 10), ("beamhol2", 5), ("connhol2", 10)):
+    _GEOMETRY_CONNECTORS[_through + ".dat"] = [
+        (_PIN_HOLE_IFACE, (0, _half_length, 0), (0, 1, 0)),
+        (_PIN_HOLE_IFACE, (0, -_half_length, 0), (0, -1, 0)),
+    ]
+del _through, _half_length
+
+# A pin's port goes at the primitive's own origin rather than at the collar face
+# 2 LDU along it. That is the convention the name-derived pins already use and
+# the one the pin/pin-hole pair is tested against; putting it on the collar face
+# instead would shift every pin joint by 0.8 mm. 43093 shows why the origin is
+# the right plane: its collar disc sits there, between the pin and the axle.
+#
+# The ribs, collar halves and slit halves of this family are pieces of a pin
+# rather than one each, and are left out; so is "fric", which nothing uses, and
+# so are the two "Middle Slotted" spellings, which are the middle section of a
+# long pin rather than an end of one - 6558, "Technic Pin Long with Friction and
+# Slot", places one at the same spot as its left end and would otherwise get a
+# third port on top of the two it has.
+for _pin in (
+    "connect",  # Technic Pin 1.0 with Base Collar
+    "connect2",  # ... without Base Collar
+    "connect3",  # Technic Pin 0.5 with Base Collar
+    "connect4",  # ... without Base Collar
+    "connect6",  # ... with Base Collar and Notches
+    "connect7",  # ... with Base Collar, Rectangular Centre Hole
+    "connect8",  # ... with Base Collar and Blind Hole
+    "connect10",  # ... without Base Collar and Rectangular Centre Hole
+    "confric",  # Technic Friction Pin 1.0 with Base Collar
+    "confric2",
+    "confric3",
+    "confric4",
+    "confric5",
+    "confric6",
+    "confric10",
+    "confric11",
+    "confric12",
+):
+    _GEOMETRY_CONNECTORS[_pin + ".dat"] = [(_PIN_IFACE, (0, 0, 0), (0, -1, 0))]
+del _pin
+
+# An axle is a profile stretched along its own Y, like an axle hole: a port at
+# each end. They face *inward*, at each other, which is the opposite of a hole's
+# and is what the name-derived axles already do - an axle is pushed into a hole,
+# so the end that mates is the one pointing back along the shaft. There is a
+# test named for it, "the axle ends point at each other".
+_GEOMETRY_CONNECTORS["axle.dat"] = [
+    (_AXLE_IFACE, (0, 0, 0), (0, 1, 0)),
+    (_AXLE_IFACE, (0, 1, 0), (0, -1, 0)),
+]
+
+# Deliberately not here, because what they mark has not been established:
+#   connhol3  "Technic Connector Hole One-Sided" (355 uses) - spans y -10..8, so
+#             one of its ends is a mouth and the other is not, and which is not
+#             settled;
+#   axlehol8  "Technic Axle Perimeter" (380 uses) - a face of an axle, and
+#             whether it appears once per axle the way a hole perimeter does is
+#             not established.
+# Leaving them out costs coverage on the parts that use only those; guessing
+# would cost ports in the wrong place, which is worse.
 _ELECTRIC_RE = re.compile(r"^Electric Mindstorms\b", re.IGNORECASE)
 
 
@@ -1151,23 +1245,29 @@ def _orientation_of_matrix(m):
     return _orientation_of(q)
 
 
-# What to call each instance a Mindstorms part's geometry yields. A connector
-# whose interface is not named here is not served rather than named by accident.
-_ELECTRIC_INSTANCE_PREFIX = {
+# What to call each instance a part's geometry yields. A connector whose
+# interface is not named here is not served rather than named by accident.
+# The connectors whose port may be turned any way about its own axis. An RJ12
+# socket is not one of them: it is rectangular, so its roll is part of the port.
+_ROLL_FREE_IFACES = frozenset((_PIN_IFACE, _PIN_HOLE_IFACE, _AXLE_IFACE, _AXLE_HOLE_IFACE))
+
+_GEOMETRY_INSTANCE_PREFIX = {
     _PIN_HOLE_IFACE: "h",
     _AXLE_HOLE_IFACE: "a",
+    _PIN_IFACE: "pin",
+    _AXLE_IFACE: "axle",
     _RJ12_SOCKET_IFACE: "socket",
     _RJ12_PLUG_IFACE: "plug",
 }
 
 
-def _electric_implements(pid):
-    """The ports of a Mindstorms part, read from its geometry.
+def _geometry_connector_implements(pid):
+    """The Technic and cable ports of a part, read from its geometry.
 
     LDraw coordinates become the meshed part space the wrapper produces -
     (x, -y, z) * 0.4 - and each connector's mouth becomes one instance. A hole
-    contributes one instance per mouth, named h<i>; a socket or a plug is named
-    after what it is, numbered in the order the walk meets them.
+    contributes one instance per mouth, named h<i>; a pin, an axle, a socket or
+    a plug is named after what it is, numbered in the order the walk meets them.
     """
     connectors = _geometry_connectors(pid)
     if not connectors:
@@ -1183,11 +1283,18 @@ def _electric_implements(pid):
             continue
         seen.add(key)
         # the roll matrix travels into the part space the same way
-        flip = ((1, 0, 0), (0, -1, 0), (0, 0, 1))
-        orientation = _orientation_towards(direction, _matrix_product(flip, _matrix_product(roll, flip)))
+        if interface in _ROLL_FREE_IFACES:
+            # A pin, an axle and a round hole are the same all the way round, so
+            # the roll is free and the axis-aligned constants are used instead -
+            # which is what keeps these byte-identical to the ports the name
+            # rules give the same parts, names included.
+            orientation = _stud_orientation(direction)
+        else:
+            flip = ((1, 0, 0), (0, -1, 0), (0, 0, 1))
+            orientation = _orientation_towards(direction, _matrix_product(flip, _matrix_product(roll, flip)))
         if orientation is None:
             continue
-        prefix = _ELECTRIC_INSTANCE_PREFIX.get(interface)
+        prefix = _GEOMETRY_INSTANCE_PREFIX.get(interface)
         if prefix is None:
             continue  # an interface this rule does not know how to name
         index = counters.get(interface, 0)

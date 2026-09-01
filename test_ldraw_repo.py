@@ -599,6 +599,15 @@ _FAKE_LIBRARY = {
     "933c01.dat": "0 ~Plug\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 933.dat\n",
     # a part whose hole is inside its own subpart
     "3700.dat": "0 Technic Brick\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 s/3700s01.dat\n",
+    # a beam-style through hole: two mouths, at the ends of its own Y
+    "99999c.dat": ("0 Technic Beam Test\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 beamhole.dat\n"),
+    # a pin end and the middle section of a long pin at the same place: only the
+    # end is a port
+    "99999d.dat": (
+        "0 Technic Pin Test\n"
+        "1 16 -10 0 0 0 1 0 0 0 1 1 0 0 confric5.dat\n"
+        "1 16 -10 0 0 0 -1 0 0 0 1 1 0 0 confric8.dat\n"
+    ),
     # a Mindstorms part with a cross axle hole: the profile spans y in [0, 1]
     # and its matrix stretches it 20 LDU through the part
     "99999a.dat": ("0 Electric Mindstorms Test Motor\n" "1 16 0 -10 0 1 0 0 0 20 0 0 0 1 axlehole.dat\n"),
@@ -711,7 +720,7 @@ def test_a_u_prefixed_file_is_a_part_and_a_hyphenated_one_is_not():
 
 
 def test_geometry_ports_land_where_the_geometry_says(fake_library):
-    implements = plugin._electric_implements("3700")
+    implements = plugin._geometry_connector_implements("3700")
     # LDraw (0, 10, 10) is (0, -4, 4) once the wrapper has meshed it, and the
     # port faces out of the part, the way the name-derived holes do.
     port = implements[PIN_HOLE]["h0"]
@@ -879,3 +888,32 @@ def test_a_perimeter_marks_a_hole_a_whole_form_would_have_missed(fake_library):
     # "Side Edges" and the rest appear several times and must not count
     holes = plugin._lego_implements("Electric Mindstorms Test Sensor", "99999b")[AXLE_HOLE]
     assert len(holes) == 2
+
+
+def test_a_through_hole_is_two_mouths_and_a_peg_hole_is_one(fake_library):
+    beam = plugin._lego_implements("Technic Beam Test", "99999c")[PIN_HOLE]
+    assert len(beam) == 2
+    # +-10 LDU is +-4 mm once meshed, and each mouth faces out of the part
+    assert sorted(p[0][1] for p in beam.values()) == [-4.0, 4.0]
+
+
+def test_the_middle_of_a_long_pin_is_not_a_pin_end(fake_library):
+    # 6558 places a "Middle Slotted" section at the same spot as its left end;
+    # counting it would give the pin a third port on top of the two it has
+    pins = plugin._lego_implements("Technic Pin Test", "99999d")[PIN]
+    assert len(pins) == 1
+
+
+def test_a_technic_part_keeps_the_port_names_its_rule_gave_it(fake_library):
+    # The geometry reaches far more parts than the name rules, but where the two
+    # describe the same ports the name's instance names stand, so an assembly
+    # that says "left" or "h0-top" keeps working.
+    found = plugin._geometry_connector_implements("99999c")[PIN_HOLE]
+    named = {"h0-top": port for port in list(found.values())[:1]}
+    named["h0-bottom"] = list(found.values())[1]
+    merged = plugin._with_geometry_technic({PIN_HOLE: named}, "99999c")
+    assert sorted(merged[PIN_HOLE]) == ["h0-bottom", "h0-top"]
+    # ...but a part whose ports the name got wrong is renamed onto the geometry
+    wrong = {"only": plugin._port((0.0, 0.0, 0.0), plugin._Z_TO_PLUS_Y)}
+    replaced = plugin._with_geometry_technic({PIN_HOLE: wrong}, "99999c")
+    assert sorted(replaced[PIN_HOLE]) == ["h0", "h1"]
