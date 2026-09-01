@@ -189,6 +189,18 @@ the LDraw library, that finds exactly the same connectors as an exhaustive walk:
 | EV3 medium motor (99455) | 57 | **8** | identical |
 | an ordinary brick (3001) | 10 | **2** | identical |
 
+Those parts carry axle holes as well as peg holes, and an axle hole is not one
+primitive. LDraw draws it as a profile that its placement matrix stretches
+through the part — the two mouths are the two ends of that stretch — and most of
+the family are *faces* of one hole rather than one each, with "Side Edges" and
+"Tooth Surface" appearing four to a hole. Two spellings appear once per hole:
+the whole forms, and the "Perimeter" face, which some parts use instead of a
+whole form. `32064b`, "Technic Brick 1 x 2 with Reduced Axlehole", draws its hole
+out of faces alone and a whole-form-only reading misses it entirely. Over the
+library 574 parts carry only whole forms, 128 only perimeters, and the 13 with
+both never put the two in the same place, so taking either as a hole never
+counts one twice.
+
 `lego-demo/` builds seven assemblies out of all this, and its `README.md`
 describes the interfaces in detail.
 

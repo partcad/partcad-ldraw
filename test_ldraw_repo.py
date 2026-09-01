@@ -599,6 +599,15 @@ _FAKE_LIBRARY = {
     "933c01.dat": "0 ~Plug\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 933.dat\n",
     # a part whose hole is inside its own subpart
     "3700.dat": "0 Technic Brick\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 s/3700s01.dat\n",
+    # a Mindstorms part with a cross axle hole: the profile spans y in [0, 1]
+    # and its matrix stretches it 20 LDU through the part
+    "99999a.dat": ("0 Electric Mindstorms Test Motor\n" "1 16 0 -10 0 1 0 0 0 20 0 0 0 1 axlehole.dat\n"),
+    # ...and one that draws the same hole out of faces, with only a perimeter
+    "99999b.dat": (
+        "0 Electric Mindstorms Test Sensor\n"
+        "1 16 0 -10 0 1 0 0 0 20 0 0 0 1 axl2hol8.dat\n"
+        "1 16 0 -10 0 1 0 0 0 20 0 0 0 1 axl2hol2.dat\n"
+    ),
     "s/3700s01.dat": "0 ~subpart\n1 16 0 10 10 1 0 0 0 0 1 0 -1 0 peghole.dat\n",
     # a 2 x 2 brick drawn the way LDraw draws one: a group of studs on top, a
     # tube underneath, and a cylinder that is neither.
@@ -855,3 +864,18 @@ def test_the_three_quarter_pin_says_which_end_is_which():
     assert sorted(pin) == ["left", "rightHalf"]
     assert pin["left"][1:] == [list(plugin._Z_TO_MINUS_X[0]), plugin._Z_TO_MINUS_X[1]]
     assert pin["rightHalf"][1:] == [list(plugin._Z_TO_PLUS_X[0]), plugin._Z_TO_PLUS_X[1]]
+
+
+def test_an_axle_hole_has_a_mouth_at_each_end_of_its_stretch(fake_library):
+    holes = plugin._lego_implements("Electric Mindstorms Test Motor", "99999a")[AXLE_HOLE]
+    # two mouths, at the two ends of the 20 LDU the matrix stretches it over
+    assert len(holes) == 2
+    assert sorted(p[0][1] for p in holes.values()) == [-4.0, 4.0]
+
+
+def test_a_perimeter_marks_a_hole_a_whole_form_would_have_missed(fake_library):
+    # 32064b, "Technic Brick 1 x 2 with Reduced Axlehole", draws its hole out of
+    # faces alone; the "Perimeter" is the one that appears once per hole, while
+    # "Side Edges" and the rest appear several times and must not count
+    holes = plugin._lego_implements("Electric Mindstorms Test Sensor", "99999b")[AXLE_HOLE]
+    assert len(holes) == 2

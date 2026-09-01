@@ -43,8 +43,9 @@ dependencies:
     # did the same for the anti-studs underneath, and added the headgear socket
     # and the 3/4 pin, both of which the geometry settles and a name cannot; v6
     # raised the geometry walk's budget so that no part is cut off before the
-    # walk finishes, which is what the last 198 of them were.
-    cacheVersion: 6
+    # walk finishes, which is what the last 198 of them were; v7 serves the axle
+    # holes the Mindstorms parts were already known to have but never got.
+    cacheVersion: 7
 
 repositories:
   ldraw_repo:

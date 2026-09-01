@@ -951,6 +951,41 @@ _GEOMETRY_CONNECTORS = {
     # the plug on the end of a cable: the shoulder the socket stops it at
     "933.dat": [(_RJ12_PLUG_IFACE, (0, 0, -18), (0, 0, 1))],
 }
+
+# A cross-shaped axle hole. Unlike a peg hole, LDraw does not draw one of these
+# with a single primitive: an axle hole is a *profile* spanning y in [0, 1] that
+# its placement matrix stretches through the part, so its two mouths are the two
+# ends of that stretch - the matrix supplies the length, and the axis it hands
+# back is stretched with it and has to be normalised (_orientation_towards does
+# that).
+#
+# Which primitive marks a hole needs care, because most of this family are faces
+# of one rather than one each: "Side Edges", "Tooth Outer Edges" and "Tooth
+# Surface" can appear four to a hole. Two spellings are one-per-hole - the whole
+# forms ("Closed", "Open One Side", "Open Two Opposite Sides", "Reduced Closed",
+# "Semi-Reduced", "Two-toothed Sliding") and the "Perimeter" face, which some
+# parts use *instead* of a whole form: 32064b, "Technic Brick 1 x 2 with Reduced
+# Axlehole", draws its hole entirely out of faces and would otherwise be missed.
+# Measured over the library, 574 parts carry only whole forms, 128 only
+# perimeters, and the 13 that carry both never put the two at the same place, so
+# taking either as a hole does not count one twice.
+_AXLE_HOLE_MOUTHS = [
+    (_AXLE_HOLE_IFACE, (0, 0, 0), (0, -1, 0)),
+    (_AXLE_HOLE_IFACE, (0, 1, 0), (0, 1, 0)),
+]
+for _axle_hole in (
+    "axlehole",  # Technic Axle Hole Closed
+    "axlehol4",  # ... Open One Side
+    "axlehol5",  # ... Open Two Opposite Sides
+    "axl2hole",  # ... Reduced Closed
+    "axl3hole",  # ... Semi-Reduced
+    "axl4hole",  # ... Two-toothed Sliding
+    "axl2hol8",  # ... Reduced Perimeter
+    "axl3hol8",  # ... Semi-Reduced Perimeter
+    "axl5hol8",  # ... Rounded Perimeter
+):
+    _GEOMETRY_CONNECTORS[_axle_hole + ".dat"] = list(_AXLE_HOLE_MOUTHS)
+del _axle_hole
 _ELECTRIC_RE = re.compile(r"^Electric Mindstorms\b", re.IGNORECASE)
 
 
@@ -1116,6 +1151,16 @@ def _orientation_of_matrix(m):
     return _orientation_of(q)
 
 
+# What to call each instance a Mindstorms part's geometry yields. A connector
+# whose interface is not named here is not served rather than named by accident.
+_ELECTRIC_INSTANCE_PREFIX = {
+    _PIN_HOLE_IFACE: "h",
+    _AXLE_HOLE_IFACE: "a",
+    _RJ12_SOCKET_IFACE: "socket",
+    _RJ12_PLUG_IFACE: "plug",
+}
+
+
 def _electric_implements(pid):
     """The ports of a Mindstorms part, read from its geometry.
 
@@ -1142,7 +1187,9 @@ def _electric_implements(pid):
         orientation = _orientation_towards(direction, _matrix_product(flip, _matrix_product(roll, flip)))
         if orientation is None:
             continue
-        prefix = {_PIN_HOLE_IFACE: "h", _RJ12_SOCKET_IFACE: "socket", _RJ12_PLUG_IFACE: "plug"}[interface]
+        prefix = _ELECTRIC_INSTANCE_PREFIX.get(interface)
+        if prefix is None:
+            continue  # an interface this rule does not know how to name
         index = counters.get(interface, 0)
         counters[interface] = index + 1
         implements.setdefault(interface, {})["%s%d" % (prefix, index)] = _port(place, orientation)
