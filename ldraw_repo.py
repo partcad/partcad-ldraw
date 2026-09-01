@@ -533,10 +533,11 @@ def _lego_implements(desc, pid=None):
     Technic families, a gear, a Duplo brick, a minifig part, a wheel or a tyre -
     so the first match wins and nothing is fetched.
 
-    The studs are the exception, and are read from the part's geometry, which
-    is the only thing that knows where they actually are; so are the Mindstorms
-    connectors. Both need the part's id as well as its name, so a caller
-    without one gets only what the name gives.
+    The connections are the exception, and are read from the part's geometry,
+    which is the only thing that knows where they actually are: the studs, the
+    anti-studs underneath them, and every Technic connector. All of them need
+    the part's id as well as its name, so a caller without one gets only what
+    the name gives.
     """
     if not desc:
         return None
@@ -557,9 +558,10 @@ _TECHNIC_IFACES = (_PIN_IFACE, _PIN_HOLE_IFACE, _AXLE_IFACE, _AXLE_HOLE_IFACE, _
 def _with_geometry_technic(implements, pid):
     """Replace the name-derived Technic ports with the ones the part has.
 
-    The name rules reach 80 parts; the geometry reaches every part that draws a
-    connector, which is where they actually are. Where the two agree the name's
-    instance names stand, so an assembly that says 'left' or 'h0' keeps working.
+    The name rules reach 44 parts; the geometry reaches every part that draws a
+    connector - 1564 of them - which is where they actually are. Where the two
+    agree the name's instance names stand, so an assembly that says 'left' or
+    'h0' keeps working.
     """
     found = _geometry_connector_implements(pid)
     if not found:
@@ -593,10 +595,10 @@ def _with_geometry_anti_studs(implements, pid):
 def _with_geometry_studs(implements, pid):
     """Replace the name-derived studs with the ones the part actually has.
 
-    Only the studs: the anti-stud grid underneath still comes from the name,
-    because an underside tube sits between four studs rather than under one and
-    turning those into ports is a separate piece of work. When the walk cannot
-    see the whole part it returns None and the name's answer is left alone.
+    The underside goes first, since it is read from the same walk; it keeps the
+    name's answer more often, because a tube marks anti-studs but their absence
+    marks nothing. When the walk cannot see the whole part the stud read returns
+    None and the name's answer is left alone here too.
     """
     implements = _with_geometry_anti_studs(implements, pid)
     studs = _geometry_stud_implements(pid)
