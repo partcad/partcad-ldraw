@@ -41,8 +41,10 @@ dependencies:
     # wheel/tyre and RJ12 interfaces; v4 moved the studs off the part's name and
     # onto its geometry, which changes which studs a part carries and where; v5
     # did the same for the anti-studs underneath, and added the headgear socket
-    # and the 3/4 pin, both of which the geometry settles and a name cannot.
-    cacheVersion: 5
+    # and the 3/4 pin, both of which the geometry settles and a name cannot; v6
+    # raised the geometry walk's budget so that no part is cut off before the
+    # walk finishes, which is what the last 198 of them were.
+    cacheVersion: 6
 
 repositories:
   ldraw_repo:

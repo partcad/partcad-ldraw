@@ -115,11 +115,11 @@ Over the whole library that is:
 
 | | parts |
 | --- | ---: |
-| studs unchanged | 10,507 |
-| studs **gained** — the name rule gave none | **3,362** |
-| studs corrected — both had some, in different places | 539 |
+| studs unchanged | 10,600 |
+| studs **gained** — the name rule gave none | **3,466** |
+| studs corrected — both had some, in different places | 540 |
 | studs removed — the part has none | 15 |
-| walk ran out of budget, name rule left to stand | 198 |
+| walk ran out of budget, name rule left to stand | 0 |
 
 The 15 removals are all parts whose name says as much: "Brick 2 x 2 **no Studs**
 with Pin Vertical", "Brick 2 x 4 with **Curved Top**", "Plate 1 x 1 with **Swirl
@@ -129,6 +129,25 @@ it, instance names included, so an assembly that names `c0r0` keeps working.
 It costs 0.30 extra distinct fetches per part over the `Brick`/`Plate`/`Tile`
 families and 1.09 over the whole library, because the subparts and primitives
 beneath them are shared and cached.
+
+### What the walk's budget is for
+
+`_GEOMETRY_DEPTH` and `_GEOMETRY_FILES` bound one part's walk so a cycle cannot
+run away. They are a ceiling rather than a spend: a part whose walk finishes in
+ten files reads ten of them whatever the ceiling is, so raising it costs
+anything only on the parts that were being cut off. That is why they are set
+high enough that nothing in the library is cut off at all — 8 and 1024, where
+the original 4 and 64 left 198 parts unfinished. Over the whole library that
+costs 45,500 reads instead of 45,022, 1.1% more, and 27 more distinct files.
+
+Depth on its own buys almost nothing — 6 / 64 recovers 11 of the 198 — so it is
+the file count that binds, and 12 / 4096 measures identical to 8 / 1024, which
+is what says nothing is running away further out. There is no per-family table
+and there does not need to be one.
+
+The "walk did not finish, so the name rule stands" fallback stays even though no
+part in the library reaches it today. A part added tomorrow could be deeper, and
+losing its studs quietly is the failure worth keeping a guard against.
 
 ### Where the anti-studs come from
 
@@ -141,8 +160,8 @@ its matrix, because LDraw places every one of them the same way up, so the
 part's own studs say which axis and a tube whose neighbours are not both on that
 lattice is not guessed at.
 
-Over the library that leaves 12,738 parts unchanged, corrects 131, adds an
-underside to 1,752 that had none, and — the property that matters — takes one
+Over the library that leaves 12,705 parts unchanged, corrects 132, adds an
+underside to 1,784 that had none, and — the property that matters — takes one
 away from nobody. The corner brick gets three anti-studs under its three studs
 where the name put four in a square.
 

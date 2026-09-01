@@ -904,8 +904,16 @@ def _tyre_implements(m):
 # fetched in parallel. Measured against the LDraw library, that finds exactly
 # the same connectors as an exhaustive walk while fetching 8 to 27 files for a
 # Mindstorms part instead of 50 to 86, and 2 for an ordinary brick.
-_GEOMETRY_DEPTH = 4  # every Mindstorms connector sits at depth 4 or less
-_GEOMETRY_FILES = 64  # a bound on one part's walk, so a cycle cannot run away
+# The budget is a ceiling, not a spend: a part whose walk finishes in ten files
+# reads ten of them whatever the ceiling is, so raising it costs anything only
+# on the parts that were being cut off. Measured over the whole library, going
+# from the original 4 / 64 to these numbers leaves 0 parts unfinished instead of
+# 198, for 45,500 reads instead of 45,022 - 1.1% more, and 27 more distinct
+# files. Depth on its own buys almost nothing (6 / 64 recovers 11 of the 198);
+# it is the file count that binds. 12 / 4096 measured identical to this, so
+# nothing is running away and being cut off further out.
+_GEOMETRY_DEPTH = 8  # deeper than any part in the library needs
+_GEOMETRY_FILES = 1024  # a bound on one part's walk, so a cycle cannot run away
 # What a reference has to look like to be worth fetching: an LDraw part id, or a
 # subpart of one. Everything else is a primitive, and a leaf.
 #
