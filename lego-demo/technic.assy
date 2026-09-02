@@ -1,0 +1,61 @@
+# The Technic half of the LEGO system, joined the same way the stud assemblies
+# above are: by interfaces, with no coordinates written by hand.
+#
+#   - a Technic Brick 1 x 4 with Holes (3701) as the base,
+#   - a Technic Pin (3673) in its middle hole,
+#   - a Technic Beam 5 (32316) hung on the half of the pin that sticks out and
+#     turned a quarter turn about it, which a round hole is free to do,
+#   - a Technic Brick 1 x 2 with Axlehole (32064b) on the base's studs, which is
+#     what carries the stud system across into the Technic one,
+#   - a Technic Axle 4 (3705) driven through that brick's cross hole.
+links:
+  - part: //pub/universe/lego/ldraw/Technic:3701
+    name: base
+
+  # The pin's right-hand half goes into the base's middle hole; its collar
+  # stops it against the face, leaving the other half sticking out.
+  - part: //pub/universe/lego/ldraw/Technic:3673
+    name: pin
+    connect:
+      with: //pub/universe/lego:technic-pin
+      withInstance: right
+      name: base
+      to: //pub/universe/lego:technic-pin-hole
+      toInstance: h1-front
+
+  # The beam hangs its middle hole on what is left of the pin. 'turnZ' is the
+  # freedom a round hole leaves: without it the beam hangs straight down.
+  - part: //pub/universe/lego/ldraw/Technic:32316
+    name: beam
+    connect:
+      with: //pub/universe/lego:technic-pin-hole
+      withInstance: h2-bottom
+      withParams:
+        turnZ: 90
+      name: pin
+      to: //pub/universe/lego:technic-pin
+      toInstance: left
+
+  # An ordinary stud connection: the axle-hole brick sits on the base.
+  - part: //pub/universe/lego/ldraw/Technic:32064b
+    name: hub
+    connect:
+      with: //pub/universe/lego:anti-stud
+      withInstance: c0r0
+      name: base
+      to: //pub/universe/lego:stud
+      toInstance: c0r0
+
+  # The axle is held by nothing along its length, so where it sits in the hole
+  # is ours to say: 0 would leave one end in the mouth of the hole, and -12
+  # draws it back out until the 32 mm axle is centered on the 8 mm hub.
+  - part: //pub/universe/lego/ldraw/Technic:3705
+    name: axle
+    connect:
+      with: //pub/universe/lego:technic-axle
+      withInstance: left
+      withParams:
+        moveZ: -12
+      name: hub
+      to: //pub/universe/lego:technic-axle-hole
+      toInstance: axle-front

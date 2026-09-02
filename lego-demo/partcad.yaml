@@ -3,10 +3,12 @@ desc: |
   Building LEGO assemblies with the PartCAD ASSY file format.
 
   The LDraw parts served by //pub/universe/lego already carry the LEGO
-  stud / anti-stud interfaces (attached by the ldraw_repo plugin to every
-  rectangular Brick, Plate and Tile). These assemblies therefore reference the
-  original LDraw parts directly and join them purely through those interfaces
-  with `connect:` - no hand-placed coordinates, no local part definitions.
+  interfaces (attached by the ldraw_repo plugin): stud / anti-stud on every
+  rectangular Brick, Plate and Tile, and the Technic pin, pin hole, axle and
+  axle hole on the Technic bricks, beams, pins and axles. These assemblies
+  therefore reference the original LDraw parts directly and join them purely
+  through those interfaces with `connect:` - no hand-placed coordinates, no
+  local part definitions.
 
   Run pc from the repository root and address these assemblies as
   lego-demo:<name>.
@@ -40,4 +42,27 @@ assemblies:
   pyramid:
     type: assy
     path: pyramid.assy
+    manufacturable: false
+
+  # The Technic interfaces: a pin joining a beam to a Technic brick, and an axle
+  # driven through an axle-hole brick that sits on that same brick's studs.
+  # (Uses the Technic LDraw category, whose full catalog the plugin enumerates
+  # and caches on first use, so the first build of this assembly is slow.)
+  technic:
+    type: assy
+    path: technic.assy
+    manufacturable: false
+
+  # A gear train: an 8-tooth and a 16-tooth gear meshed onto a 24-tooth one,
+  # placed by naming a tooth and a gap rather than a centre distance.
+  gears:
+    type: assy
+    path: gears.assy
+    manufacturable: false
+
+  # A minifig, stacked out of its own two joints with the head turned. (Uses
+  # the Minifig LDraw category, which the plugin enumerates on first use.)
+  minifig:
+    type: assy
+    path: minifig.assy
     manufacturable: false

@@ -1,0 +1,33 @@
+# A gear train, connected the same way as everything else here: by naming a
+# tooth of one gear and a gap of the other.
+#
+# A LEGO gear is cut to one module - its pitch diameter in millimetres is its
+# tooth count - so every port sits on a pitch circle of half a millimetre per
+# tooth. Bringing a tooth port and a gap port together therefore leaves the two
+# gears exactly the sum of their pitch radii apart, which is the centre distance
+# the pair is cut for, and turns the second gear to mesh: an 8-tooth on a
+# 24-tooth lands two studs away, a 16-tooth two and a half.
+links:
+  - part: //pub/universe/lego/ldraw/Technic:3648b
+    name: drive
+
+  # 16 mm along +X: (24 + 8) / 2, which is two studs.
+  - part: //pub/universe/lego/ldraw/Technic:3647
+    name: pinion
+    connect:
+      with: //pub/universe/lego:gear-gap
+      withInstance: g0
+      name: drive
+      to: //pub/universe/lego:gear-tooth
+      toInstance: t0
+
+  # A quarter of the way round the drive gear (tooth 6 of 24), so 20 mm along
+  # +Y: (24 + 16) / 2.
+  - part: //pub/universe/lego/ldraw/Technic:4019
+    name: idler
+    connect:
+      with: //pub/universe/lego:gear-gap
+      withInstance: g0
+      name: drive
+      to: //pub/universe/lego:gear-tooth
+      toInstance: t6

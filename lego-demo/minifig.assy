@@ -1,0 +1,33 @@
+# A minifig, stacked out of its own joints.
+#
+# The spacing is the system's, not any one part's: LDraw's own assembled
+# minifigs put the torso 32 LDU above the hips and the head 28 LDU above the
+# torso, and every part of a class carries the same ports however it is
+# printed - so this assembly works with any of the 613 torsos or 326 heads the
+# plugin serves, not just these.
+#
+# Both joints turn, so 'turnZ' poses the figure: here the head is turned to
+# look over its shoulder.
+links:
+  - part: //pub/universe/lego/ldraw/Minifig:3815b
+    name: hips
+
+  - part: //pub/universe/lego/ldraw/Minifig:973
+    name: torso
+    connect:
+      with: //pub/universe/lego:minifig-waist-socket
+      withInstance: waist
+      name: hips
+      to: //pub/universe/lego:minifig-waist
+      toInstance: waist
+
+  - part: //pub/universe/lego/ldraw/Minifig:3626b
+    name: head
+    connect:
+      with: //pub/universe/lego:minifig-neck-socket
+      withInstance: neck
+      withParams:
+        turnZ: 45
+      name: torso
+      to: //pub/universe/lego:minifig-neck
+      toInstance: neck
