@@ -73,8 +73,11 @@ of the 371 parts — and is now served by name *and* geometry together: the name
 picks the family, and the socket has to be there in the geometry for a port to
 be emitted. LDraw draws it as a single open tube, flipped, whose far end is the
 part's own origin, which is the opposite reading of the same primitive from a
-brick's underside. 284 of the 371 are confirmed that way; the other 87, whose
-geometry shows no single socket, are still left alone.
+brick's underside. 295 of the 371 are confirmed that way; the other 76, whose
+geometry shows no socket at all, are still left alone. The same reading now runs
+on every part rather than only on a named hat, which is what fixed the ten hats
+that were being given a four-corner underside because they carry a stud of their
+own and so missed the name-gated rule.
 
 `Technic Pin 3/4` came back for the same reason. Its name does not say which end
 is the short one, but 32002 places `connect` (Technic Pin 1.0) toward -X and
@@ -160,14 +163,34 @@ its matrix, because LDraw places every one of them the same way up, so the
 part's own studs say which axis and a tube whose neighbours are not both on that
 lattice is not guessed at.
 
-Over the library that leaves 12,705 parts unchanged, corrects 132, adds an
-underside to 1,784 that had none, and — the property that matters — takes one
-away from nobody. The corner brick gets three anti-studs under its three studs
-where the name put four in a square.
+A part with no studs of its own is read the same way. That used to be the one
+thing the underside rule would not do — with no studs there is no lattice to
+check a solid tube against, so it declined the whole part — and it is most of
+what was still being answered by a name. Reading them adds an underside to 269
+parts that had none and corrects 219 more, nearly all of them grids the name had
+*transposed*: `26603`, a plain "Tile 2 x 3", agrees with its name exactly, while
+`30350a`, "Tile 2 x 3 with Clips Horizontal", is drawn three studs along Z where
+the name's grid assumes three along X.
 
-Where the tubes do not settle it, the name still stands. That is deliberate and
+What tells an underside from a socket is where the tube's far end lands. Below
+the origin, the tube is buried in the part's body and separates four anti-studs.
+*On* the origin, the tube stands above the plane the part mates on and one stud
+reaches up inside it — a hat over a head, a trophy cup on a stud — which is one
+anti-stud, not four. `87754`, "Minifig Helmet Underwater", has both: a socket at
+its origin and a brim 48 LDU down carrying six.
+
+Over the library that leaves 4,017 parts unchanged, corrects 258, adds an
+underside to 485 that had none, and — the property that matters — takes one away
+from nobody, and renames nobody's. The corner brick gets three anti-studs under
+its three studs where the name put four in a square.
+
+Where the tubes still do not settle it, the name stands. That is deliberate and
 not the same rule as for studs: the walk can *see* that a part has no studs, but
-an anti-stud that no tube happens to mark may still be there.
+an anti-stud that no tube happens to mark may still be there. A solid tube on a
+studless part is the remaining case, and answering it from the anti-studs the
+open tubes place sounds right but settles none of the 1,593 such tubes in the
+library: 436 of those parts have no open tube at all, and the 56 that do put
+their solid tubes at the edges, where one neighbour is always unknown.
 
 ## Reading ports from geometry
 
@@ -193,8 +216,8 @@ the LDraw library, that finds exactly the same connectors as an exhaustive walk:
 
 Every part's peg holes, axle holes, pins and axles are read the same way. The
 name rules that used to be the only source reached **80** parts; the geometry
-reaches every part that draws a connector, and adds **1,520** of them — 9,931
-port instances in all. Not one part loses a port it had, and every one of the 80
+reaches every part that draws a connector — **1,646** of them, 11,719 port
+instances in all. Not one part loses a port it had, and every one of the 80
 comes out byte-identical, instance names included, so an assembly that says
 `left` or `h0-top` keeps working.
 
@@ -220,11 +243,21 @@ collar disc at the origin, and moving the port would shift every pin joint by
 0.8 mm. And an axle's two end ports face *inward*, at each other, because an
 axle is pushed into a hole; there is a test named for it.
 
-`connhol3` ("Connector Hole One-Sided", 355 uses) and `axlehol8` ("Axle
-Perimeter", 380 uses) are deliberately left out: which end of the first is a
-mouth is not settled, and whether the second appears once per axle is not
-established. Leaving them out costs coverage on the parts that use only those;
-guessing would put ports in the wrong place, which is worse.
+`connhol3` ("Connector Hole One-Sided", 355 uses) is blind at one end, and LDraw
+says which by drawing a `peghole` at the other and a plain cylinder cap over the
+first. The walk never sees that, because a primitive is a leaf and is never
+fetched, so the mouth it declares is transcribed into the table like the rest of
+the vocabulary. That is 89 more parts carrying pin holes, and 1,723 more holes.
+
+`axlehol8` ("Axle Perimeter") stays out, and no longer for want of evidence. It
+is the cross-section outline of an axle *shaft*, not of a hole — which is why
+its title alone in that family says "Axle" and not "Axle Hole" — and it is a
+profile slice drawn once per segment rather than once per axle: the flexible
+axles `32199` to `32202` stack 35, 40, 50 and 60 of them along one shaft. Of the
+92 parts carrying it, not one puts it where a whole axle-hole form already sits,
+so nothing is being double counted by leaving it out; what goes unserved is the
+ends of a shaft, and reading those means telling a straight stack from a curved
+one. Guessing would put ports in the wrong place, which is worse.
 
 Those parts carry axle holes as well as peg holes, and an axle hole is not one
 primitive. LDraw draws it as a profile that its placement matrix stretches

@@ -1073,15 +1073,26 @@ _GEOMETRY_CONNECTORS["axle.dat"] = [
     (_AXLE_IFACE, (0, 1, 0), (0, -1, 0)),
 ]
 
-# Deliberately not here, because what they mark has not been established:
-#   connhol3  "Technic Connector Hole One-Sided" (355 uses) - spans y -10..8, so
-#             one of its ends is a mouth and the other is not, and which is not
-#             settled;
-#   axlehol8  "Technic Axle Perimeter" (380 uses) - a face of an axle, and
-#             whether it appears once per axle the way a hole perimeter does is
-#             not established.
-# Leaving them out costs coverage on the parts that use only those; guessing
-# would cost ports in the wrong place, which is worse.
+# "Technic Connector Hole One-Sided": a hole open at one end and blind at the
+# other, spanning y -10..8. Which end is the mouth is not a judgement call -
+# connhol3 draws a peghole at y -10 and a plain cylinder cap at y 8, so LDraw
+# says outright which end takes a pin. The walk cannot see that nested peghole,
+# because a primitive is a leaf and is never fetched, so the mouth it declares
+# is transcribed here instead.
+_GEOMETRY_CONNECTORS["connhol3.dat"] = [(_PIN_HOLE_IFACE, (0, -10, 0), (0, -1, 0))]
+
+# Deliberately not here:
+#   axlehol8  "Technic Axle Perimeter" - the cross-section outline of an axle
+#             *shaft*, not of a hole, which is why its title alone of the family
+#             says "Axle" and not "Axle Hole". It is a profile slice drawn once
+#             per segment rather than once per axle: 32199 to 32202, the
+#             flexible axles, stack 35, 40, 50 and 60 of them along one shaft.
+#             Of the 92 parts carrying it, none puts one where a whole axle-hole
+#             form already sits, so nothing is being double counted by leaving
+#             it out - only the ends of a shaft are going unserved, and reading
+#             those means telling a straight stack from a curved one.
+# Leaving it out costs coverage on the parts that use only it; guessing would
+# cost ports in the wrong place, which is worse.
 _ELECTRIC_RE = re.compile(r"^Electric Mindstorms\b", re.IGNORECASE)
 
 
@@ -1514,6 +1525,7 @@ def _stud_instances_by_grid(ports):
 _SOLID_TUBES = ("stud3", "stud3a")  # "Stud Tube Solid": sits between two
 _UNDERSIDE_CROSS = "stud12"  # "Stud Underside Cross": a different feature
 _ANTI_PLANE_OFFSET = (0.0, -4.0, 0.0)  # a tube spans y in [-4, 0] in its own frame
+_SOCKET_TOLERANCE = 1.0  # LDU: how near the origin a tube's far end counts as on it
 
 
 def _tube_member(base):
@@ -1551,12 +1563,13 @@ def _geometry_anti_studs(pid):
             (studs if kind == "stud" else tubes).append((_tube_member(base), place, composed))
         return True
 
-    if not _walk_geometry(pid, visit) or not tubes or not studs:
+    if not _walk_geometry(pid, visit) or not tubes:
         return None
 
     lattice = {(round(p[0], 1), round(p[2], 1)) for _, p, _ in studs}
     half = _LDU_STUD_PITCH / 2.0
     found = {}
+    separators = []
     for stem, place, composed in tubes:
         if stem == _UNDERSIDE_CROSS:
             return None  # not a tube between studs; do not guess at the rest
@@ -1567,16 +1580,33 @@ def _geometry_anti_studs(pid):
         y = place[1] + far[1]
         x, z = round(place[0], 1), round(place[2], 1)
         if stem in _SOLID_TUBES:
-            along_x = {(round(x - half, 1), z), (round(x + half, 1), z)}
-            along_z = {(x, round(z - half, 1)), (x, round(z + half, 1))}
-            if along_x <= lattice and not along_z <= lattice:
-                corners = along_x
-            elif along_z <= lattice and not along_x <= lattice:
-                corners = along_z
-            else:
-                return None  # the studs do not say which two this one separates
+            separators.append((x, z, y))
+        elif abs(y) < _SOCKET_TOLERANCE:
+            # The tube's far end is the part's own origin, so the tube stands
+            # above the plane the part mates on and one stud reaches up inside
+            # it. That is a hat over a head or a cup on a stud - one anti-stud
+            # here, not the four that a tube buried in an underside separates.
+            found[(x, z)] = 0.0
         else:
-            corners = {(round(x + dx, 1), round(z + dz, 1)) for dx in (-half, half) for dz in (-half, half)}
+            for corner in {(round(x + dx, 1), round(z + dz, 1)) for dx in (-half, half) for dz in (-half, half)}:
+                found[corner] = y
+    # A solid tube lies between two anti-studs and its matrix does not say which
+    # two, because LDraw places every one of them the same way up. Only the
+    # part's own studs say. Answering from the anti-studs the open tubes have
+    # just placed sounds like it should work and does not: measured over the
+    # library, it settles none of the 1593 solid tubes on studless parts, since
+    # 436 of those parts have no open tube at all and the 56 that do put their
+    # solid tubes at the edges, where one neighbour is always unknown. So a
+    # studless part carrying one is left to its name, as it was before.
+    for x, z, y in separators:
+        along_x = {(round(x - half, 1), z), (round(x + half, 1), z)}
+        along_z = {(x, round(z - half, 1)), (x, round(z + half, 1))}
+        if along_x <= lattice and not along_z <= lattice:
+            corners = along_x
+        elif along_z <= lattice and not along_x <= lattice:
+            corners = along_z
+        else:
+            return None  # nothing here says which two this one separates
         for corner in corners:
             found[corner] = y
     ports = [

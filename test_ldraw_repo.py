@@ -657,6 +657,22 @@ _FAKE_LIBRARY = {
     "30167.dat": ("0 Minifig Hat Wide Brim Flat\n1 16 0 -4 0 1 0 0 0 -1 0 0 0 1 stud4.dat\n"),
     # ...and one that is not a socket: the tube does not open at the origin
     "99999.dat": ("0 Minifig Hat Nonsense\n1 16 0 40 0 1 0 0 0 -1 0 0 0 1 stud4.dat\n"),
+    # a tile: an underside of two open tubes and no studs of its own to say
+    # where the lattice is, which is what most of the library's undersides are
+    "99999e.dat": (
+        "0 Tile Test  2 x  3\n"
+        "1 16 -10 4 0 1 0 0 0 -1 0 0 0 1 stud4.dat\n"
+        "1 16 10 4 0 1 0 0 0 -1 0 0 0 1 stud4.dat\n"
+    ),
+    # a studless underside of solid tubes, which no stud and no open tube says
+    # the axis of: the shape of a 1-wide tile, and 436 parts in the library
+    "99999f.dat": (
+        "0 Tile Test  1 x  3\n"
+        "1 16 -10 4 0 1 0 0 0 -1 0 0 0 1 stud3.dat\n"
+        "1 16 10 4 0 1 0 0 0 -1 0 0 0 1 stud3.dat\n"
+    ),
+    # a one-sided Technic hole, whose mouth LDraw draws as a nested peghole
+    "99999h.dat": ("0 Technic One Sided Test\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 connhol3.dat\n"),
     # a part whose studs belong to another building system
     "3011.dat": (
         "0 Duplo Brick  2 x  4\n"
@@ -858,12 +874,48 @@ def test_a_part_the_tubes_do_not_settle_keeps_the_name_grid(fake_library):
 
 def test_headgear_takes_its_socket_from_the_geometry(fake_library):
     # the same open tube that means "spacer" under a brick means "socket" here,
-    # which is why the name picks the family and the geometry confirms it
+    # and what tells them apart is where its far end lands: on the part's own
+    # origin, so the tube stands above the plane the part mates on
     hat = plugin._lego_implements("Minifig Hat Wide Brim Flat", "30167")
     assert sorted(hat[ANTI]) == ["anti"]
     assert hat[ANTI]["anti"][0] == [0.0, 0.0, 0.0]
-    # a tube that does not open at the origin is not a socket, and is left alone
-    assert plugin._lego_implements("Minifig Hat Nonsense", "99999") is None
+    # the same primitive 40 LDU down is an underside, not a socket: its far end
+    # is nowhere near the origin, so it separates four anti-studs as usual
+    other = plugin._lego_implements("Minifig Hat Nonsense", "99999")
+    assert len(other[ANTI]) == 4
+    assert {p[0][1] for p in other[ANTI].values()} == {-17.6}
+
+
+def test_a_part_with_no_studs_of_its_own_still_gets_its_underside(fake_library):
+    # a tile has an underside but nothing on top, which used to mean its
+    # anti-studs came from its name - and a name does not say which way round
+    # the part is drawn
+    anti = plugin._geometry_anti_studs("99999e")
+    assert len(anti) == 6
+    assert sorted(p[0] for p in anti.values()) == [
+        [-8.0, -3.2, -4.0],
+        [-8.0, -3.2, 4.0],
+        [0.0, -3.2, -4.0],
+        [0.0, -3.2, 4.0],
+        [8.0, -3.2, -4.0],
+        [8.0, -3.2, 4.0],
+    ]
+
+
+def test_a_studless_underside_of_solid_tubes_is_left_to_the_name(fake_library):
+    # a solid tube does not say which two anti-studs it separates, and on a part
+    # with no studs there is nothing to ask, so the name's grid stands
+    assert plugin._geometry_anti_studs("99999f") is None
+    assert sorted(plugin._lego_implements("Tile  1 x  3", "99999f")[ANTI]) == ["c0r0", "c1r0", "c2r0"]
+
+
+def test_the_one_sided_hole_takes_the_mouth_ldraw_draws_inside_it(fake_library):
+    # connhol3 is blind at one end, and says which by drawing a peghole at the
+    # other. The walk never fetches a primitive, so that is transcribed.
+    holes = plugin._lego_implements("Technic One Sided Test", "99999h")[PIN_HOLE]
+    assert len(holes) == 1
+    assert list(holes.values())[0][0] == [0.0, 4.0, 0.0]
+    assert "connhol3.dat" not in fake_library
 
 
 def test_the_three_quarter_pin_says_which_end_is_which():

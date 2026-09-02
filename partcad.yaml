@@ -46,8 +46,11 @@ dependencies:
     # walk finishes, which is what the last 198 of them were; v7 serves the axle
     # holes the Mindstorms parts were already known to have but never got; v8
     # reads every part's Technic connectors from its geometry rather than from
-    # the 80 names the rules happened to cover.
-    cacheVersion: 8
+    # the 80 names the rules happened to cover; v9 reads the underside of a part
+    # that has no studs of its own, which is most of what was still answered by
+    # a name, and takes the one-sided connector hole from the peghole LDraw
+    # draws inside it.
+    cacheVersion: 9
 
 repositories:
   ldraw_repo:
