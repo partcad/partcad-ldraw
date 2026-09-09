@@ -622,6 +622,14 @@ def _part_config(pid, meta):
     """The PartCAD config of one part: its wrapper, its .dat, and what it implements."""
     desc, author, lic = meta if meta else (None, None, None)
     config = {"type": ":ldraw", "dat": pid + ".dat"}
+    # The .dat is also declared as a parameter because that is what reaches the
+    # shape cache key. PartCAD hashes only 'parameters', 'offset' and 'scale'
+    # out of a part's config (Shape.__init__), so 'dat' - the only field that
+    # says which part this is - would not be in the key, and every part served
+    # by this repository would share one cache entry: whichever was meshed
+    # first would then be handed back for all the others. ldraw.py's
+    # _resolve_dat() already reads parameters['dat'].
+    config["parameters"] = {"dat": {"type": "string", "default": pid + ".dat"}}
     if desc:
         config["desc"] = desc
     if author:
@@ -707,22 +715,6 @@ def get(key):
         return _ldraw_py_b64()
 
     return None
-
-
-if __name__ == "get":
-    output = {"result": get(request["key"])}  # noqa: F821 - injected by the runtime
-elif __name__ == "__main__":
-    _cats = _categories()
-    print("categories:", len(_cats))
-    demo = "Brick" if "Brick" in _cats else sorted(_cats)[0]
-    cat = _cats[demo]
-    print("sample category:", demo, "->", cat)
-    catalog = _catalog(cat)
-    print("parts:", len(catalog))
-    for pid, cfg in list(catalog.items())[:3]:
-        print("  ", pid, "->", cfg)
-else:
-    output = {}
 
 
 # --- Duplo ------------------------------------------------------------------
@@ -1647,3 +1639,22 @@ _OTHER_RULES = (
     (_TYRE_RE, _tyre_implements),
     (_WHEEL_RE, _wheel_implements),
 )
+
+
+# The dispatch has to be last. PartCAD runs this file with
+# runpy.run_path(run_name=request["api"]), which executes it top to bottom,
+# so get() must not be called until every helper below it has been defined.
+if __name__ == "get":
+    output = {"result": get(request["key"])}  # noqa: F821 - injected by the runtime
+elif __name__ == "__main__":
+    _cats = _categories()
+    print("categories:", len(_cats))
+    demo = "Brick" if "Brick" in _cats else sorted(_cats)[0]
+    cat = _cats[demo]
+    print("sample category:", demo, "->", cat)
+    catalog = _catalog(cat)
+    print("parts:", len(catalog))
+    for pid, cfg in list(catalog.items())[:3]:
+        print("  ", pid, "->", cfg)
+else:
+    output = {}

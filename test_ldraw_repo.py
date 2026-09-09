@@ -58,7 +58,11 @@ def test_part_config_includes_available_metadata():
 
 def test_part_config_tolerates_missing_metadata():
     cfg = plugin._part_config("u1193", None)
-    assert cfg == {"type": ":ldraw", "dat": "u1193.dat"}
+    assert cfg == {
+        "type": ":ldraw",
+        "dat": "u1193.dat",
+        "parameters": {"dat": {"type": "string", "default": "u1193.dat"}},
+    }
 
 
 def test_sanitize_category_name():
@@ -917,3 +921,86 @@ def test_a_technic_part_keeps_the_port_names_its_rule_gave_it(fake_library):
     wrong = {"only": plugin._port((0.0, 0.0, 0.0), plugin._Z_TO_PLUS_Y)}
     replaced = plugin._with_geometry_technic({PIN_HOLE: wrong}, "99999c")
     assert sorted(replaced[PIN_HOLE]) == ["h0", "h1"]
+
+
+# --- how the runtime actually runs this file --------------------------------
+#
+# Everything above imports the module. PartCAD does not: it runs it with
+# runpy.run_path(run_name=request["api"]), top to bottom, so a helper defined
+# below the dispatch does not exist by the time get() reaches it. An import
+# cannot see that, which is why the whole plugin could fail in production with
+# every test here passing.
+
+
+def _run_plugin(key):
+    """Answer one key the way partcad/wrappers/wrapper_plugin.py does."""
+    import runpy
+
+    result = runpy.run_path(
+        os.path.join(_here, "ldraw_repo.py"),
+        init_globals={"request": {"key": key, "api": "get"}},
+        run_name="get",
+    )
+    return result["output"]["result"]
+
+
+@pytest.mark.slow
+def test_the_dispatch_runs_after_every_helper_it_needs():
+    # The production failure, reproduced: resolving a real part reaches
+    # _lego_implements -> _with_geometry_technic -> _geometry_connector_implements,
+    # and with the dispatch in the middle of the file that last one is not
+    # defined yet. Needs network; the offline guard is the AST test below.
+    try:
+        cfg = _run_plugin("Brick/objects/part/3001")
+    except NameError as e:
+        raise AssertionError(
+            "the plugin ran into a name that does not exist yet: %s - the "
+            "__name__ dispatch is executing before the rest of the file" % e
+        )
+    except Exception as e:
+        pytest.skip("LDraw could not be reached: %s" % e)
+    if cfg is None:
+        pytest.skip("LDraw returned nothing for 3001 (offline?)")
+    assert cfg["dat"] == "3001.dat"
+
+
+def test_an_unknown_api_name_produces_an_empty_output():
+    import runpy
+
+    result = runpy.run_path(
+        os.path.join(_here, "ldraw_repo.py"),
+        init_globals={"request": {"key": "meta", "api": "nonesuch"}},
+        run_name="nonesuch",
+    )
+    assert result["output"] == {}
+
+
+def test_every_helper_is_defined_before_the_dispatch():
+    # The failure mode in prose: no top-level statement that calls into the
+    # plugin may appear before the last definition in the file.
+    import ast
+
+    tree = ast.parse(open(os.path.join(_here, "ldraw_repo.py")).read())
+    last_def = max(
+        node.lineno for node in tree.body if isinstance(node, (ast.FunctionDef, ast.ClassDef, ast.Assign))
+    )
+    dispatch = [node for node in tree.body if isinstance(node, ast.If)]
+    assert dispatch, "the __name__ dispatch went missing"
+    assert dispatch[-1].lineno > last_def, (
+        "the __name__ dispatch must come after every definition: runpy.run_path "
+        "executes this file top to bottom"
+    )
+
+
+# --- the part config carries what the shape cache keys on -------------------
+
+
+def test_part_config_declares_the_dat_as_a_parameter():
+    # PartCAD hashes only 'parameters', 'offset' and 'scale' out of a part's
+    # config, so without this every part this repository serves shares one
+    # shape-cache entry and they render as each other.
+    a = plugin._part_config("3001", ("Brick  2 x  4", None, None))
+    b = plugin._part_config("3003", ("Brick  2 x  2", None, None))
+    assert a["parameters"]["dat"]["default"] == "3001.dat"
+    assert b["parameters"]["dat"]["default"] == "3003.dat"
+    assert a["parameters"] != b["parameters"]
