@@ -14,6 +14,7 @@
 import os
 import struct
 import tempfile
+import time
 import urllib.request
 
 _LDRAW_BASE = "https://library.ldraw.org/library"
@@ -21,6 +22,17 @@ _LDRAW_SUBDIRS = ["official/parts", "official/p", "unofficial/parts", "unofficia
 _LDRAW_UA = "Mozilla/5.0 (PartCAD ldraw partType)"
 # 1 LDraw Unit = 0.4 mm; LDraw uses -Y as up, so flip Y for a Z-is-up render.
 _LDU_MM = 0.4
+# A dropped request costs geometry rather than time, so retry before giving up.
+_FETCH_RETRIES = 4
+_FETCH_BACKOFF = 0.5
+
+
+class LDrawSubfileMissing(Exception):
+    """A subfile or primitive a part is built from could not be fetched."""
+
+    def __init__(self, name):
+        super().__init__("LDraw subfile could not be fetched: %s" % name)
+        self.name = name
 
 
 def _ldraw_cache_dir():
@@ -32,25 +44,33 @@ def _ldraw_cache_dir():
 
 
 def _ldraw_fetch(name, cache):
-    """Return the text of an LDraw file, fetching+caching it on first use."""
+    """Return the text of an LDraw file, fetching+caching it on first use.
+
+    Retried with a backoff, because a part is mostly references and a dropped
+    request means a hole in the geometry rather than a slower render:
+    library.ldraw.org rate-limits bursts, and a 2 x 2 round brick that loses
+    4-4cyli.dat meshes into a flat disc.
+    """
     key = name.replace("\\", "/").lower()
     cached = os.path.join(cache, key)
     if os.path.exists(cached):
         with open(cached, "r", encoding="latin-1") as f:
             return f.read()
-    for sub in _LDRAW_SUBDIRS:
-        url = "%s/%s/%s" % (_LDRAW_BASE, sub, key)
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": _LDRAW_UA})
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                if resp.status == 200:
-                    data = resp.read().decode("latin-1")
-                    os.makedirs(os.path.dirname(cached), exist_ok=True)
-                    with open(cached, "w", encoding="latin-1") as f:
-                        f.write(data)
-                    return data
-        except Exception:
-            continue
+    for attempt in range(_FETCH_RETRIES):
+        for sub in _LDRAW_SUBDIRS:
+            url = "%s/%s/%s" % (_LDRAW_BASE, sub, key)
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": _LDRAW_UA})
+                with urllib.request.urlopen(req, timeout=60) as resp:
+                    if resp.status == 200:
+                        data = resp.read().decode("latin-1")
+                        os.makedirs(os.path.dirname(cached), exist_ok=True)
+                        with open(cached, "w", encoding="latin-1") as f:
+                            f.write(data)
+                        return data
+            except Exception:
+                continue
+        time.sleep(_FETCH_BACKOFF * (attempt + 1))
     return None
 
 
@@ -88,9 +108,15 @@ def _mesh(text, m, t, tris, cache):
             cm = (tuple(v[3:6]), tuple(v[6:9]), tuple(v[9:12]))
             ct = (v[0], v[1], v[2])
             nm, nt = _compose(m, t, cm, ct)
-            subtext = _ldraw_fetch(" ".join(f[14:]), cache)
-            if subtext is not None:
-                _mesh(subtext, nm, nt, tris, cache)
+            subname = " ".join(f[14:])
+            subtext = _ldraw_fetch(subname, cache)
+            if subtext is None:
+                # Never mesh on regardless: an LDraw part is mostly references,
+                # so a subfile that cannot be read is a missing piece of the
+                # part, and skipping it quietly returns a wrong shape that
+                # looks like a right one - and gets cached as such.
+                raise LDrawSubfileMissing(subname)
+            _mesh(subtext, nm, nt, tris, cache)
         elif code == "3" and len(f) >= 11:
             v = list(map(float, f[2:11]))
             tris.append((_xform(m, t, v[0:3]), _xform(m, t, v[3:6]), _xform(m, t, v[6:9])))
@@ -172,9 +198,16 @@ if __name__ == "__partcad_part__":
             output = {"exception": "LDraw part not found in the library: %s" % dat}
         else:
             tris = []
-            _mesh(text, _IDENT, (0, 0, 0), tris, cache)
+            try:
+                _mesh(text, _IDENT, (0, 0, 0), tris, cache)
+            except LDrawSubfileMissing as e:
+                tris = None
+                output = {"exception": "%s (needed by %s)" % (e, dat)}
             shape = _build_shape(tris) if tris else None
             if shape is None:
-                output = {"exception": "LDraw part produced no geometry: %s" % dat}
+                # 'output' is already set when a subfile went missing; only a
+                # part that meshed to nothing needs the generic message.
+                if tris is not None:
+                    output = {"exception": "LDraw part produced no geometry: %s" % dat}
             else:
                 output = {"shape": shape}
