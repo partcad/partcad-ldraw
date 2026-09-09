@@ -1004,3 +1004,161 @@ def test_part_config_declares_the_dat_as_a_parameter():
     assert a["parameters"]["dat"]["default"] == "3001.dat"
     assert b["parameters"]["dat"]["default"] == "3003.dat"
     assert a["parameters"] != b["parameters"]
+
+
+# --- what happens when a fetch does not produce a body ----------------------
+#
+# library.ldraw.org rate-limits bursts, so this is an ordinary occurrence
+# rather than an edge case, and three separate things used to go wrong when it
+# happened: the failure was not remembered, a part that could not be described
+# was reported as not existing, and a part served without its metadata lost its
+# interfaces without saying so.
+
+
+class _HTTPError(Exception):
+    """Stands in for urllib.error.HTTPError, which needs a real response."""
+
+    def __init__(self, code, headers=None):
+        super().__init__(str(code))
+        self.code = code
+        self.headers = headers or {}
+
+
+def test_a_404_is_an_answer_and_is_not_retried(monkeypatch):
+    import urllib.error
+
+    calls = []
+
+    def _urlopen(req, timeout=None):
+        calls.append(req.full_url)
+        raise urllib.error.HTTPError(req.full_url, 404, "Not Found", {}, None)
+
+    monkeypatch.setattr(plugin.urllib.request, "urlopen", _urlopen)
+    monkeypatch.setattr(plugin.time, "sleep", lambda s: None)
+    body, reason = plugin._http_get("https://example.invalid/x.dat")
+    assert body is None
+    assert reason == plugin._MISSING
+    assert len(calls) == 1, "a 404 is conclusive; retrying it only costs time"
+
+
+def test_a_server_that_says_nothing_is_retried_then_reported_unavailable(monkeypatch):
+    calls = []
+
+    def _urlopen(req, timeout=None):
+        calls.append(req.full_url)
+        raise OSError("connection reset")
+
+    monkeypatch.setattr(plugin.urllib.request, "urlopen", _urlopen)
+    monkeypatch.setattr(plugin.time, "sleep", lambda s: None)
+    body, reason = plugin._http_get("https://example.invalid/x.dat")
+    assert body is None
+    assert reason == plugin._UNAVAILABLE
+    assert len(calls) == plugin._HTTP_RETRIES
+
+
+def test_a_throttled_fetch_waits_as_long_as_it_was_asked_to():
+    assert plugin._retry_after(_HTTPError(429, {"Retry-After": "5"}), 0.5) == 5.0
+    # No header, or one in the HTTP-date form, leaves the backoff as it was.
+    assert plugin._retry_after(_HTTPError(429), 0.5) == 0.5
+    assert plugin._retry_after(_HTTPError(429, {"Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT"}), 0.5) == 0.5
+    # An absurd wait is capped rather than obeyed.
+    assert plugin._retry_after(_HTTPError(429, {"Retry-After": "86400"}), 0.5) == 60.0
+
+
+def test_a_failed_fetch_is_remembered_so_the_next_run_is_not_this_one(tmp_path, monkeypatch):
+    monkeypatch.setenv("PARTCAD_LDRAW_CACHE", str(tmp_path))
+    attempts = []
+
+    def _get(url):
+        attempts.append(url)
+        return None, plugin._UNAVAILABLE
+
+    monkeypatch.setattr(plugin, "_http_get", _get)
+    assert plugin._cached("https://example.invalid/x.dat", "parts/x.dat") is None
+    assert plugin._cached("https://example.invalid/x.dat", "parts/x.dat") is None
+    assert len(attempts) == 1, "the second call should have read the negative entry"
+
+
+def test_a_negative_entry_expires(tmp_path, monkeypatch):
+    monkeypatch.setenv("PARTCAD_LDRAW_CACHE", str(tmp_path))
+    plugin._remember_negative("parts/x.dat", plugin._UNAVAILABLE)
+    assert plugin._negative_is_fresh("parts/x.dat")
+    monkeypatch.setattr(plugin.time, "time", lambda: 1e12)  # long past the TTL
+    assert not plugin._negative_is_fresh("parts/x.dat")
+
+
+def test_the_library_not_having_a_file_is_remembered_for_longer_than_a_bad_day():
+    assert plugin._NEGATIVE_TTL[plugin._MISSING] > plugin._NEGATIVE_TTL[plugin._UNAVAILABLE]
+
+
+def test_a_fetch_is_not_attempted_again_until_the_entry_goes_stale(tmp_path, monkeypatch):
+    monkeypatch.setenv("PARTCAD_LDRAW_CACHE", str(tmp_path))
+    plugin._remember_negative("parts/x.dat", plugin._UNAVAILABLE)
+    monkeypatch.setattr(plugin, "_http_get", lambda url: ("0 Brick  1 x  1\n", None))
+
+    # While the entry is fresh the fetch does not happen at all, which is the
+    # point of it: a throttled run must not be repeated immediately.
+    assert plugin._cached("https://example.invalid/x.dat", "parts/x.dat") is None
+
+    # Once it is stale the fetch happens, and succeeding clears the entry so a
+    # later failure starts a fresh TTL rather than inheriting this one.
+    real_time = plugin.time.time
+    monkeypatch.setattr(plugin.time, "time", lambda: real_time() + 1e6)
+    assert plugin._cached("https://example.invalid/x.dat", "parts/x.dat")
+    assert not os.path.exists(plugin._negative_path("parts/x.dat"))
+
+
+# --- a part the category lists is a part ------------------------------------
+
+
+def test_a_listed_part_whose_header_cannot_be_read_is_still_served(monkeypatch):
+    monkeypatch.setattr(plugin, "_categories", lambda: {"Cone": "Cone"})
+    monkeypatch.setattr(plugin, "_dat_header", lambda pid: None)
+    monkeypatch.setattr(plugin, "_part_ids", lambda category: ["3942a", "3942c"])
+    cfg = plugin.get("Cone/objects/part/3942c")
+    # 'pc list' showed this part; 'pc render' used to say it did not exist.
+    assert cfg is not None
+    assert cfg["dat"] == "3942c.dat"
+    assert "desc" not in cfg
+
+
+def test_an_id_the_category_does_not_have_is_still_not_found(monkeypatch):
+    monkeypatch.setattr(plugin, "_categories", lambda: {"Cone": "Cone"})
+    monkeypatch.setattr(plugin, "_dat_header", lambda pid: None)
+    monkeypatch.setattr(plugin, "_part_ids", lambda category: ["3942a", "3942c"])
+    assert plugin.get("Cone/objects/part/nosuchpart") is None
+
+
+def test_the_catalog_and_a_single_lookup_agree_about_what_exists(monkeypatch):
+    """The two used to disagree, which is the whole of this bug."""
+    monkeypatch.setattr(plugin, "_categories", lambda: {"Cone": "Cone"})
+    monkeypatch.setattr(plugin, "_dat_header", lambda pid: None)
+    monkeypatch.setattr(plugin, "_part_ids", lambda category: ["3942a", "3942c"])
+    catalog = plugin.get("Cone/objects/part")
+    for pid in catalog:
+        assert plugin.get("Cone/objects/part/%s" % pid) is not None
+
+
+# --- a part served without its metadata says so -----------------------------
+
+
+def test_a_part_without_metadata_says_why_it_has_no_interfaces(capsys):
+    plugin._warned_metadata.discard("3941")
+    cfg = plugin._part_config("3941", None)
+    assert "implements" not in cfg
+    said = capsys.readouterr().err
+    assert "3941" in said
+    assert "interfaces" in said
+
+
+def test_it_is_said_once_per_part_rather_than_once_per_lookup(capsys):
+    plugin._warned_metadata.discard("3941")
+    plugin._part_config("3941", None)
+    capsys.readouterr()
+    plugin._part_config("3941", None)
+    assert capsys.readouterr().err == ""
+
+
+def test_a_part_with_metadata_says_nothing(capsys):
+    plugin._part_config("3001", ("Brick  2 x  4", None, None))
+    assert capsys.readouterr().err == ""
