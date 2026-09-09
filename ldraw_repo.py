@@ -21,6 +21,8 @@ sub-package, e.g. ``Brick/objects/part`` or ``Brick/files/ldraw.py``.
 
 import base64
 import concurrent.futures
+import gzip
+import json
 import math
 import os
 import re
@@ -177,8 +179,75 @@ def _sanitize(category):
     return re.sub(r"\s+", "-", category.strip())
 
 
+# --- the shipped parts index ------------------------------------------------
+#
+# Which categories there are, which parts are in each, and what every part is
+# called: all of it ships with the package, built by build_parts_index.py and
+# committed. Nothing here is fetched.
+#
+# This is what makes the package usable. PartCAD asks for
+# '<Category>/objects/part' to resolve any single part in it, and answering
+# that used to mean one HTTP request per part in the category - 1324 of them
+# for 'Brick' - which ldraw.org rate-limits long before it finishes. Rendering
+# one brick took over twenty minutes on a cold cache, when it finished at all.
+#
+# The index also carries what each part connects with. Those are read from a
+# part's geometry, so deriving them at run time means fetching every .dat in
+# the category as well - and it is 67 seconds for
+# 'Brick' even with all of it already on disk. Doing it once, at build time,
+# against the whole library at once, is the difference between a package that
+# works and one that times out.
+#
+# Geometry is still fetched on demand and still nothing is vendored of it: the
+# index carries names and connection points, not shapes.
+_INDEX_FILE = "parts-index.json.gz"
+_INDEX_FORMAT = 2
+_index_loaded = None  # the index, or False once we know there is not one
+
+
+def _index():
+    """The shipped index, or False if it is absent or unreadable.
+
+    Set PARTCAD_LDRAW_IGNORE_INDEX=1 to go to the network instead, which is how
+    to check the index against the library it was built from.
+    """
+    global _index_loaded
+    if _index_loaded is None:
+        _index_loaded = False if os.environ.get("PARTCAD_LDRAW_IGNORE_INDEX") else _load_index()
+    return _index_loaded
+
+
+def _load_index():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), _INDEX_FILE)
+    try:
+        with gzip.open(path, "rt", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return False
+    if data.get("format") != _INDEX_FORMAT:
+        # A newer index than this plugin understands: fall back rather than
+        # guess at what changed.
+        return False
+    strings = data.get("strings") or []
+
+    def string(i):
+        return strings[i] if 0 <= i < len(strings) else None
+
+    headers = {}
+    implements = {}
+    for parts in data["categories"].values():
+        for pid, entry in parts.items():
+            desc, author, lic, connects = entry
+            headers[pid] = (desc or None, string(author), string(lic))
+            implements[pid] = connects
+    return {"categories": data["categories"], "headers": headers, "implements": implements}
+
+
 def _categories():
     """Return {sub_package_name: ldraw_category} for every LDraw category."""
+    index = _index()
+    if index:
+        return {_sanitize(cat): cat for cat in index["categories"]}
     html = _cached(_CATEGORY_LIST_URL, "category-list.html")
     if not html:
         return {}
@@ -197,6 +266,9 @@ def _part_ids(category):
     the reported total is reached, when a page yields no new ids, or at the
     safety bound.
     """
+    index = _index()
+    if index:
+        return list(index["categories"].get(category, {}))
     ids = []
     seen = set()
     sub = _sanitize(category)
@@ -255,6 +327,13 @@ def _dat_header(pid):
     None means the part could not be fetched (so a targeted single fetch of an
     unknown id fails cleanly instead of inventing a broken part).
     """
+    index = _index()
+    if index:
+        header = index["headers"].get(pid)
+        if header is not None:
+            return header
+        # Not in the index: an unofficial part, or one added to the library
+        # since the index was built. Fall through and ask for it.
     text = _cached(_DAT_URL + pid + ".dat", os.path.join("parts", pid + ".dat"))
     if not text:
         return None
@@ -697,6 +776,22 @@ def _with_geometry_studs(implements, pid):
     return implements or None
 
 
+_NOT_INDEXED = object()  # told apart from a part the index says has none
+
+
+def _indexed_implements(pid):
+    """What the index says this part connects with, or _NOT_INDEXED.
+
+    None and _NOT_INDEXED are different answers: the first says the part has no
+    interfaces, the second that the index has never heard of it.
+    """
+    index = _index()
+    if not index:
+        return _NOT_INDEXED
+    connects = index["implements"]
+    return connects[pid] if pid in connects else _NOT_INDEXED
+
+
 _warned_metadata = set()
 
 
@@ -706,9 +801,10 @@ def _warn_metadata_unavailable(pid):
         return
     _warned_metadata.add(pid)
     print(
-        "ldraw: %s.dat: header unavailable, so this part is served without a "
-        "description and without interfaces (studs, anti-studs, Technic ports). "
-        "It has them; they could not be read." % pid,
+        "ldraw: %s.dat: header unavailable and not in the shipped index, so "
+        "this part is served with no description and no interfaces (studs, "
+        "anti-studs, Technic ports). It has them; they could not be read."
+        % pid,
         file=sys.stderr,
     )
 
@@ -716,15 +812,7 @@ def _warn_metadata_unavailable(pid):
 def _part_config(pid, meta):
     """The PartCAD config of one part: its wrapper, its .dat, and what it implements."""
     desc, author, lic = meta if meta else (None, None, None)
-    if meta is None:
-        # Every interface this part has is derived from its description, so a
-        # part whose header could not be read comes out with no stud, no
-        # anti-stud and no Technic port - not because it has none, but because
-        # nobody could read its name. Left unsaid, a 'connect:' against it
-        # fails as a missing port and sends the reader to the ASSY file, which
-        # is the wrong place: the fault is a fetch that failed earlier, maybe
-        # in another process.
-        _warn_metadata_unavailable(pid)
+
     config = {"type": ":ldraw", "dat": pid + ".dat"}
     # The .dat is also declared as a parameter because that is what reaches the
     # shape cache key. PartCAD hashes only 'parameters', 'offset' and 'scale'
@@ -740,7 +828,17 @@ def _part_config(pid, meta):
         config["author"] = author
     if lic:
         config["license"] = lic
-    implements = _lego_implements(_effective_desc(desc), pid)
+    implements = _indexed_implements(pid)
+    if implements is _NOT_INDEXED:
+        # Not a part the index knows: work them out the long way, which reads
+        # the part's geometry - and which needs the description, so a part with
+        # neither an index entry nor a readable header gets none. That is worth
+        # saying: left unsaid, a 'connect:' against it fails as a missing port
+        # and sends the reader to the ASSY file, when the fault is a fetch that
+        # failed earlier, maybe in another process.
+        implements = _lego_implements(_effective_desc(desc), pid)
+        if meta is None:
+            _warn_metadata_unavailable(pid)
     if implements:
         config["implements"] = implements
     return config

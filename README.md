@@ -5,9 +5,20 @@ published as `//pub/universe/lego/ldraw`. Every LDraw category becomes a
 sub-package, and every part in it is a parametric `:ldraw` part that meshes the
 LDraw `.dat` on demand.
 
-Nothing is vendored: the category list, the per-category part lists (paginated
-in full), the part metadata and the part geometry are all fetched from
-ldraw.org and **cached on disk** on first use.
+**No geometry is vendored.** Every `.dat` is fetched from ldraw.org on demand
+and **cached on disk** under `~/.cache/partcad-ldraw/`.
+
+What *does* ship with the package is an index of names: `parts-index.json.gz`,
+which says which categories exist, which parts are in each, and what every part
+is called (with its author and licence). It is 20,569 parts in about 270 KiB,
+built by [`build_parts_index.py`](build_parts_index.py) and committed.
+
+That index is what makes the package usable at all. PartCAD asks for a whole
+category in order to resolve any single part in it, and answering that from the
+network meant one HTTP request per part — 1324 of them for `Brick` — which
+ldraw.org rate-limits long before it finishes. Rendering a single brick took
+over twenty minutes on a cold cache, when it finished at all. Now it is a file
+read.
 
 ## How it works
 
@@ -15,17 +26,44 @@ Two mechanisms are combined:
 
 1. **An external repository plugin** (`ldraw_repo.py`). It serves the package
    contents over PartCAD's key/value repository protocol:
-   - the categories (from `parts/category-list`) as top-level sub-packages;
-   - within each category, the **complete** list of parts (walking every page of
-     `parts/list`), each with its **description, author and license** read from
-     the part's `.dat` header.
-   Category enumeration is lazy (per category) and every remote call — each list
-   page and each `.dat` — is cached under `~/.cache/partcad-ldraw/`, consistent
-   with how `partcad-bosl2` caches BOSL2.
+   - the categories as top-level sub-packages;
+   - within each category, the **complete** list of parts, each with its
+     **description, author and license**.
+   All of that is read from the shipped index. A part the index does not have —
+   an unofficial one, or one added to the library since the index was built —
+   still resolves: the plugin falls back to fetching its `.dat` header, cached
+   under `~/.cache/partcad-ldraw/` as before. Set `PARTCAD_LDRAW_IGNORE_INDEX=1`
+   to bypass the index entirely and go to the network, which is how to check one
+   against the other.
 
 2. **A `wrapper` partType** (`ldraw.py`). Each part's `type` is `:ldraw`, which
    resolves to this partType. The wrapper fetches the part's `.dat`, recursively
    resolves its sub-parts, meshes the triangles/quads, and returns the shape.
+
+## Rebuilding the index
+
+Run it when LDraw publishes a library update, and commit the result:
+
+```sh
+./build_parts_index.py                      # downloads complete.zip
+./build_parts_index.py --archive complete.zip
+```
+
+It takes names, authors and licences from
+[`complete.zip`](https://library.ldraw.org/library/updates/complete.zip) — one
+download carrying the whole official library, instead of ~25,000 per-part
+requests — and takes which parts are in which category from ldraw.org's own
+list pages, because that is what the package paths have always been built from
+and the archive does not reproduce it. The archive holds 24,735 parts in
+`parts/`; the site lists 20,569 of them. The difference is largely the 4,538
+whose description carries a `~`, `=` or `_` marker — moved-to stubs, aliases
+and colour variants — but not exactly, since some aliases *are* listed. Rather
+than guess at that filter, the build reads the listings: ~1,000 requests at 25
+rows a page, cached on disk between runs.
+
+Twelve more categories appear in the site's filter dropdown (`Quatro`,
+`Minifig Arm`, `Mursten` and nine others) but list no parts at all. They used to
+become empty sub-packages; now they are simply absent.
 
 ## Interfaces
 
