@@ -21,10 +21,14 @@ sub-package, e.g. ``Brick/objects/part`` or ``Brick/files/ldraw.py``.
 
 import base64
 import concurrent.futures
+import gzip
+import json
 import math
 import os
 import re
+import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -45,8 +49,20 @@ _MAX_PAGES = 2000  # safety bound on pagination
 # ldraw.org rate-limits bursts of concurrent requests, so keep the pool modest
 # and retry with backoff; a dropped fetch would otherwise leave a part without
 # its metadata.
-_HEADER_WORKERS = 6
+_HEADER_WORKERS = 4
 _HTTP_RETRIES = 4
+
+# What a fetch that did not produce a body is remembered as, and for how long.
+# Without this a throttled run leaves nothing behind and the next one repeats
+# it in full, so a rate-limited machine never converges - which is what happens
+# today: two runs in a row can die at the same place with the cache stuck.
+#
+# The two cases are not the same question. A 404 is an answer - this file is not
+# in the library - and is worth remembering for a while. A timeout or a 429 is
+# the absence of an answer, and is worth retrying soon.
+_MISSING = "missing"  # the server said no such file
+_UNAVAILABLE = "unavailable"  # the server said nothing we could use
+_NEGATIVE_TTL = {_MISSING: 7 * 24 * 3600, _UNAVAILABLE: 300}
 
 
 # --- HTTP + cache -----------------------------------------------------------
@@ -62,32 +78,97 @@ def _cache_dir():
 
 
 def _http_get(url):
-    """The body of 'url' as text, retried with a backoff; None if every try fails."""
+    """Fetch 'url'. Returns (body, None) or (None, reason).
+
+    The reason separates 'the library does not have this' from 'the library did
+    not answer', because they are remembered for different lengths of time (see
+    _NEGATIVE_TTL). A 404 is conclusive and stops the retries; anything else is
+    retried, and a 429 is waited out for as long as the server asks.
+    """
+    reason = _UNAVAILABLE
     for attempt in range(_HTTP_RETRIES):
+        delay = 0.5 * (attempt + 1)
         try:
             req = urllib.request.Request(url, headers={"User-Agent": _UA})
             with urllib.request.urlopen(req, timeout=60) as resp:
                 if resp.status == 200:
-                    return resp.read().decode("latin-1")
+                    return resp.read().decode("latin-1"), None
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return None, _MISSING  # an answer, not a failure: do not retry
+            if e.code == 429:
+                delay = max(delay, _retry_after(e, delay))
         except Exception:
             pass
-        time.sleep(0.5 * (attempt + 1))  # backoff between retries
-    return None
+        time.sleep(delay)
+    return None, reason
+
+
+def _retry_after(error, default):
+    """How long a 429 asked us to wait, in seconds; 'default' if it did not say."""
+    value = error.headers.get("Retry-After") if error.headers else None
+    if not value:
+        return default
+    try:
+        return min(float(value), 60.0)  # a delay-seconds form; ignore absurd ones
+    except (TypeError, ValueError):
+        return default  # an HTTP-date form, which is not worth parsing here
 
 
 def _cached(url, rel):
-    """Fetch 'url' once, caching its body under '<cache>/<rel>'."""
+    """Fetch 'url' once, caching its body under '<cache>/<rel>'.
+
+    A fetch that produced no body is remembered too, under '<cache>/.missing',
+    so that a throttled run leaves something behind and the next one is not the
+    same run again.
+    """
     path = os.path.join(_cache_dir(), rel)
     if os.path.exists(path):
         with open(path, "r", encoding="latin-1") as f:
             return f.read()
-    body = _http_get(url)
-    if body is None:
+    if _negative_is_fresh(rel):
         return None
+    body, reason = _http_get(url)
+    if body is None:
+        _remember_negative(rel, reason)
+        return None
+    _forget_negative(rel)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="latin-1") as f:
         f.write(body)
     return body
+
+
+def _negative_path(rel):
+    return os.path.join(_cache_dir(), ".missing", rel)
+
+
+def _negative_is_fresh(rel):
+    """Whether this was already asked for recently enough not to ask again."""
+    path = _negative_path(rel)
+    try:
+        with open(path, "r", encoding="latin-1") as f:
+            reason, expires = f.read().split(None, 1)
+        return time.time() < float(expires)
+    except (OSError, ValueError):
+        return False
+
+
+def _remember_negative(rel, reason):
+    path = _negative_path(rel)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="latin-1") as f:
+            f.write("%s %f" % (reason, time.time() + _NEGATIVE_TTL[reason]))
+    except OSError:
+        pass  # an unwritable cache is a slow run, not a broken one
+
+
+def _forget_negative(rel):
+    try:
+        os.unlink(_negative_path(rel))
+    except OSError:
+        pass
 
 
 # --- LDraw catalog ----------------------------------------------------------
@@ -98,8 +179,75 @@ def _sanitize(category):
     return re.sub(r"\s+", "-", category.strip())
 
 
+# --- the shipped parts index ------------------------------------------------
+#
+# Which categories there are, which parts are in each, and what every part is
+# called: all of it ships with the package, built by build_parts_index.py and
+# committed. Nothing here is fetched.
+#
+# This is what makes the package usable. PartCAD asks for
+# '<Category>/objects/part' to resolve any single part in it, and answering
+# that used to mean one HTTP request per part in the category - 1324 of them
+# for 'Brick' - which ldraw.org rate-limits long before it finishes. Rendering
+# one brick took over twenty minutes on a cold cache, when it finished at all.
+#
+# The index also carries what each part connects with. Those are read from a
+# part's geometry, so deriving them at run time means fetching every .dat in
+# the category as well - and it is 67 seconds for
+# 'Brick' even with all of it already on disk. Doing it once, at build time,
+# against the whole library at once, is the difference between a package that
+# works and one that times out.
+#
+# Geometry is still fetched on demand and still nothing is vendored of it: the
+# index carries names and connection points, not shapes.
+_INDEX_FILE = "parts-index.json.gz"
+_INDEX_FORMAT = 2
+_index_loaded = None  # the index, or False once we know there is not one
+
+
+def _index():
+    """The shipped index, or False if it is absent or unreadable.
+
+    Set PARTCAD_LDRAW_IGNORE_INDEX=1 to go to the network instead, which is how
+    to check the index against the library it was built from.
+    """
+    global _index_loaded
+    if _index_loaded is None:
+        _index_loaded = False if os.environ.get("PARTCAD_LDRAW_IGNORE_INDEX") else _load_index()
+    return _index_loaded
+
+
+def _load_index():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), _INDEX_FILE)
+    try:
+        with gzip.open(path, "rt", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return False
+    if data.get("format") != _INDEX_FORMAT:
+        # A newer index than this plugin understands: fall back rather than
+        # guess at what changed.
+        return False
+    strings = data.get("strings") or []
+
+    def string(i):
+        return strings[i] if 0 <= i < len(strings) else None
+
+    headers = {}
+    implements = {}
+    for parts in data["categories"].values():
+        for pid, entry in parts.items():
+            desc, author, lic, connects = entry
+            headers[pid] = (desc or None, string(author), string(lic))
+            implements[pid] = connects
+    return {"categories": data["categories"], "headers": headers, "implements": implements}
+
+
 def _categories():
     """Return {sub_package_name: ldraw_category} for every LDraw category."""
+    index = _index()
+    if index:
+        return {_sanitize(cat): cat for cat in index["categories"]}
     html = _cached(_CATEGORY_LIST_URL, "category-list.html")
     if not html:
         return {}
@@ -118,6 +266,9 @@ def _part_ids(category):
     the reported total is reached, when a page yields no new ids, or at the
     safety bound.
     """
+    index = _index()
+    if index:
+        return list(index["categories"].get(category, {}))
     ids = []
     seen = set()
     sub = _sanitize(category)
@@ -176,6 +327,13 @@ def _dat_header(pid):
     None means the part could not be fetched (so a targeted single fetch of an
     unknown id fails cleanly instead of inventing a broken part).
     """
+    index = _index()
+    if index:
+        header = index["headers"].get(pid)
+        if header is not None:
+            return header
+        # Not in the index: an unofficial part, or one added to the library
+        # since the index was built. Fall through and ask for it.
     text = _cached(_DAT_URL + pid + ".dat", os.path.join("parts", pid + ".dat"))
     if not text:
         return None
@@ -618,9 +776,43 @@ def _with_geometry_studs(implements, pid):
     return implements or None
 
 
+_NOT_INDEXED = object()  # told apart from a part the index says has none
+
+
+def _indexed_implements(pid):
+    """What the index says this part connects with, or _NOT_INDEXED.
+
+    None and _NOT_INDEXED are different answers: the first says the part has no
+    interfaces, the second that the index has never heard of it.
+    """
+    index = _index()
+    if not index:
+        return _NOT_INDEXED
+    connects = index["implements"]
+    return connects[pid] if pid in connects else _NOT_INDEXED
+
+
+_warned_metadata = set()
+
+
+def _warn_metadata_unavailable(pid):
+    """Say once, on stderr, that a part is being served without its metadata."""
+    if pid in _warned_metadata:
+        return
+    _warned_metadata.add(pid)
+    print(
+        "ldraw: %s.dat: header unavailable and not in the shipped index, so "
+        "this part is served with no description and no interfaces (studs, "
+        "anti-studs, Technic ports). It has them; they could not be read."
+        % pid,
+        file=sys.stderr,
+    )
+
+
 def _part_config(pid, meta):
     """The PartCAD config of one part: its wrapper, its .dat, and what it implements."""
     desc, author, lic = meta if meta else (None, None, None)
+
     config = {"type": ":ldraw", "dat": pid + ".dat"}
     # The .dat is also declared as a parameter because that is what reaches the
     # shape cache key. PartCAD hashes only 'parameters', 'offset' and 'scale'
@@ -636,7 +828,17 @@ def _part_config(pid, meta):
         config["author"] = author
     if lic:
         config["license"] = lic
-    implements = _lego_implements(_effective_desc(desc), pid)
+    implements = _indexed_implements(pid)
+    if implements is _NOT_INDEXED:
+        # Not a part the index knows: work them out the long way, which reads
+        # the part's geometry - and which needs the description, so a part with
+        # neither an index entry nor a readable header gets none. That is worth
+        # saying: left unsaid, a 'connect:' against it fails as a missing port
+        # and sends the reader to the ASSY file, when the fault is a fetch that
+        # failed earlier, maybe in another process.
+        implements = _lego_implements(_effective_desc(desc), pid)
+        if meta is None:
+            _warn_metadata_unavailable(pid)
     if implements:
         config["implements"] = implements
     return config
@@ -703,7 +905,15 @@ def get(key):
     if sub.startswith("objects/part/"):
         pid = sub[len("objects/part/") :]
         header = _dat_header(pid)
-        return _part_config(pid, header) if header is not None else None
+        if header is not None:
+            return _part_config(pid, header)
+        # The header could not be read. That is not the same as the part not
+        # existing, and _catalog() has always listed such a part anyway - so
+        # answering None here made 'pc list' show parts that 'pc render' then
+        # denied. 'Not found' is for an id the category does not have.
+        if pid in _part_ids(category):
+            return _part_config(pid, None)
+        return None
     if sub == "objects/partType":
         return {"ldraw": dict(_PART_TYPE)}
     if sub.startswith("objects/partType/"):

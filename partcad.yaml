@@ -10,7 +10,8 @@ desc: |
   The LDraw parts library (https://library.ldraw.org) exposed as parametric
   PartCAD parts. Categories, part lists and part metadata are fetched from
   ldraw.org on demand and cached; part geometry is meshed from the LDraw .dat
-  files on render. Nothing is vendored.
+  files on render. An index of part names ships with the package; no geometry
+  is vendored.
 url: https://library.ldraw.org/
 
 # Requires the PartCAD version that introduced partTypes and plugin-backed

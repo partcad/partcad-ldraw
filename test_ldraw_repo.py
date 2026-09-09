@@ -57,11 +57,13 @@ def test_part_config_includes_available_metadata():
 
 
 def test_part_config_tolerates_missing_metadata():
-    cfg = plugin._part_config("u1193", None)
+    # An id the index cannot have: with no header and no index entry there is
+    # nothing to say about the part but what it is built from.
+    cfg = plugin._part_config("zzz-not-a-part", None)
     assert cfg == {
         "type": ":ldraw",
-        "dat": "u1193.dat",
-        "parameters": {"dat": {"type": "string", "default": "u1193.dat"}},
+        "dat": "zzz-not-a-part.dat",
+        "parameters": {"dat": {"type": "string", "default": "zzz-not-a-part.dat"}},
     }
 
 
@@ -1004,3 +1006,314 @@ def test_part_config_declares_the_dat_as_a_parameter():
     assert a["parameters"]["dat"]["default"] == "3001.dat"
     assert b["parameters"]["dat"]["default"] == "3003.dat"
     assert a["parameters"] != b["parameters"]
+
+
+# --- what happens when a fetch does not produce a body ----------------------
+#
+# library.ldraw.org rate-limits bursts, so this is an ordinary occurrence
+# rather than an edge case, and three separate things used to go wrong when it
+# happened: the failure was not remembered, a part that could not be described
+# was reported as not existing, and a part served without its metadata lost its
+# interfaces without saying so.
+
+
+class _HTTPError(Exception):
+    """Stands in for urllib.error.HTTPError, which needs a real response."""
+
+    def __init__(self, code, headers=None):
+        super().__init__(str(code))
+        self.code = code
+        self.headers = headers or {}
+
+
+def test_a_404_is_an_answer_and_is_not_retried(monkeypatch):
+    import urllib.error
+
+    calls = []
+
+    def _urlopen(req, timeout=None):
+        calls.append(req.full_url)
+        raise urllib.error.HTTPError(req.full_url, 404, "Not Found", {}, None)
+
+    monkeypatch.setattr(plugin.urllib.request, "urlopen", _urlopen)
+    monkeypatch.setattr(plugin.time, "sleep", lambda s: None)
+    body, reason = plugin._http_get("https://example.invalid/x.dat")
+    assert body is None
+    assert reason == plugin._MISSING
+    assert len(calls) == 1, "a 404 is conclusive; retrying it only costs time"
+
+
+def test_a_server_that_says_nothing_is_retried_then_reported_unavailable(monkeypatch):
+    calls = []
+
+    def _urlopen(req, timeout=None):
+        calls.append(req.full_url)
+        raise OSError("connection reset")
+
+    monkeypatch.setattr(plugin.urllib.request, "urlopen", _urlopen)
+    monkeypatch.setattr(plugin.time, "sleep", lambda s: None)
+    body, reason = plugin._http_get("https://example.invalid/x.dat")
+    assert body is None
+    assert reason == plugin._UNAVAILABLE
+    assert len(calls) == plugin._HTTP_RETRIES
+
+
+def test_a_throttled_fetch_waits_as_long_as_it_was_asked_to():
+    assert plugin._retry_after(_HTTPError(429, {"Retry-After": "5"}), 0.5) == 5.0
+    # No header, or one in the HTTP-date form, leaves the backoff as it was.
+    assert plugin._retry_after(_HTTPError(429), 0.5) == 0.5
+    assert plugin._retry_after(_HTTPError(429, {"Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT"}), 0.5) == 0.5
+    # An absurd wait is capped rather than obeyed.
+    assert plugin._retry_after(_HTTPError(429, {"Retry-After": "86400"}), 0.5) == 60.0
+
+
+def test_a_failed_fetch_is_remembered_so_the_next_run_is_not_this_one(tmp_path, monkeypatch):
+    monkeypatch.setenv("PARTCAD_LDRAW_CACHE", str(tmp_path))
+    attempts = []
+
+    def _get(url):
+        attempts.append(url)
+        return None, plugin._UNAVAILABLE
+
+    monkeypatch.setattr(plugin, "_http_get", _get)
+    assert plugin._cached("https://example.invalid/x.dat", "parts/x.dat") is None
+    assert plugin._cached("https://example.invalid/x.dat", "parts/x.dat") is None
+    assert len(attempts) == 1, "the second call should have read the negative entry"
+
+
+def test_a_negative_entry_expires(tmp_path, monkeypatch):
+    monkeypatch.setenv("PARTCAD_LDRAW_CACHE", str(tmp_path))
+    plugin._remember_negative("parts/x.dat", plugin._UNAVAILABLE)
+    assert plugin._negative_is_fresh("parts/x.dat")
+    monkeypatch.setattr(plugin.time, "time", lambda: 1e12)  # long past the TTL
+    assert not plugin._negative_is_fresh("parts/x.dat")
+
+
+def test_the_library_not_having_a_file_is_remembered_for_longer_than_a_bad_day():
+    assert plugin._NEGATIVE_TTL[plugin._MISSING] > plugin._NEGATIVE_TTL[plugin._UNAVAILABLE]
+
+
+def test_a_fetch_is_not_attempted_again_until_the_entry_goes_stale(tmp_path, monkeypatch):
+    monkeypatch.setenv("PARTCAD_LDRAW_CACHE", str(tmp_path))
+    plugin._remember_negative("parts/x.dat", plugin._UNAVAILABLE)
+    monkeypatch.setattr(plugin, "_http_get", lambda url: ("0 Brick  1 x  1\n", None))
+
+    # While the entry is fresh the fetch does not happen at all, which is the
+    # point of it: a throttled run must not be repeated immediately.
+    assert plugin._cached("https://example.invalid/x.dat", "parts/x.dat") is None
+
+    # Once it is stale the fetch happens, and succeeding clears the entry so a
+    # later failure starts a fresh TTL rather than inheriting this one.
+    real_time = plugin.time.time
+    monkeypatch.setattr(plugin.time, "time", lambda: real_time() + 1e6)
+    assert plugin._cached("https://example.invalid/x.dat", "parts/x.dat")
+    assert not os.path.exists(plugin._negative_path("parts/x.dat"))
+
+
+# --- a part the category lists is a part ------------------------------------
+
+
+def test_a_listed_part_whose_header_cannot_be_read_is_still_served(monkeypatch):
+    monkeypatch.setattr(plugin, "_categories", lambda: {"Cone": "Cone"})
+    monkeypatch.setattr(plugin, "_dat_header", lambda pid: None)
+    monkeypatch.setattr(plugin, "_part_ids", lambda category: ["3942a", "3942c"])
+    cfg = plugin.get("Cone/objects/part/3942c")
+    # 'pc list' showed this part; 'pc render' used to say it did not exist.
+    assert cfg is not None
+    assert cfg["dat"] == "3942c.dat"
+    assert "desc" not in cfg
+
+
+def test_an_id_the_category_does_not_have_is_still_not_found(monkeypatch):
+    monkeypatch.setattr(plugin, "_categories", lambda: {"Cone": "Cone"})
+    monkeypatch.setattr(plugin, "_dat_header", lambda pid: None)
+    monkeypatch.setattr(plugin, "_part_ids", lambda category: ["3942a", "3942c"])
+    assert plugin.get("Cone/objects/part/nosuchpart") is None
+
+
+def test_the_catalog_and_a_single_lookup_agree_about_what_exists(monkeypatch):
+    """The two used to disagree, which is the whole of this bug."""
+    monkeypatch.setattr(plugin, "_categories", lambda: {"Cone": "Cone"})
+    monkeypatch.setattr(plugin, "_dat_header", lambda pid: None)
+    monkeypatch.setattr(plugin, "_part_ids", lambda category: ["3942a", "3942c"])
+    catalog = plugin.get("Cone/objects/part")
+    for pid in catalog:
+        assert plugin.get("Cone/objects/part/%s" % pid) is not None
+
+
+# --- a part served without its metadata says so -----------------------------
+
+
+def test_a_part_without_metadata_says_why_it_has_no_interfaces(capsys):
+    plugin._warned_metadata.discard("zzz-not-a-part")
+    cfg = plugin._part_config("zzz-not-a-part", None)
+    assert "implements" not in cfg
+    said = capsys.readouterr().err
+    assert "zzz-not-a-part" in said
+    assert "interfaces" in said
+
+
+def test_it_is_said_once_per_part_rather_than_once_per_lookup(capsys):
+    plugin._warned_metadata.discard("zzz-not-a-part")
+    plugin._part_config("zzz-not-a-part", None)
+    capsys.readouterr()
+    plugin._part_config("zzz-not-a-part", None)
+    assert capsys.readouterr().err == ""
+
+
+def test_an_indexed_part_keeps_its_interfaces_even_with_no_header(capsys):
+    """The index covers for a header that could not be read.
+
+    Interfaces used to be derived from the description alone, so an unreadable
+    header cost a part all of them. For a part the index knows, it no longer
+    does - and there is then nothing to warn about.
+    """
+    plugin._warned_metadata.discard("3941")
+    cfg = plugin._part_config("3941", None)
+    assert cfg["implements"]["//pub/universe/lego:anti-stud"]
+    assert capsys.readouterr().err == ""
+
+
+def test_a_part_with_metadata_says_nothing(capsys):
+    plugin._part_config("3001", ("Brick  2 x  4", None, None))
+    assert capsys.readouterr().err == ""
+
+
+# --- the shipped index ------------------------------------------------------
+#
+# Answering "which parts are in this category" from the network meant one HTTP
+# request per part, and PartCAD asks that in order to resolve any single part.
+# The index makes it a file read. These tests hold it to that: the network is
+# replaced with something that raises, so anything reaching for it fails here.
+
+
+@pytest.fixture
+def _no_network(monkeypatch):
+    def _forbidden(*args, **kwargs):
+        raise AssertionError("the index should have answered this without fetching")
+
+    monkeypatch.setattr(plugin, "_cached", _forbidden)
+    monkeypatch.setattr(plugin, "_http_get", _forbidden)
+    plugin._index_loaded = None
+    yield
+    plugin._index_loaded = None
+
+
+def test_the_index_ships_with_the_package():
+    assert os.path.exists(os.path.join(_here, plugin._INDEX_FILE))
+
+
+def test_the_categories_come_from_the_index(_no_network):
+    cats = plugin._categories()
+    assert len(cats) > 50
+    # The mapping is {sub_package_name: ldraw_category}, and a category whose
+    # name has a space is a different string on each side of it.
+    assert cats["Brick"] == "Brick"
+    assert cats["Minifig-Accessory"] == "Minifig Accessory"
+
+
+def test_a_whole_category_is_a_file_read(_no_network):
+    ids = plugin._part_ids("Brick")
+    assert len(ids) > 1000
+    assert "3001" in ids and "3941" in ids
+
+
+def test_a_part_is_described_without_being_fetched(_no_network):
+    assert plugin._dat_header("3001")[0] == "Brick  2 x  4"
+    assert plugin._dat_header("3941")[0].startswith("Brick  2 x  2 Round")
+
+
+def test_the_catalog_of_a_category_needs_no_network_at_all(_no_network):
+    catalog = plugin._catalog("Cone")
+    assert catalog["3942b"]["desc"].startswith("Cone  2 x  2 x  2")
+    # ...and the interfaces are worked out from those names, as always.
+    assert "//pub/universe/lego:stud" in catalog["3942b"]["implements"]
+
+
+def test_a_part_the_index_does_not_have_is_still_fetched(monkeypatch):
+    plugin._index_loaded = None
+    fetched = []
+
+    def _fake_cached(url, rel):
+        fetched.append(rel)
+        return "0 Unofficial Thing\n0 Author: Someone\n"
+
+    monkeypatch.setattr(plugin, "_cached", _fake_cached)
+    try:
+        assert plugin._dat_header("u9999zzz")[0] == "Unofficial Thing"
+        assert fetched, "an id outside the index has to fall back to the network"
+    finally:
+        plugin._index_loaded = None
+
+
+def test_the_index_can_be_ignored_on_purpose(monkeypatch):
+    """PARTCAD_LDRAW_IGNORE_INDEX is how the index is checked against ldraw.org."""
+    monkeypatch.setenv("PARTCAD_LDRAW_IGNORE_INDEX", "1")
+    plugin._index_loaded = None
+    try:
+        assert plugin._index() is False
+    finally:
+        plugin._index_loaded = None
+
+
+def test_an_index_this_plugin_cannot_read_is_not_guessed_at(tmp_path, monkeypatch):
+    """A newer format falls back to the network rather than misreading it."""
+    import gzip as _gzip
+    import json as _json
+
+    bogus = tmp_path / plugin._INDEX_FILE
+    with _gzip.open(bogus, "wt", encoding="utf-8") as f:
+        _json.dump({"format": plugin._INDEX_FORMAT + 1, "categories": {}}, f)
+    monkeypatch.setattr(plugin.os.path, "dirname", lambda p: str(tmp_path))
+    plugin._index_loaded = None
+    try:
+        assert plugin._load_index() is False
+    finally:
+        plugin._index_loaded = None
+
+
+def test_the_index_agrees_with_itself(_no_network):
+    """Every part the categories list is one the header lookup can describe."""
+    index = plugin._index()
+    for category, parts in list(index["categories"].items())[:5]:
+        for pid in list(parts)[:20]:
+            assert pid in index["headers"], "%s/%s" % (category, pid)
+
+
+def test_the_interfaces_come_from_the_index_too(_no_network):
+    """The expensive half. Deriving these reads the part's geometry, so doing
+    it at run time means fetching every .dat in the category as well."""
+    cfg = plugin._part_config("3001", plugin._dat_header("3001"))
+    studs = cfg["implements"]["//pub/universe/lego:stud"]
+    assert len(studs) == 8  # a 2 x 4 brick
+    assert cfg["implements"]["//pub/universe/lego:anti-stud"]
+
+
+def test_a_part_the_index_says_has_no_interfaces_is_not_re_derived(monkeypatch):
+    """None and 'never heard of it' are different answers.
+
+    Re-deriving on None would put the geometry walk back for every part that
+    genuinely has no interfaces, which is most of the library.
+    """
+    plugin._index_loaded = None
+    monkeypatch.setattr(
+        plugin, "_index", lambda: {"categories": {}, "headers": {}, "implements": {"x1": None}}
+    )
+    monkeypatch.setattr(
+        plugin, "_lego_implements", lambda *a: (_ for _ in ()).throw(AssertionError("re-derived"))
+    )
+    try:
+        assert "implements" not in plugin._part_config("x1", ("Some Part", None, None))
+    finally:
+        plugin._index_loaded = None
+
+
+def test_a_part_outside_the_index_still_has_its_interfaces_worked_out(monkeypatch):
+    plugin._index_loaded = None
+    monkeypatch.setattr(plugin, "_index", lambda: {"categories": {}, "headers": {}, "implements": {}})
+    monkeypatch.setattr(plugin, "_lego_implements", lambda desc, pid: {"iface": {"a": 1}})
+    try:
+        cfg = plugin._part_config("u9999", ("Brick  1 x  1", None, None))
+        assert cfg["implements"] == {"iface": {"a": 1}}
+    finally:
+        plugin._index_loaded = None
