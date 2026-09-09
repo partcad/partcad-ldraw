@@ -24,7 +24,9 @@ import concurrent.futures
 import math
 import os
 import re
+import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -45,8 +47,20 @@ _MAX_PAGES = 2000  # safety bound on pagination
 # ldraw.org rate-limits bursts of concurrent requests, so keep the pool modest
 # and retry with backoff; a dropped fetch would otherwise leave a part without
 # its metadata.
-_HEADER_WORKERS = 6
+_HEADER_WORKERS = 4
 _HTTP_RETRIES = 4
+
+# What a fetch that did not produce a body is remembered as, and for how long.
+# Without this a throttled run leaves nothing behind and the next one repeats
+# it in full, so a rate-limited machine never converges - which is what happens
+# today: two runs in a row can die at the same place with the cache stuck.
+#
+# The two cases are not the same question. A 404 is an answer - this file is not
+# in the library - and is worth remembering for a while. A timeout or a 429 is
+# the absence of an answer, and is worth retrying soon.
+_MISSING = "missing"  # the server said no such file
+_UNAVAILABLE = "unavailable"  # the server said nothing we could use
+_NEGATIVE_TTL = {_MISSING: 7 * 24 * 3600, _UNAVAILABLE: 300}
 
 
 # --- HTTP + cache -----------------------------------------------------------
@@ -62,32 +76,97 @@ def _cache_dir():
 
 
 def _http_get(url):
-    """The body of 'url' as text, retried with a backoff; None if every try fails."""
+    """Fetch 'url'. Returns (body, None) or (None, reason).
+
+    The reason separates 'the library does not have this' from 'the library did
+    not answer', because they are remembered for different lengths of time (see
+    _NEGATIVE_TTL). A 404 is conclusive and stops the retries; anything else is
+    retried, and a 429 is waited out for as long as the server asks.
+    """
+    reason = _UNAVAILABLE
     for attempt in range(_HTTP_RETRIES):
+        delay = 0.5 * (attempt + 1)
         try:
             req = urllib.request.Request(url, headers={"User-Agent": _UA})
             with urllib.request.urlopen(req, timeout=60) as resp:
                 if resp.status == 200:
-                    return resp.read().decode("latin-1")
+                    return resp.read().decode("latin-1"), None
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return None, _MISSING  # an answer, not a failure: do not retry
+            if e.code == 429:
+                delay = max(delay, _retry_after(e, delay))
         except Exception:
             pass
-        time.sleep(0.5 * (attempt + 1))  # backoff between retries
-    return None
+        time.sleep(delay)
+    return None, reason
+
+
+def _retry_after(error, default):
+    """How long a 429 asked us to wait, in seconds; 'default' if it did not say."""
+    value = error.headers.get("Retry-After") if error.headers else None
+    if not value:
+        return default
+    try:
+        return min(float(value), 60.0)  # a delay-seconds form; ignore absurd ones
+    except (TypeError, ValueError):
+        return default  # an HTTP-date form, which is not worth parsing here
 
 
 def _cached(url, rel):
-    """Fetch 'url' once, caching its body under '<cache>/<rel>'."""
+    """Fetch 'url' once, caching its body under '<cache>/<rel>'.
+
+    A fetch that produced no body is remembered too, under '<cache>/.missing',
+    so that a throttled run leaves something behind and the next one is not the
+    same run again.
+    """
     path = os.path.join(_cache_dir(), rel)
     if os.path.exists(path):
         with open(path, "r", encoding="latin-1") as f:
             return f.read()
-    body = _http_get(url)
-    if body is None:
+    if _negative_is_fresh(rel):
         return None
+    body, reason = _http_get(url)
+    if body is None:
+        _remember_negative(rel, reason)
+        return None
+    _forget_negative(rel)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="latin-1") as f:
         f.write(body)
     return body
+
+
+def _negative_path(rel):
+    return os.path.join(_cache_dir(), ".missing", rel)
+
+
+def _negative_is_fresh(rel):
+    """Whether this was already asked for recently enough not to ask again."""
+    path = _negative_path(rel)
+    try:
+        with open(path, "r", encoding="latin-1") as f:
+            reason, expires = f.read().split(None, 1)
+        return time.time() < float(expires)
+    except (OSError, ValueError):
+        return False
+
+
+def _remember_negative(rel, reason):
+    path = _negative_path(rel)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="latin-1") as f:
+            f.write("%s %f" % (reason, time.time() + _NEGATIVE_TTL[reason]))
+    except OSError:
+        pass  # an unwritable cache is a slow run, not a broken one
+
+
+def _forget_negative(rel):
+    try:
+        os.unlink(_negative_path(rel))
+    except OSError:
+        pass
 
 
 # --- LDraw catalog ----------------------------------------------------------
@@ -618,9 +697,34 @@ def _with_geometry_studs(implements, pid):
     return implements or None
 
 
+_warned_metadata = set()
+
+
+def _warn_metadata_unavailable(pid):
+    """Say once, on stderr, that a part is being served without its metadata."""
+    if pid in _warned_metadata:
+        return
+    _warned_metadata.add(pid)
+    print(
+        "ldraw: %s.dat: header unavailable, so this part is served without a "
+        "description and without interfaces (studs, anti-studs, Technic ports). "
+        "It has them; they could not be read." % pid,
+        file=sys.stderr,
+    )
+
+
 def _part_config(pid, meta):
     """The PartCAD config of one part: its wrapper, its .dat, and what it implements."""
     desc, author, lic = meta if meta else (None, None, None)
+    if meta is None:
+        # Every interface this part has is derived from its description, so a
+        # part whose header could not be read comes out with no stud, no
+        # anti-stud and no Technic port - not because it has none, but because
+        # nobody could read its name. Left unsaid, a 'connect:' against it
+        # fails as a missing port and sends the reader to the ASSY file, which
+        # is the wrong place: the fault is a fetch that failed earlier, maybe
+        # in another process.
+        _warn_metadata_unavailable(pid)
     config = {"type": ":ldraw", "dat": pid + ".dat"}
     # The .dat is also declared as a parameter because that is what reaches the
     # shape cache key. PartCAD hashes only 'parameters', 'offset' and 'scale'
@@ -703,7 +807,15 @@ def get(key):
     if sub.startswith("objects/part/"):
         pid = sub[len("objects/part/") :]
         header = _dat_header(pid)
-        return _part_config(pid, header) if header is not None else None
+        if header is not None:
+            return _part_config(pid, header)
+        # The header could not be read. That is not the same as the part not
+        # existing, and _catalog() has always listed such a part anyway - so
+        # answering None here made 'pc list' show parts that 'pc render' then
+        # denied. 'Not found' is for an id the category does not have.
+        if pid in _part_ids(category):
+            return _part_config(pid, None)
+        return None
     if sub == "objects/partType":
         return {"ldraw": dict(_PART_TYPE)}
     if sub.startswith("objects/partType/"):
