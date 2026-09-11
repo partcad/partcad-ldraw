@@ -8,10 +8,11 @@ LDraw `.dat` on demand.
 **No geometry is vendored.** Every `.dat` is fetched from ldraw.org on demand
 and **cached on disk** under `~/.cache/partcad-ldraw/`.
 
-What *does* ship with the package is an index of names: `parts-index.json.gz`,
-which says which categories exist, which parts are in each, and what every part
-is called (with its author and licence). It is 20,569 parts in about 270 KiB,
-built by [`build_parts_index.py`](build_parts_index.py) and committed.
+What *does* ship with the package is an index of names: `parts-index.zip`,
+which says which categories exist, which parts are in each, what every part is
+called (with its author and licence) and what it connects with. It is 20,569
+parts in about 1.1 MiB, built by
+[`build_parts_index.py`](build_parts_index.py) and committed.
 
 That index is what makes the package usable at all. PartCAD asks for a whole
 category in order to resolve any single part in it, and answering that from the
@@ -19,6 +20,16 @@ network meant one HTTP request per part — 1324 of them for `Brick` — which
 ldraw.org rate-limits long before it finishes. Rendering a single brick took
 over twenty minutes on a cold cache, when it finished at all. Now it is a file
 read.
+
+It is a **zip with one member per category**, and not one compressed document,
+because of how PartCAD asks. Every key is a separate run of the plugin — a
+separate interpreter, keeping nothing from the last one — and listing the
+library is hundreds of them: the metadata, the child list and one enumeration
+per object kind, for each of the 92 categories. So whatever a key costs to read
+is paid hundreds of times over. As one gzipped document that was 11.8 MB of
+JSON to parse before any key could be answered, 1.1 s of it, nine tenths of it
+the connection points of parts the key was not about. Split per category it is
+1.4 ms for a key that names no category and about 20 ms for one that does.
 
 ## How it works
 
@@ -35,6 +46,17 @@ Two mechanisms are combined:
    under `~/.cache/partcad-ldraw/` as before. Set `PARTCAD_LDRAW_IGNORE_INDEX=1`
    to bypass the index entirely and go to the network, which is how to check one
    against the other.
+
+   Each package's metadata also declares `objectKinds` — that a category holds
+   parts and a partType and none of PartCAD's other eight kinds of object — so
+   that PartCAD stops asking after the ones that have never been there. That is
+   four of the six keys a listing asks per category. A PartCAD too old to read
+   it simply asks as it always did.
+
+   Between the two — and PartCAD no longer loading the CAD kernel to serialize
+   an answer that is a dict of strings — `pc list packages -r` over the whole
+   library went from 7m51s to 15s on a four-core machine, and from 558 runs of
+   this plugin to 278.
 
 2. **A `wrapper` partType** (`ldraw.py`). Each part's `type` is `:ldraw`, which
    resolves to this partType. The wrapper fetches the part's `.dat`, recursively

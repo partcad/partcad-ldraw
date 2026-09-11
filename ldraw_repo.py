@@ -21,7 +21,6 @@ sub-package, e.g. ``Brick/objects/part`` or ``Brick/files/ldraw.py``.
 
 import base64
 import concurrent.futures
-import gzip
 import json
 import math
 import os
@@ -31,6 +30,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import zipfile
 
 _BASE = "https://library.ldraw.org"
 _CATEGORY_LIST_URL = _BASE + "/parts/category-list"
@@ -200,9 +200,97 @@ def _sanitize(category):
 #
 # Geometry is still fetched on demand and still nothing is vendored of it: the
 # index carries names and connection points, not shapes.
-_INDEX_FILE = "parts-index.json.gz"
-_INDEX_FORMAT = 2
+#
+# It is a zip rather than one compressed document, and that is the whole point
+# of the layout. PartCAD runs this file afresh for every key it asks for - a
+# separate interpreter each time, through runpy, keeping nothing between them -
+# and a listing of the library asks for hundreds: package metadata, the child
+# list and one enumeration per object kind, for each of the 92 categories. So
+# whatever a key costs to answer is paid hundreds of times over, and reading
+# the index *is* that cost. As one gzipped document it was 11.8 MB of JSON to
+# parse before any key could be answered, 1.1 s of it, and nine tenths of that
+# was the connection points of the twenty thousand parts the key was not about.
+#
+# Split this way, a key reads what it is about and nothing else: 'index.json'
+# (which categories there are and which parts are in each, 1.4 ms) and, only
+# when the key names a category, that one category's member. Every key that
+# names no category - the metadata, the child list, the object kinds this
+# repository does not serve - never touches a part at all.
+_INDEX_FILE = "parts-index.zip"
+_INDEX_META = "index.json"
+_INDEX_FORMAT = 3
 _index_loaded = None  # the index, or False once we know there is not one
+
+
+class _Index:
+    """The shipped index: category names and part ids up front, parts on demand.
+
+    'index.json' is read on construction because every key needs it - it is what
+    says which categories exist. A category's parts are read the first time one
+    is asked for and kept for the rest of the process, which within one key is
+    at most one category and usually none.
+    """
+
+    def __init__(self, path):
+        self._zip = zipfile.ZipFile(path)
+        meta = json.loads(self._zip.read(_INDEX_META))
+        if meta.get("format") != _INDEX_FORMAT:
+            # A newer index than this plugin understands: fall back rather than
+            # guess at what changed.
+            raise ValueError("unsupported index format: %r" % (meta.get("format"),))
+        self._strings = meta.get("strings") or []
+        # {category: [part id, ...]}, in the order the listing had them.
+        self.categories = meta["categories"]
+        self._parts = {}  # category -> {pid: entry}, read on demand
+        self._category_of = None  # pid -> category, built on demand
+
+    def _string(self, i):
+        return self._strings[i] if 0 <= i < len(self._strings) else None
+
+    def part_ids(self, category):
+        return self.categories.get(category) or []
+
+    def parts(self, category):
+        """{part id: [desc, author, license, implements]} for one category."""
+        if category not in self._parts:
+            if category not in self.categories:
+                return {}
+            self._parts[category] = json.loads(self._zip.read(member_name(category)))
+        return self._parts[category]
+
+    def category_of(self, pid):
+        """Which category holds a part, or None.
+
+        Only for a caller that has a part id and no category - every key that
+        names a part names its category too, so this builds its map on first
+        use rather than as part of loading the index.
+        """
+        if self._category_of is None:
+            self._category_of = {p: c for c, ids in self.categories.items() for p in ids}
+        return self._category_of.get(pid)
+
+    def entry(self, pid, category=None):
+        """One part's [desc, author, license, implements], or None if not indexed."""
+        if category is None:
+            category = self.category_of(pid)
+            if category is None:
+                return None
+        return self.parts(category).get(pid)
+
+    def header(self, entry):
+        """(description, author, license) out of an index entry."""
+        desc, author, lic, _ = entry
+        return (desc or None, self._string(author), self._string(lic))
+
+
+def member_name(category):
+    """The zip member holding one category's parts.
+
+    Named after the category so that the archive can be read by hand. The
+    builder refuses a library whose categories do not stay distinct through
+    '_sanitize', so this is one-to-one.
+    """
+    return "c/%s.json" % _sanitize(category)
 
 
 def _index():
@@ -220,34 +308,16 @@ def _index():
 def _load_index():
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), _INDEX_FILE)
     try:
-        with gzip.open(path, "rt", encoding="utf-8") as f:
-            data = json.load(f)
-    except (OSError, ValueError):
+        return _Index(path)
+    except (OSError, ValueError, KeyError, zipfile.BadZipFile):
         return False
-    if data.get("format") != _INDEX_FORMAT:
-        # A newer index than this plugin understands: fall back rather than
-        # guess at what changed.
-        return False
-    strings = data.get("strings") or []
-
-    def string(i):
-        return strings[i] if 0 <= i < len(strings) else None
-
-    headers = {}
-    implements = {}
-    for parts in data["categories"].values():
-        for pid, entry in parts.items():
-            desc, author, lic, connects = entry
-            headers[pid] = (desc or None, string(author), string(lic))
-            implements[pid] = connects
-    return {"categories": data["categories"], "headers": headers, "implements": implements}
 
 
 def _categories():
     """Return {sub_package_name: ldraw_category} for every LDraw category."""
     index = _index()
     if index:
-        return {_sanitize(cat): cat for cat in index["categories"]}
+        return {_sanitize(cat): cat for cat in index.categories}
     html = _cached(_CATEGORY_LIST_URL, "category-list.html")
     if not html:
         return {}
@@ -259,42 +329,79 @@ def _categories():
     return cats
 
 
+def _list_page(category, page):
+    """One page of a category's part list, fetched once and cached on disk."""
+    url = "%s%s&page=%d" % (_PARTS_LIST_URL, urllib.parse.quote(category), page)
+    return _cached(url, os.path.join("categories", _sanitize(category), "page-%d.html" % page))
+
+
+def _page_total(html):
+    """How many parts the listing says there are in all, or None if it does not."""
+    m = re.search(r"of ([\d,]+)", html)
+    return int(m.group(1).replace(",", "")) if m else None
+
+
+def _page_ids(html, seen, ids):
+    """Append the part ids on one page that are not in 'seen'; return how many."""
+    added = 0
+    for m in re.finditer(r"/library/official/parts/([0-9A-Za-z._-]+)\.dat", html):
+        pid = m.group(1)
+        if pid not in seen:
+            seen.add(pid)
+            ids.append(pid)
+            added += 1
+    return added
+
+
 def _part_ids(category):
     """Every part id (without '.dat') in a category, across all list pages.
 
-    Each page is fetched at most once and cached on disk. Pagination stops when
-    the reported total is reached, when a page yields no new ids, or at the
-    safety bound.
+    From the index where there is one, and otherwise from ldraw.org's listing,
+    which is paginated at a fixed 25 rows a page: 53 pages for 'Brick'.
+
+    The first page is what says how many parts there are in all, so it is
+    fetched alone; from the count the rest of the pages are known, and they are
+    fetched together rather than one round trip after another. That is the only
+    thing about this listing that can be made faster from here - the page size
+    is the site's and there is no documented way to ask for more - and it is
+    what a rebuild of the shipped index spends most of its time on.
+
+    Order is preserved: the pages are read back in page order however they
+    arrived. A page that could not be fetched ends the walk there rather than
+    leaving a hole in the middle of a category.
     """
     index = _index()
     if index:
-        return list(index["categories"].get(category, {}))
+        return list(index.part_ids(category))
     ids = []
     seen = set()
-    sub = _sanitize(category)
-    total = None
-    page = 1
-    while page <= _MAX_PAGES:
-        url = "%s%s&page=%d" % (_PARTS_LIST_URL, urllib.parse.quote(category), page)
-        html = _cached(url, os.path.join("categories", sub, "page-%d.html" % page))
-        if not html:
-            break
-        if total is None:
-            m = re.search(r"of ([\d,]+)", html)
-            if m:
-                total = int(m.group(1).replace(",", ""))
-        added = 0
-        for m in re.finditer(r"/library/official/parts/([0-9A-Za-z._-]+)\.dat", html):
-            pid = m.group(1)
-            if pid not in seen:
-                seen.add(pid)
-                ids.append(pid)
-                added += 1
-        if added == 0:
-            break  # no new parts on this page: past the end
-        if total is not None and len(ids) >= total:
-            break
-        page += 1
+    first = _list_page(category, 1)
+    if not first:
+        return ids
+    total = _page_total(first)
+    if not _page_ids(first, seen, ids):
+        return ids
+
+    if total is None:
+        # No count to plan from: walk the pages one at a time until one adds
+        # nothing, exactly as before.
+        page = 2
+        while page <= _MAX_PAGES:
+            html = _list_page(category, page)
+            if not html or not _page_ids(html, seen, ids):
+                break
+            page += 1
+        return ids
+
+    pages = min(-(-total // _PER_PAGE), _MAX_PAGES)
+    if pages < 2:
+        return ids
+    rest = range(2, pages + 1)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=_HEADER_WORKERS) as pool:
+        htmls = list(pool.map(lambda page: _list_page(category, page), rest))
+    for html in htmls:
+        if not html or not _page_ids(html, seen, ids):
+            break  # a page that did not arrive, or one past the end
     return ids
 
 
@@ -321,17 +428,22 @@ def _parse_header(text):
     return desc, author, lic
 
 
-def _dat_header(pid):
+def _dat_header(pid, category=None):
     """Return (description, author, license) from a part's .dat header, or None.
 
     None means the part could not be fetched (so a targeted single fetch of an
     unknown id fails cleanly instead of inventing a broken part).
+
+    'category' is which category the part is being served under, and every
+    caller that has one passes it: it says which member of the index to read,
+    so a part's header costs one category rather than the whole library. Left
+    out, the index finds the category itself.
     """
     index = _index()
     if index:
-        header = index["headers"].get(pid)
-        if header is not None:
-            return header
+        entry = index.entry(pid, category)
+        if entry is not None:
+            return index.header(entry)
         # Not in the index: an unofficial part, or one added to the library
         # since the index was built. Fall through and ask for it.
     text = _cached(_DAT_URL + pid + ".dat", os.path.join("parts", pid + ".dat"))
@@ -779,7 +891,7 @@ def _with_geometry_studs(implements, pid):
 _NOT_INDEXED = object()  # told apart from a part the index says has none
 
 
-def _indexed_implements(pid):
+def _indexed_implements(pid, category=None):
     """What the index says this part connects with, or _NOT_INDEXED.
 
     None and _NOT_INDEXED are different answers: the first says the part has no
@@ -788,8 +900,8 @@ def _indexed_implements(pid):
     index = _index()
     if not index:
         return _NOT_INDEXED
-    connects = index["implements"]
-    return connects[pid] if pid in connects else _NOT_INDEXED
+    entry = index.entry(pid, category)
+    return _NOT_INDEXED if entry is None else entry[3]
 
 
 _warned_metadata = set()
@@ -809,7 +921,7 @@ def _warn_metadata_unavailable(pid):
     )
 
 
-def _part_config(pid, meta):
+def _part_config(pid, meta, category=None):
     """The PartCAD config of one part: its wrapper, its .dat, and what it implements."""
     desc, author, lic = meta if meta else (None, None, None)
 
@@ -828,7 +940,7 @@ def _part_config(pid, meta):
         config["author"] = author
     if lic:
         config["license"] = lic
-    implements = _indexed_implements(pid)
+    implements = _indexed_implements(pid, category)
     if implements is _NOT_INDEXED:
         # Not a part the index knows: work them out the long way, which reads
         # the part's geometry - and which needs the description, so a part with
@@ -847,13 +959,17 @@ def _part_config(pid, meta):
 def _catalog(category):
     """{part_id: config} for a whole category, metadata from the .dat headers.
 
-    The complete part list comes from every list page; description, author and
-    license come from each part's .dat header, fetched concurrently. A part
-    whose header could not be read is still listed (with just its type/dat).
+    With the index, all of it is one read of that category's member and no
+    network at all. Without one the complete part list comes from every list
+    page and each part's description, author and license from its own .dat
+    header, fetched concurrently; a part whose header could not be read is
+    still listed (with just its type/dat).
     """
     ids = _part_ids(category)
     if not ids:
         return {}
+    if _index():
+        return {pid: _part_config(pid, _dat_header(pid, category), category) for pid in ids}
     with concurrent.futures.ThreadPoolExecutor(max_workers=_HEADER_WORKERS) as pool:
         metas = list(pool.map(_dat_header, ids))
     return {pid: _part_config(pid, meta) for pid, meta in zip(ids, metas)}
@@ -872,6 +988,19 @@ def _ldraw_py_b64():
 
 # --- the key/value protocol -------------------------------------------------
 
+# Which kinds of object this repository has at all, declared in every package's
+# metadata. A package has ten kinds and PartCAD would otherwise ask after each
+# one separately - a separate run of this script per kind per category, 92 times
+# over, to be told nine times out of ten that there are none. Saying so once, in
+# the metadata it reads anyway, is what stops it asking.
+#
+# The categories hold the parts and the partType that renders them; the library
+# root holds only the partType (its children are the categories). Nothing here
+# has ever served a sketch, an assembly, a scene, a material, an interface, a
+# provider or a piece of software, and get() answers {} for each of them.
+_ROOT_OBJECT_KINDS = ["partType"]
+_CATEGORY_OBJECT_KINDS = ["part", "partType"]
+
 
 def get(key):
     """Answer one key of the repository protocol; None if this package has no such key.
@@ -887,7 +1016,10 @@ def get(key):
         if key == "deps":
             return sorted(cats)
         if key == "meta":
-            return {"desc": "The LDraw parts library, by category."}
+            return {
+                "desc": "The LDraw parts library, by category.",
+                "objectKinds": list(_ROOT_OBJECT_KINDS),
+            }
         if key == "objects/partType":
             return {"ldraw": dict(_PART_TYPE)}
         if key.startswith("objects/"):
@@ -899,20 +1031,23 @@ def get(key):
     if sub == "deps":
         return []
     if sub == "meta":
-        return {"desc": "LDraw parts in the '%s' category." % category}
+        return {
+            "desc": "LDraw parts in the '%s' category." % category,
+            "objectKinds": list(_CATEGORY_OBJECT_KINDS),
+        }
     if sub == "objects/part":
         return _catalog(category)
     if sub.startswith("objects/part/"):
         pid = sub[len("objects/part/") :]
-        header = _dat_header(pid)
+        header = _dat_header(pid, category)
         if header is not None:
-            return _part_config(pid, header)
+            return _part_config(pid, header, category)
         # The header could not be read. That is not the same as the part not
         # existing, and _catalog() has always listed such a part anyway - so
         # answering None here made 'pc list' show parts that 'pc render' then
         # denied. 'Not found' is for an id the category does not have.
         if pid in _part_ids(category):
-            return _part_config(pid, None)
+            return _part_config(pid, None, category)
         return None
     if sub == "objects/partType":
         return {"ldraw": dict(_PART_TYPE)}
@@ -1140,6 +1275,20 @@ def _tyre_implements(m):
 # nothing is running away and being cut off further out.
 _GEOMETRY_DEPTH = 8  # deeper than any part in the library needs
 _GEOMETRY_FILES = 1024  # a bound on one part's walk, so a cycle cannot run away
+# And a bound in seconds on the same walk, because the file budget is not one
+# when the files are not on disk. Every part in the shipped index already has
+# its connectors, so a walk only happens for a part the index has never heard of
+# - an unofficial one, or one added to the library since the index was built -
+# and there every one of those 1024 files is an HTTP request, retried with a
+# backoff. That is minutes, and PartCAD gives a plugin script a deadline of its
+# own (180 s by default) after which it stops asking this plugin anything for
+# the rest of the command. Blowing that costs the whole listing, over one part.
+#
+# So the walk gives up first and on its own terms: running out of time is
+# reported exactly as running out of files, which every caller already handles
+# by falling back to what the part's name says. Chosen well inside the PartCAD
+# deadline, since the walk is only part of answering the key.
+_GEOMETRY_SECONDS = 60.0
 # What a reference has to look like to be worth fetching: an LDraw part id, or a
 # subpart of one. Everything else is a primitive, and a leaf.
 #
@@ -1342,11 +1491,12 @@ def _walk_geometry(pid, visit):
     # which is how a cable ends up with a plug at each end.
     bodies_by_name = {}
     budget = _GEOMETRY_FILES
+    deadline = time.monotonic() + _GEOMETRY_SECONDS
     complete = True
     for _ in range(_GEOMETRY_DEPTH + 1):
         if not level:
             return complete
-        if budget <= 0:
+        if budget <= 0 or time.monotonic() > deadline:
             return False
         if len(level) > budget:
             complete = False
