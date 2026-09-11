@@ -1407,9 +1407,15 @@ def test_a_part_outside_the_index_still_has_its_interfaces_worked_out(monkeypatc
 # in all, and the rest are fetched together once that is known.
 
 
-def _fake_listing(monkeypatch, per_page, total, pages=None):
-    """Serve a category listing out of memory, recording the pages asked for."""
+def _fake_listing(monkeypatch, per_page, total, pages=None, claims=None):
+    """Serve a category listing out of memory, recording the pages asked for.
+
+    'total' is how many parts the listing actually has; 'claims' is the number
+    its "of N" summary states, which is not always the same thing - the count
+    is scraped off the page and the page size is not promised anywhere.
+    """
     asked = []
+    stated = total if claims is None else claims
 
     def fake_cached(url, rel):
         page = int(re.search(r"page-(\d+)\.html", rel).group(1))
@@ -1418,9 +1424,9 @@ def _fake_listing(monkeypatch, per_page, total, pages=None):
             return None
         ids = range((page - 1) * per_page, min(page * per_page, total))
         if not ids:
-            return "of %d" % total
+            return "of %d" % stated
         rows = "".join('<a href="/library/official/parts/p%04d.dat">' % i for i in ids)
-        return ("of %d" % total) + rows
+        return ("of %d" % stated) + rows
 
     monkeypatch.setattr(plugin, "_index", lambda: False)
     monkeypatch.setattr(plugin, "_cached", fake_cached)
@@ -1512,3 +1518,58 @@ def test_the_builder_refuses_categories_that_share_a_member(tmp_path):
     }
     with pytest.raises(SystemExit):
         builder.write(index, str(tmp_path / plugin._INDEX_FILE), plugin)
+
+
+def test_a_page_size_smaller_than_assumed_does_not_truncate_a_category(monkeypatch):
+    """The planned page count is a hint, not the stopping condition.
+
+    The total and _PER_PAGE are both guesses about the site. If the real page
+    size were smaller than _PER_PAGE, planning alone would fetch too few pages
+    and silently cut the category short - and that would be baked into the
+    shipped index, looking like parts the library does not have.
+    """
+    asked = _fake_listing(monkeypatch, per_page=10, total=100)
+    assert plugin._part_ids("Brick") == ["p%04d" % i for i in range(100)]
+    assert max(asked) >= 10  # it kept going past the 4 pages the count planned
+
+
+def test_a_total_far_larger_than_the_listing_costs_one_empty_page(monkeypatch):
+    """Guessing high stops on the page that adds nothing, and stays bounded."""
+    asked = _fake_listing(monkeypatch, per_page=plugin._PER_PAGE, total=50, claims=10**6)
+    assert plugin._part_ids("Brick") == ["p%04d" % i for i in range(50)]
+    # Bounded: a claimed million parts must not put 2000 requests in flight.
+    assert max(asked) <= plugin._LIST_BATCH_PAGES + 1
+
+
+def test_a_total_smaller_than_the_listing_stops_where_it_always_did(monkeypatch):
+    """A count scraped from unrelated page text: same answer as before."""
+    _fake_listing(monkeypatch, per_page=plugin._PER_PAGE, total=100, claims=plugin._PER_PAGE)
+    assert len(plugin._part_ids("Brick")) == plugin._PER_PAGE
+
+
+# --- one deadline for the part, not one per walk -----------------------------
+
+
+def test_every_walk_of_one_part_shares_one_deadline(monkeypatch, fake_library):
+    """_lego_implements walks a part three times over (four for headgear).
+
+    A deadline made inside each walk would bound one part at four times
+    _GEOMETRY_SECONDS, which is past the PartCAD deadline it exists to stay
+    inside.
+    """
+    seen = []
+    original = plugin._walk_geometry
+    monkeypatch.setattr(
+        plugin,
+        "_walk_geometry",
+        lambda pid, visit, deadline=None: seen.append(deadline) or original(pid, visit, deadline),
+    )
+    plugin._lego_implements("Brick  2 x  2", "3003")
+    assert len(seen) > 1, "expected more than one walk for a part"
+    assert all(d is not None for d in seen)
+    assert len(set(seen)) == 1, "each walk started a budget of its own"
+
+
+def test_a_walk_reached_directly_still_gets_a_budget(fake_library):
+    """Nothing hands a deadline to a helper called on its own; it makes one."""
+    assert plugin._geometry_stud_implements("3003") is not None

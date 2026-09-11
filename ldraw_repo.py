@@ -46,6 +46,10 @@ _UA = "Mozilla/5.0 (PartCAD ldraw repository)"
 # ProjectExternalRepository), so importing the package does not trigger it.
 _PER_PAGE = 25
 _MAX_PAGES = 2000  # safety bound on pagination
+# How many list pages may be in flight at once. The count on the first page
+# says how many there are to get, but it is text scraped off a web page: a
+# bound here is what keeps a mis-read one from becoming a thousand requests.
+_LIST_BATCH_PAGES = 64
 # ldraw.org rate-limits bursts of concurrent requests, so keep the pool modest
 # and retry with backoff; a dropped fetch would otherwise leave a part without
 # its metadata.
@@ -359,12 +363,23 @@ def _part_ids(category):
     From the index where there is one, and otherwise from ldraw.org's listing,
     which is paginated at a fixed 25 rows a page: 53 pages for 'Brick'.
 
-    The first page is what says how many parts there are in all, so it is
-    fetched alone; from the count the rest of the pages are known, and they are
-    fetched together rather than one round trip after another. That is the only
-    thing about this listing that can be made faster from here - the page size
-    is the site's and there is no documented way to ask for more - and it is
-    what a rebuild of the shipped index spends most of its time on.
+    The first page is fetched alone because it is what states the total, and
+    the total is what says how many pages are worth asking for at once rather
+    than one round trip after another. That is the only thing about this
+    listing that can be made faster from here - the page size is the site's and
+    there is no documented way to ask for more - and it is what a rebuild of
+    the shipped index spends most of its time on.
+
+    The total and '_PER_PAGE' decide *how much to fetch at once* and never when
+    to stop, which is the distinction that keeps this correct. Both are
+    guesswork about the site: the total is read out of the page's text, and
+    dividing by _PER_PAGE assumes a page size nobody promised. Either being
+    wrong would silently cut a category short - and that would be baked into
+    the shipped index, where it looks like parts the library does not have. So
+    the walk still ends where it always did: on a page that adds nothing, or
+    once as many parts as the total claims are in hand. A page size smaller
+    than the guess simply takes another round; a total far too large costs one
+    page that adds nothing, not a thousand requests.
 
     Order is preserved: the pages are read back in page order however they
     arrived. A page that could not be fetched ends the walk there rather than
@@ -382,26 +397,25 @@ def _part_ids(category):
     if not _page_ids(first, seen, ids):
         return ids
 
-    if total is None:
-        # No count to plan from: walk the pages one at a time until one adds
-        # nothing, exactly as before.
-        page = 2
-        while page <= _MAX_PAGES:
-            html = _list_page(category, page)
+    page = 2
+    while page <= _MAX_PAGES and (total is None or len(ids) < total):
+        # How many pages the count still suggests are out there, bounded so
+        # that a wildly mis-read total cannot turn into a thousand requests in
+        # flight. With no count at all, one page at a time, as before.
+        if total is None:
+            batch = 1
+        else:
+            batch = max(1, min(-(-(total - len(ids)) // _PER_PAGE), _LIST_BATCH_PAGES))
+        last = min(page + batch - 1, _MAX_PAGES)
+        if last > page:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=_HEADER_WORKERS) as pool:
+                htmls = list(pool.map(lambda n: _list_page(category, n), range(page, last + 1)))
+        else:
+            htmls = [_list_page(category, page)]
+        for html in htmls:
             if not html or not _page_ids(html, seen, ids):
-                break
+                return ids  # a page that did not arrive, or one past the end
             page += 1
-        return ids
-
-    pages = min(-(-total // _PER_PAGE), _MAX_PAGES)
-    if pages < 2:
-        return ids
-    rest = range(2, pages + 1)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=_HEADER_WORKERS) as pool:
-        htmls = list(pool.map(lambda page: _list_page(category, page), rest))
-    for html in htmls:
-        if not html or not _page_ids(html, seen, ids):
-            break  # a page that did not arrive, or one past the end
     return ids
 
 
@@ -813,19 +827,22 @@ def _lego_implements(desc, pid=None):
         return None
     desc = desc.strip()
     implements = _brick_implements(desc) or _name_implements(desc)
+    # One budget for the part, shared by all three (four, for headgear) walks
+    # below: each making its own would bound this at four times _GEOMETRY_SECONDS.
+    deadline = _geometry_deadline() if pid else None
     if pid:
-        implements = _with_geometry_technic(implements, pid)
+        implements = _with_geometry_technic(implements, pid, deadline)
     if implements is None and pid and _HEADGEAR_RE.match(desc):
-        implements = _headgear_implements(pid)
+        implements = _headgear_implements(pid, deadline)
     if pid:
-        implements = _with_geometry_studs(implements, pid)
+        implements = _with_geometry_studs(implements, pid, deadline)
     return implements
 
 
 _TECHNIC_IFACES = (_PIN_IFACE, _PIN_HOLE_IFACE, _AXLE_IFACE, _AXLE_HOLE_IFACE, _RJ12_SOCKET_IFACE, _RJ12_PLUG_IFACE)
 
 
-def _with_geometry_technic(implements, pid):
+def _with_geometry_technic(implements, pid, deadline=None):
     """Replace the name-derived Technic ports with the ones the part has.
 
     The name rules reach 44 parts; the geometry reaches every part that draws a
@@ -833,7 +850,7 @@ def _with_geometry_technic(implements, pid):
     agree the name's instance names stand, so an assembly that says 'left' or
     'h0' keeps working.
     """
-    found = _geometry_connector_implements(pid)
+    found = _geometry_connector_implements(pid, deadline)
     if not found:
         return implements
     implements = dict(implements) if implements else {}
@@ -845,13 +862,13 @@ def _with_geometry_technic(implements, pid):
     return implements or None
 
 
-def _with_geometry_anti_studs(implements, pid):
+def _with_geometry_anti_studs(implements, pid, deadline=None):
     """Replace the name-derived anti-studs with the ones the underside has.
 
     Only when the tubes settle it; otherwise the name's answer stands, because
     an anti-stud no tube marks may still be there.
     """
-    anti = _geometry_anti_studs(pid)
+    anti = _geometry_anti_studs(pid, deadline)
     if not anti:
         return implements
     implements = dict(implements) if implements else {}
@@ -862,7 +879,7 @@ def _with_geometry_anti_studs(implements, pid):
     return implements or None
 
 
-def _with_geometry_studs(implements, pid):
+def _with_geometry_studs(implements, pid, deadline=None):
     """Replace the name-derived studs with the ones the part actually has.
 
     The underside goes first, since it is read from the same walk; it keeps the
@@ -870,8 +887,8 @@ def _with_geometry_studs(implements, pid):
     marks nothing. When the walk cannot see the whole part the stud read returns
     None and the name's answer is left alone here too.
     """
-    implements = _with_geometry_anti_studs(implements, pid)
-    studs = _geometry_stud_implements(pid)
+    implements = _with_geometry_anti_studs(implements, pid, deadline)
+    studs = _geometry_stud_implements(pid, deadline)
     if studs is None:
         return implements
     implements = dict(implements) if implements else {}
@@ -1288,7 +1305,20 @@ _GEOMETRY_FILES = 1024  # a bound on one part's walk, so a cycle cannot run away
 # reported exactly as running out of files, which every caller already handles
 # by falling back to what the part's name says. Chosen well inside the PartCAD
 # deadline, since the walk is only part of answering the key.
+#
+# It is a budget for the *part*, not for one walk, and that distinction is the
+# whole of it: _lego_implements() walks a part's geometry three times over - the
+# Technic connectors, the anti-studs and the studs - and four times for a piece
+# of headgear. A budget per walk would therefore bound one part at four times
+# this, which is past the deadline it exists to stay inside. So the deadline is
+# made once, where the part is, and passed down; a walk reached directly, with
+# none handed to it, makes its own.
 _GEOMETRY_SECONDS = 60.0
+
+
+def _geometry_deadline():
+    """When the geometry read for one part has to stop, whatever is left."""
+    return time.monotonic() + _GEOMETRY_SECONDS
 # What a reference has to look like to be worth fetching: an LDraw part id, or a
 # subpart of one. Everything else is a primitive, and a leaf.
 #
@@ -1472,7 +1502,7 @@ def _parse_references(text):
     return references
 
 
-def _walk_geometry(pid, visit):
+def _walk_geometry(pid, visit, deadline=None):
     """Breadth first over a part's geometry, one parallel fetch per level.
 
     'visit(base, matrix, position)' is called for every reference the walk
@@ -1483,6 +1513,9 @@ def _walk_geometry(pid, visit):
     Returns True when the walk ran out of references rather than out of budget.
     That is what lets a caller tell "this part has none" from "I did not get to
     look", which matters when the answer is used instead of a name rule.
+
+    'deadline' is the one the whole part is being read under (see
+    _GEOMETRY_SECONDS); a caller without one gets a fresh budget of its own.
     """
     # (name, matrix, translation) of what is still to be read
     level = [(pid + ".dat", _IDENTITY_MATRIX, (0.0, 0.0, 0.0))]
@@ -1491,7 +1524,8 @@ def _walk_geometry(pid, visit):
     # which is how a cable ends up with a plug at each end.
     bodies_by_name = {}
     budget = _GEOMETRY_FILES
-    deadline = time.monotonic() + _GEOMETRY_SECONDS
+    if deadline is None:
+        deadline = _geometry_deadline()
     complete = True
     for _ in range(_GEOMETRY_DEPTH + 1):
         if not level:
@@ -1525,7 +1559,7 @@ def _walk_geometry(pid, visit):
     return complete and not level
 
 
-def _geometry_connectors(pid):
+def _geometry_connectors(pid, deadline=None):
     """Every connector in a part's geometry, as (interface, position, axis).
 
     Breadth first, one parallel fetch per level, never descending into a
@@ -1550,7 +1584,7 @@ def _geometry_connectors(pid):
             )
         return True
 
-    _walk_geometry(pid, visit)
+    _walk_geometry(pid, visit, deadline)
     return found
 
 
@@ -1615,7 +1649,7 @@ _GEOMETRY_INSTANCE_PREFIX = {
 }
 
 
-def _geometry_connector_implements(pid):
+def _geometry_connector_implements(pid, deadline=None):
     """The Technic and cable ports of a part, read from its geometry.
 
     LDraw coordinates become the meshed part space the wrapper produces -
@@ -1623,7 +1657,7 @@ def _geometry_connector_implements(pid):
     contributes one instance per mouth, named h<i>; a pin, an axle, a socket or
     a plug is named after what it is, numbered in the order the walk meets them.
     """
-    connectors = _geometry_connectors(pid)
+    connectors = _geometry_connectors(pid, deadline)
     if not connectors:
         return None
     implements = {}
@@ -1767,7 +1801,7 @@ def _stud_kind(stem):
     return None
 
 
-def _geometry_studs(pid):
+def _geometry_studs(pid, deadline=None):
     """The male studs in a part's geometry, as (position, axis) in LDraw
     coordinates, and whether the walk saw the whole part.
     """
@@ -1789,7 +1823,7 @@ def _geometry_studs(pid):
                 )
         return True  # a stud primitive is a leaf whichever kind it is
 
-    return found, _walk_geometry(pid, visit)
+    return found, _walk_geometry(pid, visit, deadline)
 
 
 def _stud_orientation(direction):
@@ -1804,14 +1838,14 @@ def _stud_orientation(direction):
     return _orientation_towards(direction, _IDENTITY_MATRIX)
 
 
-def _geometry_stud_implements(pid):
+def _geometry_stud_implements(pid, deadline=None):
     """The 'stud' instances of a part read from its geometry, or None when the
     walk ran out of budget and the name rule should be left to stand.
 
     An empty result is an answer, not a failure: it says the walk saw the whole
     part and there is no stud on it.
     """
-    studs, complete = _geometry_studs(pid)
+    studs, complete = _geometry_studs(pid, deadline)
     if not complete:
         return None
     ports = []
@@ -1883,7 +1917,7 @@ def _tube_member(base):
     return stem
 
 
-def _geometry_anti_studs(pid):
+def _geometry_anti_studs(pid, deadline=None):
     """The anti-stud instances of a part read from its underside tubes, or None
     when the geometry does not settle it and the name should be left to stand.
 
@@ -1903,7 +1937,7 @@ def _geometry_anti_studs(pid):
             (studs if kind == "stud" else tubes).append((_tube_member(base), place, composed))
         return True
 
-    if not _walk_geometry(pid, visit) or not tubes or not studs:
+    if not _walk_geometry(pid, visit, deadline) or not tubes or not studs:
         return None
 
     lattice = {(round(p[0], 1), round(p[2], 1)) for _, p, _ in studs}
@@ -1958,7 +1992,7 @@ def _geometry_anti_studs(pid):
 _HEADGEAR_RE = re.compile(r"^Minifig (?:Hat|Headdress|Helmet|Cap|Hair|Headgear)\b", re.IGNORECASE)
 
 
-def _headgear_implements(pid):
+def _headgear_implements(pid, deadline=None):
     """The anti-stud of a piece of headgear, read from its socket, or None."""
     tubes, studs = [], []
 
@@ -1973,7 +2007,7 @@ def _headgear_implements(pid):
             (studs if kind == "stud" else tubes).append((_tube_member(base), place, composed))
         return True
 
-    if not _walk_geometry(pid, visit) or studs or len(tubes) != 1:
+    if not _walk_geometry(pid, visit, deadline) or studs or len(tubes) != 1:
         return None
     stem, place, composed = tubes[0]
     if stem in _SOLID_TUBES or stem == _UNDERSIDE_CROSS:
