@@ -4,7 +4,7 @@
 #
 # Licensed under Apache License, Version 2.0.
 #
-"""Build 'parts-index.json.gz' from the official LDraw library archive.
+"""Build 'parts-index.zip' from the official LDraw library archive.
 
 The index is what lets the repository plugin answer "which categories are
 there", "which parts are in this category" and "what is this part called"
@@ -36,8 +36,13 @@ anyone using the package.
 
 Needs Python 3.10 or newer, as the plugin it imports does.
 
+The output is a zip with one member per category rather than one compressed
+document, because the plugin is run afresh for every key PartCAD asks for and
+a key that names one category must not pay for the other 91. See the layout
+note in ldraw_repo.py.
+
 Usage:
-    ./build_parts_index.py [--archive complete.zip] [--output parts-index.json.gz]
+    ./build_parts_index.py [--archive complete.zip] [--output parts-index.zip]
 
 Run it when the LDraw library publishes an update; commit the result. The
 list pages are cached on disk between runs like every other fetch, so a second
@@ -47,7 +52,6 @@ run is cheap.
 import argparse
 import datetime
 import importlib.util
-import gzip
 import json
 import os
 import re
@@ -58,7 +62,7 @@ import urllib.request
 import zipfile
 
 ARCHIVE_URL = "https://library.ldraw.org/library/updates/complete.zip"
-FORMAT = 2  # entries are [desc, author, license, implements]
+FORMAT = 3  # a zip: 'index.json' plus one member per category
 
 _AUTHOR_LINE = re.compile(r"^0\s+Author:\s*(.+?)\s*$")
 _LICENSE_LINE = re.compile(r"^0\s+!LICENSE\s+(.+?)\s*$")
@@ -178,6 +182,36 @@ def build(archive, plugin):
     }, missing
 
 
+def write(index, path, plugin):
+    """Write the index as the zip the plugin reads.
+
+    'index.json' carries what every key needs - the categories, the part ids in
+    each, and the interned authors and licenses - and each category's parts go
+    in a member of their own, which a key reads only when it names that
+    category.
+    """
+    members = {}
+    for category in index["categories"]:
+        member = plugin.member_name(category)
+        if member in members:
+            raise SystemExit(
+                "two categories share one index member (%s): %r and %r"
+                % (member, members[member], category)
+            )
+        members[member] = category
+    meta = {
+        "format": index["format"],
+        "source": index["source"],
+        "generated": index["generated"],
+        "strings": index["strings"],
+        "categories": {name: list(parts) for name, parts in index["categories"].items()},
+    }
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+        z.writestr(plugin._INDEX_META, json.dumps(meta, separators=(",", ":")))
+        for category, parts in index["categories"].items():
+            z.writestr(plugin.member_name(category), json.dumps(parts, separators=(",", ":")))
+
+
 def main():
     if sys.version_info < (3, 10):
         # The plugin this imports uses zip(strict=True). Say so here rather
@@ -185,7 +219,7 @@ def main():
         sys.exit("build_parts_index.py needs Python 3.10 or newer (found %d.%d)" % sys.version_info[:2])
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--archive", default=None, help="a local complete.zip; downloaded if omitted")
-    parser.add_argument("--output", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "parts-index.json.gz"))
+    parser.add_argument("--output", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "parts-index.zip"))
     args = parser.parse_args()
 
     archive = args.archive
@@ -212,8 +246,7 @@ def main():
     print("  %d part files" % _seed_cache(archive, cache), file=sys.stderr)
     print("reading the category listings ...", file=sys.stderr)
     index, missing = build(archive, plugin)
-    with gzip.open(args.output, "wt", encoding="utf-8", compresslevel=9) as f:
-        json.dump(index, f, separators=(",", ":"), sort_keys=False)
+    write(index, args.output, plugin)
 
     shutil.rmtree(cache, ignore_errors=True)
     parts = sum(len(p) for p in index["categories"].values())

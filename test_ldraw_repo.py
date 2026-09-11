@@ -11,8 +11,10 @@ real category enumeration end to end.
 """
 
 import importlib.util
+import json
 import math
 import os
+import re
 
 import pytest
 
@@ -822,6 +824,18 @@ def test_the_name_rule_stands_when_the_walk_runs_out_of_budget(monkeypatch, fake
     assert sorted(plugin._lego_implements("Brick  2 x  2", "3003")[STUD]) == ["c0r0", "c0r1", "c1r0", "c1r1"]
 
 
+def test_the_name_rule_stands_when_the_walk_runs_out_of_time(monkeypatch, fake_library):
+    """Off the network the files are the bound; on it the clock is.
+
+    PartCAD stops asking this plugin anything for the rest of a command once a
+    script blows its deadline, so a part outside the index must not spend the
+    whole of it fetching geometry.
+    """
+    monkeypatch.setattr(plugin, "_GEOMETRY_SECONDS", -1.0)
+    assert plugin._geometry_stud_implements("3003") is None
+    assert sorted(plugin._lego_implements("Brick  2 x  2", "3003")[STUD]) == ["c0r0", "c0r1", "c1r0", "c1r1"]
+
+
 def test_the_geometry_keeps_the_names_the_name_rule_gave(fake_library):
     # A minifig head's single stud is "stud", not the "c0r0" a grid would call
     # it, and an assembly hanging a hat on one already says so. When geometry
@@ -1115,7 +1129,7 @@ def test_a_fetch_is_not_attempted_again_until_the_entry_goes_stale(tmp_path, mon
 
 def test_a_listed_part_whose_header_cannot_be_read_is_still_served(monkeypatch):
     monkeypatch.setattr(plugin, "_categories", lambda: {"Cone": "Cone"})
-    monkeypatch.setattr(plugin, "_dat_header", lambda pid: None)
+    monkeypatch.setattr(plugin, "_dat_header", lambda pid, category=None: None)
     monkeypatch.setattr(plugin, "_part_ids", lambda category: ["3942a", "3942c"])
     cfg = plugin.get("Cone/objects/part/3942c")
     # 'pc list' showed this part; 'pc render' used to say it did not exist.
@@ -1126,7 +1140,7 @@ def test_a_listed_part_whose_header_cannot_be_read_is_still_served(monkeypatch):
 
 def test_an_id_the_category_does_not_have_is_still_not_found(monkeypatch):
     monkeypatch.setattr(plugin, "_categories", lambda: {"Cone": "Cone"})
-    monkeypatch.setattr(plugin, "_dat_header", lambda pid: None)
+    monkeypatch.setattr(plugin, "_dat_header", lambda pid, category=None: None)
     monkeypatch.setattr(plugin, "_part_ids", lambda category: ["3942a", "3942c"])
     assert plugin.get("Cone/objects/part/nosuchpart") is None
 
@@ -1134,7 +1148,7 @@ def test_an_id_the_category_does_not_have_is_still_not_found(monkeypatch):
 def test_the_catalog_and_a_single_lookup_agree_about_what_exists(monkeypatch):
     """The two used to disagree, which is the whole of this bug."""
     monkeypatch.setattr(plugin, "_categories", lambda: {"Cone": "Cone"})
-    monkeypatch.setattr(plugin, "_dat_header", lambda pid: None)
+    monkeypatch.setattr(plugin, "_dat_header", lambda pid, category=None: None)
     monkeypatch.setattr(plugin, "_part_ids", lambda category: ["3942a", "3942c"])
     catalog = plugin.get("Cone/objects/part")
     for pid in catalog:
@@ -1185,6 +1199,30 @@ def test_a_part_with_metadata_says_nothing(capsys):
 # request per part, and PartCAD asks that in order to resolve any single part.
 # The index makes it a file read. These tests hold it to that: the network is
 # replaced with something that raises, so anything reaching for it fails here.
+
+
+def _write_index(path, categories, strings=(), format=None):
+    """Write an index zip in the shape the plugin reads."""
+    import zipfile as _zipfile
+
+    meta = {
+        "format": plugin._INDEX_FORMAT if format is None else format,
+        "strings": list(strings),
+        "categories": {name: list(parts) for name, parts in categories.items()},
+    }
+    with _zipfile.ZipFile(path, "w", _zipfile.ZIP_DEFLATED) as z:
+        z.writestr(plugin._INDEX_META, json.dumps(meta))
+        for name, parts in categories.items():
+            z.writestr(plugin.member_name(name), json.dumps(parts))
+
+
+def _fake_index(categories, strings=(), tmp=None):
+    """An in-memory _Index over 'categories', for the tests that need a small one."""
+    import tempfile as _tempfile
+
+    path = os.path.join(tmp or _tempfile.mkdtemp(prefix="ldraw-index-"), plugin._INDEX_FILE)
+    _write_index(path, categories, strings)
+    return plugin._Index(path)
 
 
 @pytest.fixture
@@ -1258,12 +1296,17 @@ def test_the_index_can_be_ignored_on_purpose(monkeypatch):
 
 def test_an_index_this_plugin_cannot_read_is_not_guessed_at(tmp_path, monkeypatch):
     """A newer format falls back to the network rather than misreading it."""
-    import gzip as _gzip
-    import json as _json
+    _write_index(tmp_path / plugin._INDEX_FILE, {}, format=plugin._INDEX_FORMAT + 1)
+    monkeypatch.setattr(plugin.os.path, "dirname", lambda p: str(tmp_path))
+    plugin._index_loaded = None
+    try:
+        assert plugin._load_index() is False
+    finally:
+        plugin._index_loaded = None
 
-    bogus = tmp_path / plugin._INDEX_FILE
-    with _gzip.open(bogus, "wt", encoding="utf-8") as f:
-        _json.dump({"format": plugin._INDEX_FORMAT + 1, "categories": {}}, f)
+
+def test_an_index_that_is_not_a_zip_is_not_guessed_at(tmp_path, monkeypatch):
+    (tmp_path / plugin._INDEX_FILE).write_bytes(b"not a zip")
     monkeypatch.setattr(plugin.os.path, "dirname", lambda p: str(tmp_path))
     plugin._index_loaded = None
     try:
@@ -1275,9 +1318,49 @@ def test_an_index_this_plugin_cannot_read_is_not_guessed_at(tmp_path, monkeypatc
 def test_the_index_agrees_with_itself(_no_network):
     """Every part the categories list is one the header lookup can describe."""
     index = plugin._index()
-    for category, parts in list(index["categories"].items())[:5]:
-        for pid in list(parts)[:20]:
-            assert pid in index["headers"], "%s/%s" % (category, pid)
+    for category in list(index.categories)[:5]:
+        for pid in index.part_ids(category)[:20]:
+            assert index.entry(pid, category) is not None, "%s/%s" % (category, pid)
+
+
+def test_a_key_that_names_no_category_reads_no_category(_no_network, monkeypatch):
+    """What makes the index cheap enough to read once per key.
+
+    PartCAD runs this script afresh for every key, so the metadata, the child
+    list and the object kinds this repository does not serve must not pay for
+    the twenty thousand parts they are not about.
+    """
+    index = plugin._index()
+    read = []
+    original = index.parts
+    monkeypatch.setattr(index, "parts", lambda category: read.append(category) or original(category))
+    assert plugin.get("deps")
+    assert plugin.get("meta")
+    assert plugin.get("Brick/meta")
+    assert plugin.get("Brick/objects/sketch") == {}
+    assert plugin.get("Brick/objects/partType")
+    assert read == []
+    # ...and a key that does name one reads that one and no other.
+    plugin.get("Brick/objects/part")
+    assert set(read) == {"Brick"}
+
+
+def test_every_category_has_a_member_of_its_own(_no_network):
+    """The builder refuses a library whose categories collide here."""
+    index = plugin._index()
+    members = {plugin.member_name(c) for c in index.categories}
+    assert len(members) == len(index.categories)
+    for category in index.categories:
+        assert index.parts(category), category
+
+
+def test_the_metadata_says_which_object_kinds_there_are(_no_network):
+    """So PartCAD stops asking after the seven kinds no category has ever had."""
+    assert plugin.get("meta")["objectKinds"] == ["partType"]
+    assert plugin.get("Brick/objects/part")
+    assert plugin.get("Brick/meta")["objectKinds"] == ["part", "partType"]
+    for kind in plugin.get("Brick/meta")["objectKinds"]:
+        assert plugin.get("Brick/objects/" + kind)
 
 
 def test_the_interfaces_come_from_the_index_too(_no_network):
@@ -1296,9 +1379,7 @@ def test_a_part_the_index_says_has_no_interfaces_is_not_re_derived(monkeypatch):
     genuinely has no interfaces, which is most of the library.
     """
     plugin._index_loaded = None
-    monkeypatch.setattr(
-        plugin, "_index", lambda: {"categories": {}, "headers": {}, "implements": {"x1": None}}
-    )
+    monkeypatch.setattr(plugin, "_index", lambda: _fake_index({"Misc": {"x1": ["Some Part", -1, -1, None]}}))
     monkeypatch.setattr(
         plugin, "_lego_implements", lambda *a: (_ for _ in ()).throw(AssertionError("re-derived"))
     )
@@ -1310,10 +1391,124 @@ def test_a_part_the_index_says_has_no_interfaces_is_not_re_derived(monkeypatch):
 
 def test_a_part_outside_the_index_still_has_its_interfaces_worked_out(monkeypatch):
     plugin._index_loaded = None
-    monkeypatch.setattr(plugin, "_index", lambda: {"categories": {}, "headers": {}, "implements": {}})
+    monkeypatch.setattr(plugin, "_index", lambda: _fake_index({}))
     monkeypatch.setattr(plugin, "_lego_implements", lambda desc, pid: {"iface": {"a": 1}})
     try:
         cfg = plugin._part_config("u9999", ("Brick  1 x  1", None, None))
         assert cfg["implements"] == {"iface": {"a": 1}}
     finally:
         plugin._index_loaded = None
+
+
+# --- the listing, when there is no index to read it from ---------------------
+#
+# What 'build_parts_index.py' and PARTCAD_LDRAW_IGNORE_INDEX=1 use. ldraw.org
+# paginates at a fixed 25 rows; the first page is what says how many there are
+# in all, and the rest are fetched together once that is known.
+
+
+def _fake_listing(monkeypatch, per_page, total, pages=None):
+    """Serve a category listing out of memory, recording the pages asked for."""
+    asked = []
+
+    def fake_cached(url, rel):
+        page = int(re.search(r"page-(\d+)\.html", rel).group(1))
+        asked.append(page)
+        if pages is not None and page not in pages:
+            return None
+        ids = range((page - 1) * per_page, min(page * per_page, total))
+        if not ids:
+            return "of %d" % total
+        rows = "".join('<a href="/library/official/parts/p%04d.dat">' % i for i in ids)
+        return ("of %d" % total) + rows
+
+    monkeypatch.setattr(plugin, "_index", lambda: False)
+    monkeypatch.setattr(plugin, "_cached", fake_cached)
+    return asked
+
+
+def test_the_listing_is_read_in_page_order_however_it_arrives(monkeypatch):
+    asked = _fake_listing(monkeypatch, plugin._PER_PAGE, 60)
+    ids = plugin._part_ids("Brick")
+    assert ids == ["p%04d" % i for i in range(60)]
+    # Page 1 alone, because it is what carries the count; then the rest.
+    assert asked[0] == 1
+    assert sorted(asked) == [1, 2, 3]
+
+
+def test_a_listing_that_states_no_total_is_walked_one_page_at_a_time(monkeypatch):
+    def fake_cached(url, rel):
+        page = int(re.search(r"page-(\d+)\.html", rel).group(1))
+        if page > 2:
+            return "<html>nothing</html>"  # past the end: no new ids
+        ids = range((page - 1) * 25, page * 25)
+        return "".join('<a href="/library/official/parts/p%04d.dat">' % i for i in ids)
+
+    monkeypatch.setattr(plugin, "_index", lambda: False)
+    monkeypatch.setattr(plugin, "_cached", fake_cached)
+    assert plugin._part_ids("Brick") == ["p%04d" % i for i in range(50)]
+
+
+def test_a_page_that_did_not_arrive_ends_the_listing_there(monkeypatch):
+    """Better a short category than one with a hole in the middle of it."""
+    _fake_listing(monkeypatch, plugin._PER_PAGE, 100, pages={1, 2, 4})
+    assert plugin._part_ids("Brick") == ["p%04d" % i for i in range(2 * plugin._PER_PAGE)]
+
+
+def test_a_listing_with_no_first_page_is_empty(monkeypatch):
+    monkeypatch.setattr(plugin, "_index", lambda: False)
+    monkeypatch.setattr(plugin, "_cached", lambda url, rel: None)
+    assert plugin._part_ids("Brick") == []
+
+
+# --- the builder and the reader are one format -------------------------------
+
+
+def _builder():
+    spec = importlib.util.spec_from_file_location(
+        "build_parts_index", os.path.join(_here, "build_parts_index.py")
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_what_the_builder_writes_is_what_the_plugin_reads(tmp_path):
+    builder = _builder()
+    index = {
+        "format": builder.FORMAT,
+        "source": "test",
+        "generated": "2026-01-01",
+        "strings": ["James Jessiman", "CC BY 4.0"],
+        "categories": {
+            "Brick": {"3001": ["Brick  2 x  4", 0, 1, {"iface": {"a": 1}}]},
+            "Minifig Accessory": {"3833": ["Minifig Helmet", 0, -1, None]},
+        },
+    }
+    path = tmp_path / plugin._INDEX_FILE
+    builder.write(index, str(path), plugin)
+
+    read = plugin._Index(str(path))
+    assert sorted(read.categories) == ["Brick", "Minifig Accessory"]
+    assert read.part_ids("Brick") == ["3001"]
+    assert read.header(read.entry("3001", "Brick")) == ("Brick  2 x  4", "James Jessiman", "CC BY 4.0")
+    # A licence the entry does not carry stays None rather than becoming a string.
+    assert read.header(read.entry("3833", "Minifig Accessory")) == ("Minifig Helmet", "James Jessiman", None)
+    # ...and a part found without its category is found in the right one.
+    assert read.category_of("3833") == "Minifig Accessory"
+    assert read.entry("3001")[3] == {"iface": {"a": 1}}
+    assert read.entry("nosuch") is None
+
+
+def test_the_builder_refuses_categories_that_share_a_member(tmp_path):
+    """The member name is the category's, so the categories have to stay distinct."""
+    builder = _builder()
+    index = {
+        "format": builder.FORMAT,
+        "source": "test",
+        "generated": "2026-01-01",
+        "strings": [],
+        "categories": {"Sheet Fabric": {}, "Sheet  Fabric": {}},
+    }
+    with pytest.raises(SystemExit):
+        builder.write(index, str(tmp_path / plugin._INDEX_FILE), plugin)
