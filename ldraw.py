@@ -16,6 +16,14 @@
 # statements that say what that order means, so a mesh built without reading
 # them is not a solid even when it looks like one. See _mesh().
 #
+# Nor is that surface closed as drawn: LDraw stands a stud on a face it does
+# not cut, writes the same corner to four decimals down two different paths,
+# and joins a 16-sided wall to a 48-sided floor. A mesh import of it therefore
+# comes back as a SHELL, or as a SOLID that fails BRepCheck, and every boolean
+# taken against either is meaningless. Closing it is _close_mesh(), and
+# building the solid the closed mesh describes is _solid_from_mesh().
+#
+import math
 import os
 import struct
 import tempfile
@@ -246,6 +254,619 @@ def _normal(a, b, c):
     return (nx / length, ny / length, nz / length)
 
 
+# ---------------------------------------------------------------------------
+# Closing the surface.
+#
+# What _mesh() hands over is a consistent surface but not a closed one, and a
+# kernel will not make a solid out of a surface with holes in it. The holes
+# are of three kinds and they want three different answers.
+#
+# The first is rounding. LDraw writes coordinates to four or five decimals and
+# a reference scales them, so the same corner reached through two primitives
+# comes out as (-5.5433, 12, -2.2961) down one path and (-5.5434, 12, -2.2962)
+# down the other. _weld() puts those back together.
+#
+# The second is a resolution seam. A part that draws its wall with a 16-sided
+# cylinder and its floor with a 48-sided disc leaves every fourth vertex of
+# the floor sitting in the middle of a wall edge rather than at its end.
+# _split_t_junctions() cuts the edge at the vertex so the two agree.
+#
+# The third is a hole LDraw means: a stud is a cylinder with no bottom
+# standing on a face that is not cut, so the part carries an open ring at
+# every stud and every stud tube. _cap_planar_loops() fills those - and fills
+# them as regions rather than as discs, because an underside leaves a ring
+# between two circles and a round brick leaves four slivers between a circle
+# and a rounded square, and a disc over either of those is wrong.
+#
+# What is left after that is a set of closed shells that overlap: the body,
+# a shell per stud standing on it, a shell per tube inside it, and sometimes
+# a shell around a cavity, which LDraw draws facing inward and which is a
+# hole rather than a body. _solid_from_mesh() reads that facing off the sign
+# of each shell's volume and fuses or cuts accordingly, largest first, so a
+# tube inside a cavity survives the cavity being taken out.
+#
+# A part this cannot close is handed back to the mesh import unchanged.
+
+# Two vertices this close are one vertex. 0.05 LDU is 20 micrometres, which is
+# far below anything LDraw draws and far above the rounding above.
+_WELD_LDU = 0.05
+# A vertex this close to an edge is taken to be on it. Seams between
+# primitives of different resolution are wider than plain rounding, which is
+# why this is its own, looser number.
+_TJUNCTION_LDU = 0.2
+# A boundary loop that departs from its own plane by more than this is left
+# open rather than filled with a guess.
+_PLANAR_LDU = 0.05
+# By the time the mesh is sewn its triangles share vertices exactly, so the
+# kernel is given only enough room for the conversion to millimetres.
+_SEW_TOL_MM = 1e-4
+
+
+def _weld(tris, tol):
+    """Merge vertices that differ only in LDraw's last written digit."""
+    cell = tol * 2.0
+    grid = {}
+
+    def rep(p):
+        k = (int(math.floor(p[0] / cell)), int(math.floor(p[1] / cell)), int(math.floor(p[2] / cell)))
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for dz in (-1, 0, 1):
+                    for r in grid.get((k[0] + dx, k[1] + dy, k[2] + dz), ()):
+                        if abs(r[0] - p[0]) <= tol and abs(r[1] - p[1]) <= tol and abs(r[2] - p[2]) <= tol:
+                            return r
+        grid.setdefault(k, []).append(p)
+        return p
+
+    out = []
+    for a, b, c in tris:
+        a, b, c = rep(a), rep(b), rep(c)
+        # Welding is what turns a sliver into nothing, so a triangle that has
+        # lost a vertex to it is dropped here rather than carried along.
+        if a == b or b == c or a == c:
+            continue
+        out.append((a, b, c))
+    return out
+
+
+def _half_edges(tris):
+    """Map every directed edge to the triangles that walk it that way."""
+    he = {}
+    for i, t in enumerate(tris):
+        for j in range(3):
+            he.setdefault((t[j], t[(j + 1) % 3]), []).append(i)
+    return he
+
+
+def _unmatched(he):
+    """The directed edges with no triangle walking them back: the boundary."""
+    free = {}
+    for e, owners in he.items():
+        opposite = len(he.get((e[1], e[0]), ()))
+        if len(owners) > opposite:
+            free[e] = len(owners) - opposite
+    return free
+
+
+def _point_on_segment(p, a, b, tol):
+    """Where p falls along a-b, if it is on it and not at either end."""
+    dx, dy, dz = b[0] - a[0], b[1] - a[1], b[2] - a[2]
+    length = dx * dx + dy * dy + dz * dz
+    if length < 1e-18:
+        return None
+    t = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy + (p[2] - a[2]) * dz) / length
+    if t <= 1e-6 or t >= 1.0 - 1e-6:
+        return None
+    qx, qy, qz = a[0] + t * dx, a[1] + t * dy, a[2] + t * dz
+    if (p[0] - qx) ** 2 + (p[1] - qy) ** 2 + (p[2] - qz) ** 2 > tol * tol:
+        return None
+    return t
+
+
+def _split_t_junctions(tris, tol, passes=3):
+    """Cut a boundary edge wherever another boundary vertex sits on it.
+
+    A 2 x 2 round brick draws its wall as a 16-sided cylinder and the plate
+    below it with a vertex at every 22.5 degrees plus four more on the axes.
+    The four extra ones land in the middle of a wall edge, so the wall and the
+    plate share a line without sharing edges and nothing sews. Splitting the
+    wall edge at them costs four triangles and closes the seam.
+    """
+    split = 0
+    for _ in range(passes):
+        he = _half_edges(tris)
+        free = _unmatched(he)
+        if not free:
+            break
+        cell = max(tol, 1e-9) * 2.0
+        grid = {}
+        for e in free:
+            for v in e:
+                grid.setdefault((int(v[0] // cell), int(v[1] // cell), int(v[2] // cell)), set()).add(v)
+        cuts = {}
+        for a, b in free:
+            lo = [min(a[k], b[k]) - tol for k in range(3)]
+            hi = [max(a[k], b[k]) + tol for k in range(3)]
+            found = []
+            for gx in range(int(lo[0] // cell), int(hi[0] // cell) + 1):
+                for gy in range(int(lo[1] // cell), int(hi[1] // cell) + 1):
+                    for gz in range(int(lo[2] // cell), int(hi[2] // cell) + 1):
+                        for v in grid.get((gx, gy, gz), ()):
+                            if v is a or v is b:
+                                continue
+                            t = _point_on_segment(v, a, b, tol)
+                            if t is not None:
+                                found.append((t, v))
+            if found:
+                found.sort()
+                cuts[(a, b)] = [v for _, v in found]
+        if not cuts:
+            break
+        out = []
+        for t in tris:
+            pieces = None
+            for j in range(3):
+                e = (t[j], t[(j + 1) % 3])
+                if e in cuts:
+                    chain = [e[0]] + cuts[e] + [e[1]]
+                    apex = t[(j + 2) % 3]
+                    pieces = [(chain[k], chain[k + 1], apex) for k in range(len(chain) - 1)]
+                    split += len(pieces) - 1
+                    break
+            out.extend(pieces if pieces else [t])
+        tris[:] = out
+    return split
+
+
+def _split_pinched(loop):
+    """Split a loop that runs through the same point twice into simple ones."""
+    out = []
+    stack = []
+    at = {}
+    for v in loop:
+        if v in at:
+            i = at[v]
+            sub = stack[i:]
+            for w in sub[1:]:
+                at.pop(w, None)
+            del stack[i:]
+            if len(sub) >= 3:
+                out.append(sub)
+        at[v] = len(stack)
+        stack.append(v)
+    if len(stack) >= 3:
+        out.append(stack)
+    return out
+
+
+def _boundary_loops(tris):
+    """Chain the unmatched half-edges into loops around each hole.
+
+    Which edge continues the boundary is a question about the surface and not
+    about the list: at a vertex where several holes meet, the one that follows
+    is found by turning around that vertex through the triangles that do exist
+    until the next edge that has nothing on its far side.
+    """
+    he = _half_edges(tris)
+    free = _unmatched(he)
+    remaining = dict(free)
+
+    def following(a, b):
+        cur = (a, b)
+        for _ in range(256):
+            owners = he.get(cur)
+            if not owners:
+                return None
+            t = tris[owners[0]]
+            third = t[(t.index(cur[0]) + 2) % 3]
+            if (b, third) in free:
+                return (b, third)
+            cur = (third, b)
+        return None
+
+    loops = []
+    while True:
+        start = None
+        for e, n in remaining.items():
+            if n:
+                start = e
+                break
+        if start is None:
+            break
+        loop = []
+        cur = start
+        closed = True
+        while True:
+            if not remaining.get(cur):
+                closed = False
+                break
+            remaining[cur] -= 1
+            loop.append(cur[0])
+            nxt = following(cur[0], cur[1])
+            if nxt is None:
+                closed = False
+                break
+            if nxt == start:
+                break
+            cur = nxt
+        if closed:
+            loops.extend(L for L in _split_pinched(loop) if len(L) >= 3)
+    return loops
+
+
+def _newell(pts):
+    """The area vector of a closed polygon, whatever plane it lies in."""
+    nx = ny = nz = 0.0
+    n = len(pts)
+    for i in range(n):
+        a = pts[i]
+        b = pts[(i + 1) % n]
+        nx += (a[1] - b[1]) * (a[2] + b[2])
+        ny += (a[2] - b[2]) * (a[0] + b[0])
+        nz += (a[0] - b[0]) * (a[1] + b[1])
+    return nx, ny, nz
+
+
+def _plane_basis(n):
+    ax = (1.0, 0.0, 0.0) if abs(n[0]) < 0.9 else (0.0, 1.0, 0.0)
+    e1 = (n[1] * ax[2] - n[2] * ax[1], n[2] * ax[0] - n[0] * ax[2], n[0] * ax[1] - n[1] * ax[0])
+    length = math.sqrt(e1[0] ** 2 + e1[1] ** 2 + e1[2] ** 2)
+    e1 = (e1[0] / length, e1[1] / length, e1[2] / length)
+    e2 = (n[1] * e1[2] - n[2] * e1[1], n[2] * e1[0] - n[0] * e1[2], n[0] * e1[1] - n[1] * e1[0])
+    return e1, e2
+
+
+def _area2(poly):
+    s = 0.0
+    n = len(poly)
+    for i in range(n):
+        a = poly[i]
+        b = poly[(i + 1) % n]
+        s += a[0] * b[1] - b[0] * a[1]
+    return s / 2.0
+
+
+def _turn(o, a, b):
+    return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+
+def _within(p, a, b, c, eps):
+    d1, d2, d3 = _turn(a, b, p), _turn(b, c, p), _turn(c, a, p)
+    return (d1 > eps and d2 > eps and d3 > eps) or (d1 < -eps and d2 < -eps and d3 < -eps)
+
+
+def _regions(loops2d):
+    """Re-walk coplanar loops as one subdivision of their plane.
+
+    Two loops that run through the same point are not two regions but one
+    region pinched there, and which way each of them turns at that point is
+    decided by the angles of the edges meeting it rather than by which loop
+    they arrived in. A 2 x 2 round brick's underside is the case: a circle and
+    a rounded square touching at four corners, with four slivers between them.
+    """
+    seq = []
+    at = {}
+
+    def index(p):
+        if p not in at:
+            at[p] = len(seq)
+            seq.append(p)
+        return at[p]
+
+    half = []
+    for L in loops2d:
+        n = len(L)
+        for i in range(n):
+            half.append((index(L[i]), index(L[(i + 1) % n])))
+    if len(seq) == sum(len(L) for L in loops2d):
+        return [list(L) for L in loops2d]  # nothing shared, nothing to re-walk
+    out = {}
+    for u, v in half:
+        out.setdefault(u, []).append(v)
+    angle = {}
+    for u, vs in out.items():
+        for v in vs:
+            angle[(u, v)] = math.atan2(seq[v][1] - seq[u][1], seq[v][0] - seq[u][0])
+    nxt = {}
+    for u, v in half:
+        back = math.atan2(seq[u][1] - seq[v][1], seq[u][0] - seq[v][0])
+        pick = None
+        for w in out.get(v, ()):
+            if angle[(v, w)] < back - 1e-12 and (pick is None or angle[(v, w)] > angle[(v, pick)]):
+                pick = w
+        if pick is None and out.get(v):
+            pick = max(out[v], key=lambda w: angle[(v, w)])
+        if pick is not None:
+            nxt[(u, v)] = (v, pick)
+    seen = set()
+    regions = []
+    for h in half:
+        if h in seen:
+            continue
+        loop = []
+        cur = h
+        while cur is not None and cur not in seen:
+            seen.add(cur)
+            loop.append(seq[cur[0]])
+            cur = nxt.get(cur)
+        if len(loop) >= 3:
+            regions.append(loop)
+    return regions
+
+
+def _bridge(outer, hole):
+    """Join a hole to the boundary around it so one polygon remains."""
+    mi = max(range(len(hole)), key=lambda i: (hole[i][0][0], hole[i][0][1]))
+    M = hole[mi][0]
+    best = None
+    n = len(outer)
+    for i in range(n):
+        a, b = outer[i][0], outer[(i + 1) % n][0]
+        if (a[1] > M[1]) == (b[1] > M[1]):
+            continue
+        x = a[0] + (M[1] - a[1]) / (b[1] - a[1]) * (b[0] - a[0])
+        if x < M[0]:
+            continue
+        if best is None or x < best[0]:
+            best = (x, i if a[0] > b[0] else (i + 1) % n)
+    if best is None:
+        best = (0.0, min(range(n), key=lambda i: (outer[i][0][0] - M[0]) ** 2 + (outer[i][0][1] - M[1]) ** 2))
+    k = best[1]
+    return outer[: k + 1] + hole[mi:] + hole[: mi + 1] + outer[k:]
+
+
+def _ear_clip(poly, eps):
+    idx = list(range(len(poly)))
+    out = []
+    guard = 0
+    limit = 4 * len(poly) * len(poly) + 8
+    while len(idx) > 3 and guard < limit:
+        guard += 1
+        cut = False
+        for k in range(len(idx)):
+            i0, i1, i2 = idx[k - 1], idx[k], idx[(k + 1) % len(idx)]
+            a, b, c = poly[i0], poly[i1], poly[i2]
+            if _turn(a, b, c) <= eps:
+                continue
+            if any(_within(poly[j], a, b, c, eps) for j in idx if j not in (i0, i1, i2)):
+                continue
+            out.append((i0, i1, i2))
+            idx.pop(k)
+            cut = True
+            break
+        if not cut:
+            # Nothing is a clean ear, which happens where a region is a
+            # sliver. Take any corner that turns the right way: the cap is
+            # then a worse shape but still the right surface.
+            for k in range(len(idx)):
+                i0, i1, i2 = idx[k - 1], idx[k], idx[(k + 1) % len(idx)]
+                if _turn(poly[i0], poly[i1], poly[i2]) > eps:
+                    out.append((i0, i1, i2))
+                    idx.pop(k)
+                    cut = True
+                    break
+        if not cut:
+            return None
+    if len(idx) == 3:
+        out.append(tuple(idx))
+    return out
+
+
+def _encloses(p, poly):
+    inside = False
+    n = len(poly)
+    for i in range(n):
+        a = poly[i]
+        b = poly[(i + 1) % n]
+        if (a[1] > p[1]) != (b[1] > p[1]):
+            if a[0] + (p[1] - a[1]) * (b[0] - a[0]) / (b[1] - a[1]) > p[0]:
+                inside = not inside
+    return inside
+
+
+def _cap_one_plane(loops, normal):
+    """Triangulate the region these coplanar boundary loops enclose."""
+    e1, e2 = _plane_basis(normal)
+    back = {}
+    flat = []
+    for L in loops:
+        f = []
+        for p in L:
+            q = (
+                p[0] * e1[0] + p[1] * e1[1] + p[2] * e1[2],
+                p[0] * e2[0] + p[1] * e2[1] + p[2] * e2[2],
+            )
+            back[q] = p
+            f.append(q)
+        flat.append(f)
+    outers = []
+    holes = []
+    for region in _regions(flat):
+        (outers if _area2(region) > 0 else holes).append(region)
+    if not outers:
+        return []
+    owner = {}
+    for h in holes:
+        centre = (sum(p[0] for p in h) / len(h), sum(p[1] for p in h) / len(h))
+        pick = None
+        for i, o in enumerate(outers):
+            if _encloses(centre, o):
+                area = abs(_area2(o))
+                if pick is None or area < pick[1]:
+                    pick = (i, area)
+        if pick is not None:
+            owner.setdefault(pick[0], []).append(h)
+    caps = []
+    for i, o in enumerate(outers):
+        merged = [(p, back[p]) for p in o]
+        for h in sorted(owner.get(i, ()), key=lambda h: -max(p[0] for p in h)):
+            merged = _bridge(merged, [(p, back[p]) for p in h])
+        flat2 = [x[0] for x in merged]
+        space = [x[1] for x in merged]
+        scale = max(1.0, max(abs(p[0]) for p in flat2), max(abs(p[1]) for p in flat2))
+        ears = _ear_clip(flat2, 1e-12 * scale * scale)
+        if ears is None:
+            return []
+        caps.extend((space[a], space[b], space[c]) for a, b, c in ears)
+    return caps
+
+
+def _cap_planar_loops(tris, planar_tol):
+    """Fill every flat hole in the mesh. Returns what was left open."""
+    planes = {}
+    left = 0
+    for loop in _boundary_loops(tris):
+        # The cap has to walk the loop the other way round, so that the edges
+        # it brings are the ones the surface is missing.
+        cap = list(reversed(loop))
+        nx, ny, nz = _newell(cap)
+        size = math.sqrt(nx * nx + ny * ny + nz * nz)
+        if size < 1e-12:
+            left += 1
+            continue
+        n = (nx / size, ny / size, nz / size)
+        cx = sum(p[0] for p in cap) / len(cap)
+        cy = sum(p[1] for p in cap) / len(cap)
+        cz = sum(p[2] for p in cap) / len(cap)
+        if max(abs((p[0] - cx) * n[0] + (p[1] - cy) * n[1] + (p[2] - cz) * n[2]) for p in cap) > planar_tol:
+            left += 1
+            continue
+        d = cx * n[0] + cy * n[1] + cz * n[2]
+        # A hole and the holes inside it face opposite ways, so the key has to
+        # ignore the sign to gather them into the same plane.
+        s = 1.0
+        if n[0] < -1e-9 or (abs(n[0]) <= 1e-9 and (n[1] < -1e-9 or (abs(n[1]) <= 1e-9 and n[2] < 0))):
+            s = -1.0
+        key = (round(n[0] * s, 4), round(n[1] * s, 4), round(n[2] * s, 4), round(d * s, 4))
+        planes.setdefault(key, []).append((cap, n, size / 2.0))
+    for items in planes.values():
+        # The widest loop in the plane is the one around the outside, and its
+        # sense is the sense the whole cap takes.
+        ref = max(items, key=lambda it: it[2])[1]
+        made = _cap_one_plane([cap for cap, _, _ in items], ref)
+        if made:
+            tris.extend(made)
+        else:
+            left += len(items)
+    return left
+
+
+def _close_mesh(tris):
+    """Weld, mend and cap a meshed part. Returns None if it stays open."""
+    tris = _weld(tris, _WELD_LDU)
+    _split_t_junctions(tris, _TJUNCTION_LDU)
+    if _cap_planar_loops(tris, _PLANAR_LDU):
+        return None
+    if _boundary_loops(tris):
+        return None
+    return tris
+
+
+def _solid_from_mesh(tris):
+    """Sew a closed mesh into one solid: shells that face in are holes.
+
+    LDraw marks the inside of a cavity by drawing it with the winding turned
+    round, which is what '0 BFC INVERTNEXT' is mostly for, so once the surface
+    is closed the shells arrive already labelled. A shell whose volume comes
+    out positive is a body - the part, a stud standing on it, a tube inside
+    it - and one whose volume comes out negative is a hole in whatever
+    contains it. Working from the largest outwards is what lets a tube that
+    sits inside a cavity survive the cavity being cut away.
+    """
+    from OCP.BRep import BRep_Tool
+    from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut, BRepAlgoAPI_Fuse
+    from OCP.BRepCheck import BRepCheck_Analyzer
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace, BRepBuilderAPI_MakePolygon, BRepBuilderAPI_Sewing
+    from OCP.BRepGProp import BRepGProp
+    from OCP.gp import gp_Pnt
+    from OCP.GProp import GProp_GProps
+    from OCP.ShapeFix import ShapeFix_Solid
+    from OCP.TopAbs import TopAbs_SHELL, TopAbs_SOLID
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopoDS import TopoDS
+    from OCP.TopTools import TopTools_ListOfShape
+
+    def volume(shape):
+        props = GProp_GProps()
+        BRepGProp.VolumeProperties_s(shape, props)
+        return props.Mass()
+
+    # The mesh shares its vertices exactly by now, so the sewer is asked not
+    # to cut edges: left to it, it splits edges that already matched and
+    # leaves faces disagreeing about which way they face.
+    sewer = BRepBuilderAPI_Sewing(_SEW_TOL_MM, True, True, False, False)
+    for a, b, c in tris:
+        # _scaled() negates Y, and a reflection turns every triangle inside
+        # out, so two vertices are swapped back as it happens - the same
+        # bargain _write_binary_stl() makes.
+        a, b, c = _scaled(a), _scaled(c), _scaled(b)
+        if _normal(a, b, c) is None:
+            continue
+        wire = BRepBuilderAPI_MakePolygon(gp_Pnt(*a), gp_Pnt(*b), gp_Pnt(*c), True).Wire()
+        face = BRepBuilderAPI_MakeFace(wire)
+        if face.IsDone():
+            sewer.Add(face.Face())
+    sewer.Perform()
+
+    bodies = []
+    holes = []
+    explorer = TopExp_Explorer(sewer.SewedShape(), TopAbs_SHELL)
+    while explorer.More():
+        shell = TopoDS.Shell_s(explorer.Current())
+        explorer.Next()
+        if not BRep_Tool.IsClosed_s(shell):
+            return None  # something the mesh repair missed; use the old path
+        facing = volume(shell)
+        solid = ShapeFix_Solid().SolidFromShell(shell)
+        if volume(solid) < 0.0:
+            solid = TopoDS.Solid_s(solid.Reversed())
+        (bodies if facing >= 0.0 else holes).append((abs(facing), solid))
+    if not bodies:
+        return None
+
+    steps = sorted(
+        [(v, s, False) for v, s in bodies] + [(v, s, True) for v, s in holes],
+        key=lambda step: -step[0],
+    )
+    while steps and steps[0][2]:
+        steps.pop(0)  # a hole outside every body is nothing to take away
+    result = steps[0][1]
+    i = 1
+    while i < len(steps):
+        cut = steps[i][2]
+        tools = TopTools_ListOfShape()
+        while i < len(steps) and steps[i][2] == cut:
+            tools.Append(steps[i][1])
+            i += 1
+        args = TopTools_ListOfShape()
+        args.Append(result)
+        op = BRepAlgoAPI_Cut() if cut else BRepAlgoAPI_Fuse()
+        op.SetArguments(args)
+        op.SetTools(tools)
+        op.Build()
+        if not op.IsDone():
+            return None
+        result = op.Shape()
+    # A boolean hands back a compound even when there is one solid in it, and
+    # a compound is not what a part is: unwrap it so the caller is given the
+    # SOLID it asked for.
+    inside = []
+    explorer = TopExp_Explorer(result, TopAbs_SOLID)
+    while explorer.More():
+        inside.append(TopoDS.Solid_s(explorer.Current()))
+        explorer.Next()
+    if len(inside) != 1:
+        return None
+    solid = inside[0]
+    # Last of all, ask the kernel. A solid that does not pass is no use to a
+    # boolean and no better than the shell the mesh import returns, so it is
+    # dropped rather than served: this step can improve a part or leave it
+    # alone, never make it worse.
+    if not BRepCheck_Analyzer(solid).IsValid():
+        return None
+    return solid
+
+
 def _write_binary_stl(tris, path):
     facets = []
     for a, b, c in tris:
@@ -282,6 +903,19 @@ def _build_shape(tris):
     # Pin pyexpat before importing build123d/OCP (see wrapper_import_mesh.py).
     import pyexpat  # noqa: F401
     import build123d as b3d
+
+    # Close the surface first and build the solid it describes. A part this
+    # cannot close - 6233, Cone 3 x 3 x 2, is one, where hand-written eighth
+    # segments meet 48-sided primitives several LDU away - falls through to
+    # the mesh import below and comes back exactly as it did before.
+    closed = _close_mesh(list(tris))
+    if closed:
+        try:
+            solid = _solid_from_mesh(closed)
+        except Exception:
+            solid = None
+        if solid is not None:
+            return solid
 
     stl_path = tempfile.mktemp(".stl")
     try:

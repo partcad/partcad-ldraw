@@ -62,6 +62,20 @@ Two mechanisms are combined:
    resolves to this partType. The wrapper fetches the part's `.dat`, recursively
    resolves its sub-parts, meshes the triangles/quads, and returns the shape.
 
+   LDraw draws a part for a renderer, not for a kernel, so the surface it
+   describes is not closed: a stud is a cylinder standing on a face nobody cut,
+   the same corner is written to four decimals down two different reference
+   paths, and a 16-sided wall meets a 48-sided floor. The wrapper closes that
+   surface before it builds the shape — welding the near-coincident vertices,
+   splitting an edge where another vertex sits on it, and filling each flat
+   hole as the region its boundary loops enclose — and then makes one solid out
+   of the closed shells, cutting the ones LDraw drew facing inward, which are
+   its cavities, rather than fusing them.
+
+   A part the wrapper cannot close comes back from the mesh import unchanged,
+   as a shell, exactly as every part did before; so does one whose solid the
+   kernel will not certify. The step can only improve a part or leave it alone.
+
 ## Rebuilding the index
 
 Run it when LDraw publishes a library update, and commit the result:
