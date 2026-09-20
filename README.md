@@ -347,10 +347,30 @@ Everything fetched from ldraw.org is cached under
 `~/.cache/partcad-ldraw/` (override with `PARTCAD_LDRAW_CACHE`):
 
 ```
-category-list.html                 the category list
-categories/<Category>/page-N.html  each part-list page
-parts/<id>.dat                      each part (also used by the render)
+category-list.html                 the category list          (ldraw_repo.py)
+categories/<Category>/page-N.html  each part-list page        (ldraw_repo.py)
+parts/<id>.dat                     a part's header            (ldraw_repo.py)
+<name>.dat, 48/<name>.dat, ...     each file the render reads (ldraw.py)
+.missing/<same path>               a fetch that produced nothing
 ```
+
+A fetch that produced nothing is cached too, and that matters as much as the
+rest: ldraw.org rate-limits bursts, and meshing one part reads hundreds of
+files. Without a record of what did not arrive, every part re-asks for every
+primitive the part before it could not get, so a throttled machine never
+converges - it repeats the burst that got it throttled, at up to sixteen
+requests per file.
+
+The two cases are not the same question, so they are not kept for the same
+length of time. A **404** is an answer - the library has not got this file - and
+is held for a week. A **429, a timeout or a reset** is the absence of an answer,
+and is held for five minutes so the next run is a fresh attempt rather than this
+one again. Telling them apart is also what decides what the render says when a
+part will not come: "not found in the library" means the id is wrong, and "could
+not be fetched" means try again.
+
+Delete the cache directory to start over; deleting just `.missing/` retries
+everything that failed without re-fetching what did not.
 
 ## Requirements
 

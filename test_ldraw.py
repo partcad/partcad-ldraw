@@ -18,6 +18,7 @@ import importlib.util
 import os
 import struct
 import tempfile
+import urllib.error
 
 import pytest
 
@@ -25,6 +26,11 @@ _here = os.path.dirname(__file__)
 _spec = importlib.util.spec_from_file_location("ldraw", os.path.join(_here, "ldraw.py"))
 ldraw = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(ldraw)
+
+# The genuine fetch, kept here because '_mesh()' and '_bfc()' below replace
+# 'ldraw._ldraw_fetch' on the module and do not put it back. Captured at import,
+# which is before any of them has run.
+_REAL_FETCH = ldraw._ldraw_fetch
 
 # A parent that draws one triangle of its own and defers the rest to a subfile,
 # which is the shape of every real part in the library.
@@ -70,6 +76,150 @@ def test_a_fetch_is_retried_before_it_is_given_up_on():
     assert ldraw._FETCH_RETRIES > 1
 
 
+# --- fetching, and the two ways it fails ------------------------------------
+#
+# The wrapper used to catch every exception a request could raise and carry on
+# to the next subdirectory, which made a 404 and a 429 the same event. So a run
+# ldraw.org was throttling reported "LDraw part not found in the library:
+# 3020.dat" - Plate 2 x 4, which the library has had for forty years - and gave
+# up after four attempts over five seconds, having asked for every file sixteen
+# times and remembered none of it. These are the two answers kept apart, and
+# the three things that follow from keeping them apart.
+
+
+class _HTTPError(Exception):
+    """Stands in for urllib.error.HTTPError, which needs a real response."""
+
+    def __init__(self, code, headers=None):
+        super().__init__(str(code))
+        self.code = code
+        self.headers = headers or {}
+
+
+def test_a_404_settles_one_subdirectory_and_is_not_asked_again(monkeypatch):
+    calls = []
+
+    def _urlopen(req, timeout=None):
+        calls.append(req.full_url)
+        raise urllib.error.HTTPError(req.full_url, 404, "Not Found", {}, None)
+
+    monkeypatch.setattr(ldraw.urllib.request, "urlopen", _urlopen)
+    monkeypatch.setattr(ldraw.time, "sleep", lambda s: None)
+    text, reason = ldraw._ldraw_get("nosuch.dat")
+    assert text is None
+    assert reason == ldraw._MISSING
+    # One request per subdirectory and no second round: every one of them has
+    # answered, and the answer does not change by being asked again.
+    assert len(calls) == len(ldraw._LDRAW_SUBDIRS)
+
+
+def test_a_server_that_says_nothing_is_retried_and_reported_unavailable(monkeypatch):
+    calls = []
+
+    def _urlopen(req, timeout=None):
+        calls.append(req.full_url)
+        raise OSError("connection reset")
+
+    monkeypatch.setattr(ldraw.urllib.request, "urlopen", _urlopen)
+    monkeypatch.setattr(ldraw.time, "sleep", lambda s: None)
+    text, reason = ldraw._ldraw_get("3020.dat")
+    assert text is None
+    # Not '_MISSING': the library not answering says nothing about the part.
+    assert reason == ldraw._UNAVAILABLE
+    assert len(calls) == len(ldraw._LDRAW_SUBDIRS) * ldraw._FETCH_RETRIES
+
+
+def test_a_throttled_fetch_waits_as_long_as_it_was_asked_to():
+    assert ldraw._retry_after(_HTTPError(429, {"Retry-After": "5"}), 0.5) == 5.0
+    # No header, or one in the HTTP-date form, leaves the backoff as it was.
+    assert ldraw._retry_after(_HTTPError(429), 0.5) == 0.5
+    assert ldraw._retry_after(_HTTPError(429, {"Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT"}), 0.5) == 0.5
+    # An absurd wait is capped rather than obeyed.
+    assert ldraw._retry_after(_HTTPError(429, {"Retry-After": "86400"}), 0.5) == 60.0
+
+
+def test_the_search_for_one_file_is_bounded_however_slow_the_server_is(monkeypatch):
+    # The wedge this closes: four attempts over four subdirectories is sixteen
+    # requests, and at the per-request timeout each that is sixteen minutes for
+    # one file - inside a part that references hundreds of them.
+    clock = [0.0]
+    calls = []
+
+    def _urlopen(req, timeout=None):
+        calls.append(req.full_url)
+        clock[0] += ldraw._FETCH_TIMEOUT
+        raise OSError("timed out")
+
+    monkeypatch.setattr(ldraw.urllib.request, "urlopen", _urlopen)
+    monkeypatch.setattr(ldraw.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(ldraw.time, "sleep", lambda s: None)
+    text, reason = ldraw._ldraw_get("3020.dat")
+    assert text is None and reason == ldraw._UNAVAILABLE
+    # The budget is checked before each request, so the bound is the budget plus
+    # one request - and well short of asking all sixteen.
+    assert clock[0] <= ldraw._FETCH_SECONDS + ldraw._FETCH_TIMEOUT
+    assert len(calls) < len(ldraw._LDRAW_SUBDIRS) * ldraw._FETCH_RETRIES
+
+
+def test_a_primitive_is_asked_of_the_primitives_directory_first():
+    # A round brick is mostly primitives, and each used to be asked of
+    # 'official/parts' before 'official/p'.
+    assert ldraw._subdir_order("3-16ndis.dat")[0] == "official/p"
+    assert ldraw._subdir_order("48/4-4disc.dat")[0] == "official/p"
+    # A part, and a subpart of one, keep the order they had.
+    assert ldraw._subdir_order("3001.dat")[0] == "official/parts"
+    assert ldraw._subdir_order("s/3001s01.dat")[0] == "official/parts"
+    # Whatever the order, every subdirectory is still searched: the guess above
+    # costs a request when it is wrong and never an answer.
+    for key in ("3-16ndis.dat", "3001.dat"):
+        assert sorted(ldraw._subdir_order(key)) == sorted(ldraw._LDRAW_SUBDIRS)
+
+
+def test_a_failed_fetch_is_remembered_so_the_next_part_is_not_this_one(tmp_path, monkeypatch):
+    monkeypatch.setattr(ldraw, "_ldraw_fetch", _REAL_FETCH)
+    attempts = []
+
+    def _get(key, deadline=None):
+        attempts.append(key)
+        return None, ldraw._UNAVAILABLE
+
+    monkeypatch.setattr(ldraw, "_ldraw_get", _get)
+    assert ldraw._ldraw_fetch("3020.dat", str(tmp_path)) is None
+    assert ldraw._ldraw_fetch("3020.dat", str(tmp_path)) is None
+    assert len(attempts) == 1, "the second call should have read the negative entry"
+
+
+def test_the_library_not_having_a_file_is_remembered_for_longer_than_a_bad_day():
+    assert ldraw._NEGATIVE_TTL[ldraw._MISSING] > ldraw._NEGATIVE_TTL[ldraw._UNAVAILABLE]
+
+
+def test_a_negative_entry_expires_and_a_success_clears_it(tmp_path, monkeypatch):
+    monkeypatch.setattr(ldraw, "_ldraw_fetch", _REAL_FETCH)
+    cache = str(tmp_path)
+    ldraw._remember_negative(cache, "3020.dat", ldraw._UNAVAILABLE)
+    assert ldraw._negative_is_fresh(cache, "3020.dat")
+
+    monkeypatch.setattr(ldraw.time, "time", lambda: 1e12)  # long past the TTL
+    assert not ldraw._negative_is_fresh(cache, "3020.dat")
+
+    monkeypatch.setattr(ldraw, "_ldraw_get", lambda key, deadline=None: ("0 Plate  2 x  4\n", None))
+    assert ldraw._ldraw_fetch("3020.dat", cache) == "0 Plate  2 x  4\n"
+    # Cleared, so a later failure starts a fresh TTL rather than inheriting this
+    # one - and the file itself is on disk, so the next read needs no network.
+    assert not os.path.exists(ldraw._negative_path(cache, "3020.dat"))
+    assert os.path.exists(os.path.join(cache, "3020.dat"))
+
+
+def test_a_part_that_could_not_be_fetched_is_not_reported_as_one_that_does_not_exist(tmp_path):
+    cache = str(tmp_path)
+    ldraw._remember_negative(cache, "3020.dat", ldraw._UNAVAILABLE)
+    assert ldraw._fetch_failure("3020.dat", cache) == ldraw._UNAVAILABLE
+    ldraw._remember_negative(cache, "3020.dat", ldraw._MISSING)
+    assert ldraw._fetch_failure("3020.dat", cache) == ldraw._MISSING
+    # A file nothing was ever recorded for says nothing rather than guessing.
+    assert ldraw._fetch_failure("9999.dat", cache) is None
+
+
 def test_the_part_entry_point_is_not_run_on_import():
     # The module guards its work behind '__partcad_part__', so importing it for
     # these tests must not try to resolve or fetch anything.
@@ -87,8 +237,6 @@ def test_the_part_entry_point_is_not_run_on_import():
 #
 # Three things reverse a file's winding and they compound, which is the part
 # that is easy to get half right, so each has a test and so does the pairing.
-
-_REAL_FETCH = ldraw._ldraw_fetch
 
 # One triangle whose three vertices are told apart by which axis they are on,
 # so a reversal is visible in the result rather than inferred from it.
