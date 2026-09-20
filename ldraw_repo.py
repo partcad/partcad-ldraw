@@ -606,15 +606,29 @@ def _stud_instances(depth, length, height, has_studs):
 # has to be read rather than rejected: it is what puts the anti-stud plane in
 # the right place. A cone written without one is a single brick tall.
 _CONE_RE = re.compile(r"^Cone\s+(\d+)\s*x\s*(\d+)(?:\s*x\s*(\d+))?(?!\s*[.\dx])", re.IGNORECASE)
+# A "Half" cone is the case this rule must not answer for. Whether its name
+# already counts the half - "Cone 4 x 2 x 4 Half" being half of a 4 x 4 - or
+# still names the whole, the base underneath is not the full rectangle the name
+# gives, and asserting anti-studs that are not there is worse than leaving the
+# geometry's shorter answer alone. The same caution the corner brick teaches.
+_PARTIAL_CONE_RE = re.compile(r"\bHalf\b", re.IGNORECASE)
 
 
 def _cone_implements(desc):
     """The anti-stud instances of a Cone A x B [x C], or None."""
     m = _CONE_RE.match(desc)
-    if not m:
+    if not m or _PARTIAL_CONE_RE.search(desc):
         return None
     depth, length = int(m.group(1)), int(m.group(2))
     if not (1 <= depth <= _MAX_STUDS and 1 <= length <= _MAX_STUDS):
+        return None
+    # Only where the name settles every cell. A cone is round, so a footprint
+    # with an interior - 3 x 3 and up - has cells the name cannot vouch for: a
+    # Cone 4 x 4 x 2 is hollow in the middle, and the walk finds the twelve
+    # round its rim and not the four inside, which is the right answer and not
+    # a short read. Up to two studs across there is no inside: every cell is on
+    # the rim, which is why this reaches the 1 x 1 and the 2 x 2 and stops.
+    if depth > 2 and length > 2:
         return None
     courses = int(m.group(3)) if m.group(3) else 1
     height, _has_studs = _LEGO_KINDS["brick"]

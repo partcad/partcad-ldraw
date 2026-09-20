@@ -1602,9 +1602,20 @@ def test_a_cone_is_given_no_studs_by_its_name():
 def test_a_cone_s_third_dimension_is_its_height_rather_than_a_reason_to_refuse():
     # The opposite of "Brick 1 x 2 x 5", which is rejected because its height
     # would be wrong: for a cone the third number is what makes it right.
-    tall = plugin._cone_implements("Cone  3 x  3 x  2")
-    assert len(tall[ANTI]) == 9
-    assert {round(port[0][1], 2) for port in tall[ANTI].values()} == {-19.2}
+    tall = plugin._cone_implements("Cone  2 x  2 x  6")
+    assert len(tall[ANTI]) == 4
+    assert {round(port[0][1], 2) for port in tall[ANTI].values()} == {-57.6}
+
+
+def test_a_cone_with_an_inside_is_left_to_the_geometry():
+    """A round cone is hollow in the middle; the name cannot say which cells"""
+    # The walk finds the twelve anti-studs round a 4 x 4 cone's rim and not the
+    # four inside it, and that is the right answer rather than a short read.
+    assert plugin._cone_implements("Cone  4 x  4 x  2 with Axlehole") is None
+    assert plugin._cone_implements("Cone  3 x  3 x  2") is None
+    # Up to two studs across there is no inside.
+    assert len(plugin._cone_implements("Cone  2 x  2 x  2")[ANTI]) == 4
+    assert len(plugin._cone_implements("Cone  1 x  2")[ANTI]) == 2
 
 
 def test_something_that_is_not_a_cone_is_left_alone():
@@ -1635,3 +1646,9 @@ def test_a_longer_underside_read_is_believed():
 def test_nothing_is_done_to_a_part_that_is_not_a_cone():
     walked = {ANTI: {"c0r0": [[0.0, -9.6, 0.0], [1, 1, -1], 120]}}
     assert plugin._cone_underside(walked, None) is walked
+
+
+def test_a_half_cone_is_left_to_the_geometry():
+    """Its base is not the rectangle its name gives, whichever way it counts"""
+    assert plugin._cone_implements("Cone  4 x  8 x  6 Half with Roof Tiles") is None
+    assert plugin._cone_implements("Cone  4 x  2 x  4 Half") is None
