@@ -596,6 +596,31 @@ def _stud_instances(depth, length, height, has_studs):
     return implements
 
 
+# A cone stands on a rectangular base and narrows going up, so its underside is
+# an ordinary A x B field of anti-studs while its top is not an A x B field of
+# studs at all - a Cone 2 x 2 x 2 has four anti-studs under it and one stud on
+# top. So the name is read for the underside only and the studs are left to the
+# geometry, which is the only thing that knows where the narrow top ends up.
+#
+# The third dimension is the height in bricks, and unlike a "Brick 1 x 2 x 5" it
+# has to be read rather than rejected: it is what puts the anti-stud plane in
+# the right place. A cone written without one is a single brick tall.
+_CONE_RE = re.compile(r"^Cone\s+(\d+)\s*x\s*(\d+)(?:\s*x\s*(\d+))?(?!\s*[.\dx])", re.IGNORECASE)
+
+
+def _cone_implements(desc):
+    """The anti-stud instances of a Cone A x B [x C], or None."""
+    m = _CONE_RE.match(desc)
+    if not m:
+        return None
+    depth, length = int(m.group(1)), int(m.group(2))
+    if not (1 <= depth <= _MAX_STUDS and 1 <= length <= _MAX_STUDS):
+        return None
+    courses = int(m.group(3)) if m.group(3) else 1
+    height, _has_studs = _LEGO_KINDS["brick"]
+    return _stud_instances(depth, length, height * courses, has_studs=False)
+
+
 def _brick_implements(desc):
     """The instances of a rectangular Brick / Plate / Tile, or None."""
     m = _DIM_RE.match(desc)
@@ -826,7 +851,8 @@ def _lego_implements(desc, pid=None):
     if not desc:
         return None
     desc = desc.strip()
-    implements = _brick_implements(desc) or _name_implements(desc)
+    cone = _cone_implements(desc)
+    implements = _brick_implements(desc) or cone or _name_implements(desc)
     # One budget for the part, shared by all three (four, for headgear) walks
     # below: each making its own would bound this at four times _GEOMETRY_SECONDS.
     deadline = _geometry_deadline() if pid else None
@@ -836,6 +862,33 @@ def _lego_implements(desc, pid=None):
         implements = _headgear_implements(pid, deadline)
     if pid:
         implements = _with_geometry_studs(implements, pid, deadline)
+    return _cone_underside(implements, cone)
+
+
+def _cone_underside(implements, cone):
+    """Keep a cone's full field of anti-studs against a shorter geometry read.
+
+    The walk reads anti-studs off the tubes under a part, and an anti-stud no
+    tube marks is still one - which is why it returns None rather than an empty
+    answer when it sees none at all. Seeing only some is the same ambiguity, and
+    for most parts it has to be resolved the walk's way: a Brick 2 x 2 Corner
+    really does have three of the four its name implies, and the walk is the
+    only thing that knows.
+
+    A cone is the case where the name knows better. It stands on a full A x B
+    base whatever its top does - that is what makes it a cone A x B - so a walk
+    that comes back with fewer has missed some, and it does: Cone 2 x 2 x 2
+    comes back with two, both on the same side, which mates the part half a stud
+    out in each direction.
+    """
+    if not cone or not implements:
+        return implements
+    named = cone.get(_ANTI_IFACE) or {}
+    found = implements.get(_ANTI_IFACE) or {}
+    if len(found) >= len(named):
+        return implements
+    implements = dict(implements)
+    implements[_ANTI_IFACE] = named
     return implements
 
 
