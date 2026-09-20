@@ -1573,3 +1573,82 @@ def test_every_walk_of_one_part_shares_one_deadline(monkeypatch, fake_library):
 def test_a_walk_reached_directly_still_gets_a_budget(fake_library):
     """Nothing hands a deadline to a helper called on its own; it makes one."""
     assert plugin._geometry_stud_implements("3003") is not None
+
+
+# --- cones -------------------------------------------------------------------
+#
+# A cone stands on a full A x B base and narrows going up, so its underside is
+# an ordinary field of anti-studs and its top is not a field of studs at all.
+
+
+def test_a_cone_gets_the_anti_studs_its_base_has():
+    got = plugin._cone_implements("Cone  2 x  2 x  2 with Hollow Stud and Axlehole Teeth")
+    assert sorted(got[ANTI]) == ["c0r0", "c0r1", "c1r0", "c1r1"]
+    assert {round(port[0][1], 2) for port in got[ANTI].values()} == {-19.2}
+
+
+def test_a_cone_written_without_a_height_is_one_brick_tall():
+    got = plugin._cone_implements("Cone  1 x  1")
+    assert sorted(got[ANTI]) == ["c0r0"]
+    assert {round(port[0][1], 2) for port in got[ANTI].values()} == {-9.6}
+
+
+def test_a_cone_is_given_no_studs_by_its_name():
+    # A Cone 2 x 2 x 2 has one stud on top, not four: the name says what it
+    # stands on and the geometry has to say what it carries.
+    assert STUD not in plugin._cone_implements("Cone  2 x  2 x  2")
+
+
+def test_a_cone_s_third_dimension_is_its_height_rather_than_a_reason_to_refuse():
+    # The opposite of "Brick 1 x 2 x 5", which is rejected because its height
+    # would be wrong: for a cone the third number is what makes it right.
+    tall = plugin._cone_implements("Cone  2 x  2 x  6")
+    assert len(tall[ANTI]) == 4
+    assert {round(port[0][1], 2) for port in tall[ANTI].values()} == {-57.6}
+
+
+def test_a_cone_with_an_inside_is_left_to_the_geometry():
+    """A round cone is hollow in the middle; the name cannot say which cells"""
+    # The walk finds the twelve anti-studs round a 4 x 4 cone's rim and not the
+    # four inside it, and that is the right answer rather than a short read.
+    assert plugin._cone_implements("Cone  4 x  4 x  2 with Axlehole") is None
+    assert plugin._cone_implements("Cone  3 x  3 x  2") is None
+    # Up to two studs across there is no inside.
+    assert len(plugin._cone_implements("Cone  2 x  2 x  2")[ANTI]) == 4
+    assert len(plugin._cone_implements("Cone  1 x  2")[ANTI]) == 2
+
+
+def test_something_that_is_not_a_cone_is_left_alone():
+    assert plugin._cone_implements("Brick  1 x  2") is None
+    assert plugin._cone_implements("Cone  1 x  1 Inverted with Shaft")[ANTI]
+
+
+def test_a_short_underside_read_does_not_shrink_a_cone():
+    """The walk misses anti-studs no tube marks; a cone's base has them anyway"""
+    cone = plugin._cone_implements("Cone  2 x  2 x  2")
+    walked = {ANTI: {"c1r0": cone[ANTI]["c1r0"], "c1r1": cone[ANTI]["c1r1"]}}
+
+    kept = plugin._cone_underside(walked, cone)
+
+    assert sorted(kept[ANTI]) == ["c0r0", "c0r1", "c1r0", "c1r1"]
+
+
+def test_a_longer_underside_read_is_believed():
+    """Only a short read is overridden: the walk is right about everything else"""
+    cone = plugin._cone_implements("Cone  2 x  2 x  2")
+    walked = {ANTI: dict(cone[ANTI]), STUD: {"c0r0": [[0.0, 0.0, 0.0], [1, 0, 0], 270]}}
+
+    kept = plugin._cone_underside(walked, cone)
+
+    assert kept is walked
+
+
+def test_nothing_is_done_to_a_part_that_is_not_a_cone():
+    walked = {ANTI: {"c0r0": [[0.0, -9.6, 0.0], [1, 1, -1], 120]}}
+    assert plugin._cone_underside(walked, None) is walked
+
+
+def test_a_half_cone_is_left_to_the_geometry():
+    """Its base is not the rectangle its name gives, whichever way it counts"""
+    assert plugin._cone_implements("Cone  4 x  8 x  6 Half with Roof Tiles") is None
+    assert plugin._cone_implements("Cone  4 x  2 x  4 Half") is None

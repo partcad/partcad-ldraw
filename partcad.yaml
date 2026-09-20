@@ -149,6 +149,24 @@ interfaces:
     ports:
       anti:
         sketch: stud-sketch
+    # The executable counterpart of the 'motion' below, and the reason it is on
+    # this side of the pair: the part that travels is the one being put on, and
+    # it is its anti-stud that meets the stud already there. A 1 x 1 plate on a
+    # single stud really does spin, so a model that lays a brick across the one
+    # under it is describing the joint it has rather than working around one it
+    # has not - and without this there is no way to say so, since PartCAD reads
+    # only a description and port selectors out of a mate (see 'stud' above).
+    #
+    # Quarter turns are what a rectangular brick uses, but the range is the full
+    # circle: a round part on one stud sits at any angle, and a limit at 90
+    # would be this interface deciding that for every part that implements it.
+    parameters:
+      turnZ:
+        min: -180
+        max: 180
+        default: 0
+        type: turn
+        dir: [0, 0, 1]
     motion:
       type: continuous
       axis: [0, 0, 1]
