@@ -268,6 +268,127 @@ def test_the_facet_normal_says_the_same_thing_as_the_vertices_beside_it():
 
 # --- against the real library -----------------------------------------------
 #
+# Closing the surface: welding, mending seams, and filling the holes LDraw
+# leaves where it stands a stud on a face it never cut.
+
+
+def _box(lo, hi, outward=True, omit=()):
+    """The six faces of an axis-aligned box, as triangles facing out (or in)."""
+    (x0, y0, z0), (x1, y1, z1) = lo, hi
+    centre = ((x0 + x1) / 2.0, (y0 + y1) / 2.0, (z0 + z1) / 2.0)
+    quads = {
+        "y-": [(x0, y0, z0), (x1, y0, z0), (x1, y0, z1), (x0, y0, z1)],
+        "y+": [(x0, y1, z0), (x1, y1, z0), (x1, y1, z1), (x0, y1, z1)],
+        "x-": [(x0, y0, z0), (x0, y1, z0), (x0, y1, z1), (x0, y0, z1)],
+        "x+": [(x1, y0, z0), (x1, y1, z0), (x1, y1, z1), (x1, y0, z1)],
+        "z-": [(x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0)],
+        "z+": [(x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)],
+    }
+    tris = []
+    for name, q in quads.items():
+        if name in omit:
+            continue
+        n = ldraw._normal(q[0], q[1], q[2])
+        mid = [sum(p[k] for p in q) / 4.0 for k in range(3)]
+        away = sum(n[k] * (mid[k] - centre[k]) for k in range(3)) > 0.0
+        if away != outward:
+            q = list(reversed(q))
+        tris.append((q[0], q[1], q[2]))
+        tris.append((q[0], q[2], q[3]))
+    return tris
+
+
+def _signed_volume(tris):
+    total = 0.0
+    for a, b, c in tris:
+        total += (
+            a[0] * (b[1] * c[2] - b[2] * c[1])
+            - a[1] * (b[0] * c[2] - b[2] * c[0])
+            + a[2] * (b[0] * c[1] - b[1] * c[0])
+        ) / 6.0
+    return total
+
+
+def test_a_flat_hole_is_filled_and_the_part_measures_what_it_should():
+    # The shape of every stud in the library: a box with a face left off.
+    tris = ldraw._close_mesh(_box((0, 0, 0), (10, 10, 10), omit=("y-",)))
+    assert tris is not None
+    assert ldraw._boundary_loops(tris) == []
+    assert _signed_volume(tris) == pytest.approx(1000.0)
+
+
+def test_the_cap_is_wound_to_agree_with_the_surface_it_closes():
+    tris = ldraw._close_mesh(_box((0, 0, 0), (10, 10, 10), omit=("y-",)))
+    seen = {}
+    for edge in _directed_edges(tris):
+        seen[edge] = seen.get(edge, 0) + 1
+    assert all(n == 1 for n in seen.values())
+    assert all(seen.get((b, a)) == 1 for a, b in seen)
+
+
+def test_two_spellings_of_one_corner_become_one_corner():
+    # LDraw writes to four or five decimals, so the same point reached through
+    # two primitives differs in the last digit and nothing sews.
+    tris = _box((0, 0, 0), (10, 10, 10))
+    drifted = [tuple(tuple(c + 1e-4 if c else c for c in p) for p in t) for t in tris[:2]]
+    welded = ldraw._weld(tris[2:] + drifted, ldraw._WELD_LDU)
+    assert len({p for t in welded for p in t}) == 8
+
+
+def test_a_vertex_sitting_on_an_edge_splits_it():
+    # A 16-sided wall meeting a 48-sided floor: the floor's extra vertices land
+    # in the middle of the wall's edges rather than at their ends.
+    tris = [
+        ((0.0, 0.0, 0.0), (10.0, 0.0, 0.0), (0.0, 10.0, 0.0)),
+        ((0.0, 0.0, 0.0), (5.0, 0.0, 0.0), (0.0, 0.0, -10.0)),
+    ]
+    assert ldraw._split_t_junctions(tris, ldraw._TJUNCTION_LDU) == 1
+    assert ((0.0, 0.0, 0.0), (5.0, 0.0, 0.0)) in ldraw._half_edges(tris)
+    assert ((5.0, 0.0, 0.0), (10.0, 0.0, 0.0)) in ldraw._half_edges(tris)
+
+
+def test_a_ring_shaped_hole_is_filled_as_a_ring_and_not_as_a_disc():
+    # An underside: a box open at the bottom with a cavity that is open there
+    # too. The hole in that plane is bounded by two loops, and filling each of
+    # them on its own lays one disc over another and measures the cavity as
+    # solid.
+    outer = _box((0, 0, 0), (10, 10, 10), omit=("y-",))
+    cavity = _box((2, 0, 2), (8, 5, 8), outward=False, omit=("y-",))
+    tris = ldraw._close_mesh(outer + cavity)
+    assert tris is not None
+    assert ldraw._boundary_loops(tris) == []
+    assert _signed_volume(tris) == pytest.approx(1000.0 - 6.0 * 5.0 * 6.0)
+
+
+def test_a_cavity_drawn_facing_inward_is_taken_out_rather_than_added():
+    # LDraw marks the inside of a hole by turning the winding round, which is
+    # what '0 BFC INVERTNEXT' is mostly for. Fusing such a shell in rather than
+    # cutting it out fills the hole with material and the part weighs too much.
+    pytest.importorskip("build123d")
+    try:
+        from OCP.BRepGProp import BRepGProp
+        from OCP.GProp import GProp_GProps
+    except ImportError as e:
+        pytest.skip("no CAD kernel: %s" % e)
+    tris = _box((0, 0, 0), (10, 10, 10)) + _box((3, 3, 3), (6, 6, 6), outward=False)
+    solid = ldraw._solid_from_mesh(tris)
+    assert solid is not None
+    props = GProp_GProps()
+    BRepGProp.VolumeProperties_s(solid, props)
+    # Millimetres, so 1 LDU of each side is 0.4 mm: 4^3 - 1.2^3.
+    assert props.Mass() == pytest.approx((10 * ldraw._LDU_MM) ** 3 - (3 * ldraw._LDU_MM) ** 3)
+
+
+def test_a_hole_that_is_not_flat_is_left_open_rather_than_guessed_at():
+    tris = _box((0, 0, 0), (10, 10, 10), omit=("y-",))
+    # Pull one corner of the opening out of its plane.
+    moved = []
+    for t in tris:
+        moved.append(tuple((p[0], p[1], p[2]) if p != (0.0, 0.0, 0.0) else (0.0, -6.0, -6.0) for p in t))
+    assert ldraw._close_mesh(moved) is None
+
+
+#
 # The two below reach ldraw.org, and the second wants a CAD kernel as well.
 # Both skip rather than fail where they cannot have what they need, because
 # the rest of this file is meant to run anywhere.
@@ -297,6 +418,41 @@ def test_a_real_part_meshes_into_a_surface_that_agrees_with_itself(monkeypatch):
     lopsided = [e for e, n in seen.items() if seen.get((e[1], e[0]), 0) not in (0, n)]
     assert not doubled, "%d directed edges are used twice" % len(doubled)
     assert not lopsided, "%d edges are shared unevenly" % len(lopsided)
+
+
+@pytest.mark.slow
+def test_a_real_round_part_comes_back_as_a_solid(monkeypatch):
+    # The defect: Brick 2 x 2 Round came back as a SHELL with no solid in it,
+    # so every boolean taken against it returned nothing and its mass, its
+    # interference and its FEA were all meaningless. The rectangular bricks
+    # did return a solid, but one BRepCheck_Analyzer rejected.
+    pytest.importorskip("build123d")
+    try:
+        from OCP.BRepCheck import BRepCheck_Analyzer
+        from OCP.BRepGProp import BRepGProp
+        from OCP.GProp import GProp_GProps
+        from OCP.TopAbs import TopAbs_ShapeEnum
+    except ImportError as e:
+        pytest.skip("no CAD kernel: %s" % e)
+
+    monkeypatch.setattr(ldraw, "_ldraw_fetch", _REAL_FETCH)
+    cache = ldraw._ldraw_cache_dir()
+    for name in ("3941.dat", "4589.dat", "3005.dat"):
+        text = ldraw._ldraw_fetch(name, cache)
+        if text is None:
+            pytest.skip("LDraw could not be reached (offline?)")
+        tris = []
+        try:
+            ldraw._mesh(text, ldraw._IDENT, (0, 0, 0), tris, cache)
+        except ldraw.LDrawSubfileMissing as e:
+            pytest.skip("LDraw could not be reached: %s" % e)
+        shape = ldraw._build_shape(tris)
+        assert shape is not None
+        assert shape.ShapeType() == TopAbs_ShapeEnum.TopAbs_SOLID, name
+        assert BRepCheck_Analyzer(shape).IsValid(), name
+        props = GProp_GProps()
+        BRepGProp.VolumeProperties_s(shape, props)
+        assert props.Mass() > 0.0, name
 
 
 @pytest.mark.slow
