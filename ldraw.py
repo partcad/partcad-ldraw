@@ -828,14 +828,25 @@ def _close_mesh(tris, orient=False):
     """Weld, mend and cap a meshed part. Returns None if it stays open.
 
     'orient' settles the winding from the mesh rather than from the file, for
-    a file that never certified its own. It runs after the weld because that
-    is what makes two triangles share an edge exactly, and before the
-    T-junction split because splitting a triangle keeps the winding it had.
+    a file that never certified its own. It runs after the weld, because that
+    is what makes two triangles share an edge exactly, and then again after the
+    T-junction split, because splitting is what first gives some of them an
+    edge to share: where a 48-sided primitive meets a 16-sided one, the coarse
+    edge spans three fine ones and the two surfaces are separate components
+    until the split puts the missing vertices in. Reconciled only before it,
+    the seam between them keeps whatever disagreement it had.
+
+    The first pass is still worth making. Splitting preserves the winding of
+    the triangle it splits, so everything settled before the split stays
+    settled, and reaching the second pass with most of the mesh already
+    consistent is what keeps it to the seams.
     """
     tris = _weld(tris, _WELD_LDU)
     if orient:
         tris = _orient_consistently(tris)
     _split_t_junctions(tris, _TJUNCTION_LDU)
+    if orient:
+        tris = _orient_consistently(tris)
     if _cap_planar_loops(tris, _PLANAR_LDU):
         return None
     if _boundary_loops(tris):

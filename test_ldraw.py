@@ -599,3 +599,42 @@ def test_each_piece_of_a_surface_is_settled_on_its_own():
         edges[edge] = edges.get(edge, 0) + 1
     assert all(n == 1 for n in edges.values())
     assert abs(_signed_volume(fixed)) == pytest.approx(2000.0)
+
+
+def _seam_faults(tris):
+    """Edges two triangles traverse the same way, which is a disagreement."""
+    counted = {}
+    for edge in _directed_edges(tris):
+        counted[edge] = counted.get(edge, 0) + 1
+    return [edge for edge, n in counted.items() if n > 1]
+
+
+def test_a_seam_only_the_split_creates_is_settled_too():
+    """Two surfaces that share no edge until the T-junction split still agree
+
+    Where a 48-sided primitive meets a 16-sided one the coarse edge spans
+    several fine ones, so the two are separate orientation components and the
+    first pass has nothing to reconcile them across. Splitting is what puts the
+    shared edges in - and a seam settled only before the split keeps whatever
+    disagreement it had.
+    """
+    # An upper strip spanning the seam in one edge, and a lower one subdivided
+    # at x=5, wound against it.
+    upper = [((0, 0, 0), (10, 0, 0), (10, 0, 10)), ((0, 0, 0), (10, 0, 10), (0, 0, 10))]
+    lower = [
+        ((0, 0, 0), (5, 0, -10), (5, 0, 0)),
+        ((0, 0, 0), (0, 0, -10), (5, 0, -10)),
+        ((5, 0, 0), (5, 0, -10), (10, 0, 0)),
+        ((5, 0, -10), (10, 0, -10), (10, 0, 0)),
+    ]
+    tris = ldraw._weld(upper + [(a, c, b) for a, b, c in lower], ldraw._WELD_LDU)
+
+    # Before the split the two are separate components, so the first pass
+    # leaves the seam alone and finds nothing wrong with either side.
+    once = ldraw._orient_consistently(tris)
+    assert _seam_faults(once) == []
+    ldraw._split_t_junctions(once, ldraw._TJUNCTION_LDU)
+    assert _seam_faults(once) != []
+
+    # A second pass, which is what '_close_mesh' makes, settles it.
+    assert _seam_faults(ldraw._orient_consistently(once)) == []
