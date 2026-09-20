@@ -25,9 +25,11 @@
 #
 import math
 import os
+import re
 import struct
 import tempfile
 import time
+import urllib.error
 import urllib.request
 
 _LDRAW_BASE = "https://library.ldraw.org/library"
@@ -38,6 +40,42 @@ _LDU_MM = 0.4
 # A dropped request costs geometry rather than time, so retry before giving up.
 _FETCH_RETRIES = 4
 _FETCH_BACKOFF = 0.5
+# How long one request may take, and how long the whole search for one file may
+# take however many requests that is. The second is the one that matters: four
+# attempts over four subdirectories is sixteen requests, and at sixty seconds
+# each a single file the server neither serves nor refuses costs sixteen
+# minutes - inside a part that references hundreds of them, inside a 'pc test'
+# with a deadline of its own. The budget is far above a healthy fetch (well
+# under a second) and far below that.
+_FETCH_TIMEOUT = 60
+_FETCH_SECONDS = 120.0
+
+# Why a failed fetch is remembered, and why the two kinds are remembered for
+# different lengths of time. This mirrors 'ldraw_repo.py', deliberately and of
+# necessity: this file is served to the PartCAD sandbox on its own (the
+# 'files/ldraw.py' key), with nothing beside it to import, so the two cannot
+# share one implementation. Keep them in step.
+#
+# A 404 is an answer - the library has not got this file - and is worth
+# remembering for a while. A timeout or a 429 is the absence of an answer, and
+# is worth retrying soon. Telling them apart is what stops a throttled run
+# reporting a part that is in the library as missing from it, which is what
+# "LDraw part not found in the library: 3020.dat" was: Plate 2 x 4, fetched
+# while ldraw.org was refusing the burst this very function had just made.
+_MISSING = "missing"  # the server said no such file
+_UNAVAILABLE = "unavailable"  # the server said nothing we could use
+_NEGATIVE_TTL = {_MISSING: 7 * 24 * 3600, _UNAVAILABLE: 300}
+
+# A primitive is a file under the library's 'p/' rather than its 'parts/', and
+# knowing which to ask first halves the requests a part's references cost: a
+# 2 x 2 round brick is mostly primitives, and every one of them used to be
+# asked of 'official/parts' before 'official/p'. The three forms are the
+# fraction primitives ('3-16ndis.dat', '4-4cyli.dat'), the resolution
+# subdirectories ('48/4-4disc.dat', '8/...'), and nothing else - a name this
+# does not recognise keeps the order it always had, and every subdirectory is
+# still tried either way, so a wrong guess costs one request and never an
+# answer.
+_PRIMITIVE_RE = re.compile(r"^(?:\d+-\d+|(?:48|8)/)")
 
 
 class LDrawSubfileMissing(Exception):
@@ -56,6 +94,121 @@ def _ldraw_cache_dir():
     return base
 
 
+def _negative_path(cache, key):
+    return os.path.join(cache, ".missing", key)
+
+
+def _negative_is_fresh(cache, key):
+    """Whether this was already asked for recently enough not to ask again."""
+    try:
+        with open(_negative_path(cache, key), "r", encoding="latin-1") as f:
+            reason, expires = f.read().split(None, 1)
+        return time.time() < float(expires)
+    except (OSError, ValueError):
+        return False
+
+
+def _remember_negative(cache, key, reason):
+    """Record that this file could not be had, and for how long to believe it."""
+    path = _negative_path(cache, key)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="latin-1") as f:
+            f.write("%s %f" % (reason, time.time() + _NEGATIVE_TTL[reason]))
+    except OSError:
+        pass  # an unwritable cache is a slow run, not a broken one
+
+
+def _forget_negative(cache, key):
+    try:
+        os.unlink(_negative_path(cache, key))
+    except OSError:
+        pass
+
+
+def _retry_after(error, default):
+    """How long a 429 asked us to wait, in seconds; 'default' if it did not say."""
+    value = error.headers.get("Retry-After") if error.headers else None
+    if not value:
+        return default
+    try:
+        return min(float(value), 60.0)  # a delay-seconds form; ignore absurd ones
+    except (TypeError, ValueError):
+        return default  # an HTTP-date form, which is not worth parsing here
+
+
+def _subdir_order(key):
+    """The subdirectories to search, likeliest first. Always all four of them."""
+    if not _PRIMITIVE_RE.match(key):
+        return _LDRAW_SUBDIRS
+    return sorted(_LDRAW_SUBDIRS, key=lambda sub: not sub.endswith("/p"))
+
+
+def _ldraw_get(key, deadline=None):
+    """Fetch one LDraw file from the library. Returns (text, None) or (None, reason).
+
+    The reason separates 'the library has not got this' from 'the library did
+    not answer', because the two are worth remembering for different lengths of
+    time and because only the first is true of the part. Before this told them
+    apart, a burst that ldraw.org throttled was reported as a part that does not
+    exist - and nothing downstream could tell the difference either.
+
+    A 404 settles one subdirectory and stops it being asked again; a file all
+    four have refused is missing, and is answered without another round. Only
+    the inconclusive answers - a 429, a timeout, a reset - are retried, and a
+    429 is waited out for as long as the server asks.
+    """
+    subdirs = _subdir_order(key)
+    missing = set()
+    if deadline is None:
+        deadline = time.monotonic() + _FETCH_SECONDS
+    for attempt in range(_FETCH_RETRIES):
+        delay = _FETCH_BACKOFF * (attempt + 1)
+        for sub in subdirs:
+            if sub in missing:
+                continue
+            if time.monotonic() > deadline:
+                return None, _UNAVAILABLE
+            url = "%s/%s/%s" % (_LDRAW_BASE, sub, key)
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": _LDRAW_UA})
+                with urllib.request.urlopen(req, timeout=_FETCH_TIMEOUT) as resp:
+                    if resp.status == 200:
+                        return resp.read().decode("latin-1"), None
+            except urllib.error.HTTPError as e:
+                if e.code == 404:
+                    missing.add(sub)  # an answer, not a failure: do not ask again
+                    continue
+                if e.code == 429:
+                    delay = max(delay, _retry_after(e, delay))
+            except Exception:
+                pass
+        if len(missing) == len(subdirs):
+            return None, _MISSING
+        if attempt + 1 < _FETCH_RETRIES:
+            time.sleep(delay)
+    return None, _UNAVAILABLE
+
+
+def _fetch_failure(name, cache):
+    """Why the last fetch of 'name' produced nothing, or None if it did not say.
+
+    'The library has not got this part' and 'the library would not answer' are
+    different things to be told. The second is the one a log needs to show as
+    what it is: it means the run was throttled or the site was down, not that
+    somebody referenced a part that does not exist - and a reader who is told
+    the wrong one of those goes looking in the wrong place. The answer is read
+    back out of the negative entry '_ldraw_fetch' has just written, so that
+    there is one place the distinction is made.
+    """
+    key = name.replace("\\", "/").lower()
+    try:
+        with open(_negative_path(cache, key), "r", encoding="latin-1") as f:
+            return f.read().split(None, 1)[0]
+    except (OSError, IndexError):
+        return None
+
+
 def _ldraw_fetch(name, cache):
     """Return the text of an LDraw file, fetching+caching it on first use.
 
@@ -63,28 +216,33 @@ def _ldraw_fetch(name, cache):
     request means a hole in the geometry rather than a slower render:
     library.ldraw.org rate-limits bursts, and a 2 x 2 round brick that loses
     4-4cyli.dat meshes into a flat disc.
+
+    A fetch that produced nothing is remembered too, under '<cache>/.missing',
+    so that a throttled run leaves something behind and the next reference to
+    the same file - in this part, in the next part, in the next process - is not
+    the same burst again. Without it a rate-limited machine never converges:
+    every part re-asks for every primitive the one before it could not get, at
+    up to sixteen requests a time.
     """
     key = name.replace("\\", "/").lower()
     cached = os.path.join(cache, key)
     if os.path.exists(cached):
         with open(cached, "r", encoding="latin-1") as f:
             return f.read()
-    for attempt in range(_FETCH_RETRIES):
-        for sub in _LDRAW_SUBDIRS:
-            url = "%s/%s/%s" % (_LDRAW_BASE, sub, key)
-            try:
-                req = urllib.request.Request(url, headers={"User-Agent": _LDRAW_UA})
-                with urllib.request.urlopen(req, timeout=60) as resp:
-                    if resp.status == 200:
-                        data = resp.read().decode("latin-1")
-                        os.makedirs(os.path.dirname(cached), exist_ok=True)
-                        with open(cached, "w", encoding="latin-1") as f:
-                            f.write(data)
-                        return data
-            except Exception:
-                continue
-        time.sleep(_FETCH_BACKOFF * (attempt + 1))
-    return None
+    if _negative_is_fresh(cache, key):
+        return None
+    data, reason = _ldraw_get(key)
+    if data is None:
+        _remember_negative(cache, key, reason)
+        return None
+    _forget_negative(cache, key)
+    try:
+        os.makedirs(os.path.dirname(cached), exist_ok=True)
+        with open(cached, "w", encoding="latin-1") as f:
+            f.write(data)
+    except OSError:
+        pass  # an unwritable cache is a slow run, not a broken one
+    return data
 
 
 _IDENT = ((1, 0, 0), (0, 1, 0), (0, 0, 1))
@@ -939,7 +1097,13 @@ if __name__ == "__partcad_part__":
         cache = _ldraw_cache_dir()
         text = _ldraw_fetch(dat, cache)
         if text is None:
-            output = {"exception": "LDraw part not found in the library: %s" % dat}
+            if _fetch_failure(dat, cache) == _MISSING:
+                output = {"exception": "LDraw part not found in the library: %s" % dat}
+            else:
+                output = {
+                    "exception": "LDraw part could not be fetched: %s "
+                    "(the library did not answer; it may be throttling this run)" % dat
+                }
         else:
             tris = []
             try:
