@@ -283,7 +283,7 @@ def _xform(m, t, p):
     return (r[0] + t[0], r[1] + t[1], r[2] + t[2])
 
 
-def _mesh(text, m, t, tris, cache, invert=False):
+def _mesh(text, m, t, tris, cache, invert=False, uncertified=None):
     """Mesh one LDraw file into 'tris', resolving BFC winding as it goes.
 
     Reading the vertices in the order they are written and leaving it at that
@@ -317,13 +317,14 @@ def _mesh(text, m, t, tris, cache, invert=False):
     # A mirrored placement turns everything drawn beneath it inside out.
     mirrored = _det(m) < 0.0
     # CCW is the winding CERTIFY implies when it names none, and what all but
-    # 26 of the 3041 files on hand declare. A file that certifies nothing has
-    # no winding worth trusting and there is nothing to be done about that
-    # here; it is read as CCW, which is what every file got before this, and
-    # is right wherever its author happened to be consistent.
+    # 28 of the 3353 files on hand declare. A file that certifies nothing has
+    # no winding worth trusting: it is read as CCW, which is right wherever its
+    # author happened to be consistent, and 'uncertified' is set so that
+    # '_orient_consistently' can settle it from the mesh instead.
     winding_cw = False
     nocertify = False
     invertnext = False
+    certified = False
     for line in text.splitlines():
         f = line.split()
         if not f:
@@ -338,6 +339,8 @@ def _mesh(text, m, t, tris, cache, invert=False):
                 continue
             if "NOCERTIFY" in opts:
                 nocertify = True
+            if "CERTIFY" in opts:
+                certified = True
             if "INVERTNEXT" in opts:
                 invertnext = True
             # CERTIFY carries the winding for the file, and a bare CW or CCW
@@ -365,7 +368,7 @@ def _mesh(text, m, t, tris, cache, invert=False):
                 # part, and skipping it quietly returns a wrong shape that
                 # looks like a right one - and gets cached as such.
                 raise LDrawSubfileMissing(subname)
-            _mesh(subtext, nm, nt, tris, cache, invert ^ invertnext)
+            _mesh(subtext, nm, nt, tris, cache, invert ^ invertnext, uncertified)
         elif code == "3" and len(f) >= 11:
             v = list(map(float, f[2:11]))
             p1, p2, p3 = v[0:3], v[3:6], v[6:9]
@@ -386,6 +389,11 @@ def _mesh(text, m, t, tris, cache, invert=False):
         # every operational line, and not only after a type 1, is what keeps a
         # stray one from leaking into a later reference.
         invertnext = False
+
+    # Decided once the whole file has been read: 'CERTIFY' may come after the
+    # first polygon, and 'NOCERTIFY' settles it whatever else the file says.
+    if uncertified is not None and (nocertify or not certified):
+        uncertified.append(True)
 
 
 def _scaled(p):
@@ -909,10 +917,94 @@ def _cap_planar_loops(tris, planar_tol):
     return left
 
 
-def _close_mesh(tris):
-    """Weld, mend and cap a meshed part. Returns None if it stays open."""
+def _orient_consistently(tris):
+    """Make every triangle agree with its neighbours about which way is out.
+
+    For a file that certifies its winding, the order the vertices are written
+    in *is* the answer and '_mesh' has already applied it. A file that
+    certifies nothing - '0 BFC NOCERTIFY', or no BFC line at all - says only
+    that its author never promised, and such a file may well wind one triangle
+    one way and the triangle beside it the other. Read literally it meshes to a
+    surface that is not orientable, which sews into nothing and measures a
+    volume with no meaning.
+
+    The mesh itself settles it. Two triangles that share an edge agree when
+    they traverse that edge in opposite directions, the way the two sides of a
+    seam run opposite ways round a garment; when they traverse it the same way,
+    one of them is inside out. So walk the surface from any triangle, flipping
+    whatever disagrees with what it was reached from, and the component comes
+    out consistent. Which of the two consistent answers it is does not matter:
+    '_solid_from_mesh' reads the sign of each closed shell's volume and turns
+    the whole shell over if it faces in.
+
+    A surface may arrive in several pieces - the body, a stud, a tube - so
+    every component is walked from a seed of its own. An edge shared by more
+    than two triangles is non-manifold and nothing can be concluded from it, so
+    it is left alone rather than guessed at.
+    """
+    edges = {}
+    for i, (a, b, c) in enumerate(tris):
+        for u, v in ((a, b), (b, c), (c, a)):
+            edges.setdefault(frozenset((u, v)), []).append((i, u, v))
+
+    flipped = [False] * len(tris)
+    seen = [False] * len(tris)
+    changed = 0
+    for seed in range(len(tris)):
+        if seen[seed]:
+            continue
+        seen[seed] = True
+        stack = [seed]
+        while stack:
+            i = stack.pop()
+            a, b, c = tris[i]
+            if flipped[i]:
+                a, b, c = a, c, b
+            for u, v in ((a, b), (b, c), (c, a)):
+                users = edges.get(frozenset((u, v)), ())
+                if len(users) != 2:
+                    continue
+                for j, ju, jv in users:
+                    if j == i or seen[j]:
+                        continue
+                    seen[j] = True
+                    # 'i' traverses this edge u->v. A neighbour that agrees
+                    # traverses it v->u; one that traverses it u->v as well is
+                    # inside out relative to 'i'. 'j' has not been reached
+                    # before, so it is still in the winding it was read in.
+                    if (ju, jv) == (u, v):
+                        flipped[j] = True
+                        changed += 1
+                    stack.append(j)
+
+    if not changed:
+        return tris
+    return [(a, c, b) if flipped[i] else (a, b, c) for i, (a, b, c) in enumerate(tris)]
+
+
+def _close_mesh(tris, orient=False):
+    """Weld, mend and cap a meshed part. Returns None if it stays open.
+
+    'orient' settles the winding from the mesh rather than from the file, for
+    a file that never certified its own. It runs after the weld, because that
+    is what makes two triangles share an edge exactly, and then again after the
+    T-junction split, because splitting is what first gives some of them an
+    edge to share: where a 48-sided primitive meets a 16-sided one, the coarse
+    edge spans three fine ones and the two surfaces are separate components
+    until the split puts the missing vertices in. Reconciled only before it,
+    the seam between them keeps whatever disagreement it had.
+
+    The first pass is still worth making. Splitting preserves the winding of
+    the triangle it splits, so everything settled before the split stays
+    settled, and reaching the second pass with most of the mesh already
+    consistent is what keeps it to the seams.
+    """
     tris = _weld(tris, _WELD_LDU)
+    if orient:
+        tris = _orient_consistently(tris)
     _split_t_junctions(tris, _TJUNCTION_LDU)
+    if orient:
+        tris = _orient_consistently(tris)
     if _cap_planar_loops(tris, _PLANAR_LDU):
         return None
     if _boundary_loops(tris):
@@ -1057,7 +1149,7 @@ def _resolve_dat(request):
     return dat
 
 
-def _build_shape(tris):
+def _build_shape(tris, uncertified=False):
     # Pin pyexpat before importing build123d/OCP (see wrapper_import_mesh.py).
     import pyexpat  # noqa: F401
     import build123d as b3d
@@ -1066,7 +1158,7 @@ def _build_shape(tris):
     # cannot close - 6233, Cone 3 x 3 x 2, is one, where hand-written eighth
     # segments meet 48-sided primitives several LDU away - falls through to
     # the mesh import below and comes back exactly as it did before.
-    closed = _close_mesh(list(tris))
+    closed = _close_mesh(list(tris), orient=uncertified)
     if closed:
         try:
             solid = _solid_from_mesh(closed)
@@ -1106,12 +1198,13 @@ if __name__ == "__partcad_part__":
                 }
         else:
             tris = []
+            uncertified = []
             try:
-                _mesh(text, _IDENT, (0, 0, 0), tris, cache)
+                _mesh(text, _IDENT, (0, 0, 0), tris, cache, uncertified=uncertified)
             except LDrawSubfileMissing as e:
                 tris = None
                 output = {"exception": "%s (needed by %s)" % (e, dat)}
-            shape = _build_shape(tris) if tris else None
+            shape = _build_shape(tris, bool(uncertified)) if tris else None
             if shape is None:
                 # 'output' is already set when a subfile went missing; only a
                 # part that meshed to nothing needs the generic message.

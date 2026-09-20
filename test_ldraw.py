@@ -642,3 +642,147 @@ def test_a_real_part_occupies_positive_space_and_not_its_neighbour_s(monkeypatch
     away = BRepBuilderAPI_Transform(shape, moved, True).Shape()
     assert volume(shape) > 0.0
     assert volume(BRepAlgoAPI_Common(shape, away).Shape()) == pytest.approx(0.0, abs=1e-6)
+
+
+# --- a file that never certified its winding ------------------------------
+#
+# '0 BFC NOCERTIFY', or no BFC line at all, is the author declining to promise
+# that the order the vertices are written in means anything. Such a file may
+# wind one triangle one way and the next the other, which reads as a surface
+# that is not orientable: it sews into nothing and its volume means nothing.
+# The mesh settles what the metadata would not.
+
+
+def _uncertified(text, subfiles=None):
+    """Mesh 'text' and report whether anything in it left its winding open."""
+    files = subfiles or {}
+    ldraw._ldraw_fetch = lambda name, cache: files.get(name.replace("\\", "/").lower())
+    tris, flag = [], []
+    ldraw._mesh(text, ldraw._IDENT, (0, 0, 0), tris, "/nonexistent", uncertified=flag)
+    return tris, bool(flag)
+
+
+def _scramble(tris, every=2):
+    """Turn every n-th triangle over, as an uncertified author might have."""
+    return [(a, c, b) if i % every == 0 else (a, b, c) for i, (a, b, c) in enumerate(tris)]
+
+
+def test_a_certified_file_is_not_reported_as_uncertified():
+    _, flag = _uncertified("0 BFC CERTIFY CCW\n" + _TRI)
+    assert flag is False
+
+
+def test_a_nocertify_file_is_reported():
+    _, flag = _uncertified("0 BFC NOCERTIFY\n" + _TRI)
+    assert flag is True
+
+
+def test_a_file_with_no_bfc_line_at_all_is_reported():
+    # The spec's default: a file that says nothing has certified nothing.
+    _, flag = _uncertified(_TRI)
+    assert flag is True
+
+
+def test_a_certify_after_the_first_polygon_still_counts():
+    # The flag is decided once the whole file has been read, so a CERTIFY that
+    # arrives late is not mistaken for a file that never certified at all.
+    _, flag = _uncertified(_TRI + "0 BFC CERTIFY CCW\n")
+    assert flag is False
+
+
+def test_an_uncertified_subfile_is_reported_through_its_parent():
+    parent = "0 BFC CERTIFY CCW\n0 BFC INVERTNEXT\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 sub.dat\n"
+    _, flag = _uncertified(parent, {"sub.dat": _TRI})
+    assert flag is True
+
+
+def test_scrambled_winding_is_settled_from_the_mesh():
+    """Triangles that disagree with their neighbours are turned to agree"""
+    tris = _scramble(_box((0, 0, 0), (10, 10, 10)))
+    # As read, the surface is not orientable: some edge is traversed the same
+    # way by both triangles that share it.
+    edges = {}
+    for edge in _directed_edges(tris):
+        edges[edge] = edges.get(edge, 0) + 1
+    assert any(n > 1 for n in edges.values())
+
+    fixed = ldraw._orient_consistently(tris)
+
+    edges = {}
+    for edge in _directed_edges(fixed):
+        edges[edge] = edges.get(edge, 0) + 1
+    assert all(n == 1 for n in edges.values())
+    assert all(edges.get((b, a)) == 1 for a, b in edges)
+    assert abs(_signed_volume(fixed)) == pytest.approx(1000.0)
+
+
+def test_a_consistent_mesh_is_left_exactly_as_it_was():
+    """Nothing is done to a file whose author was consistent after all"""
+    tris = _box((0, 0, 0), (10, 10, 10))
+    assert ldraw._orient_consistently(tris) == tris
+
+
+def test_orienting_is_only_done_when_it_is_asked_for():
+    """A certified file keeps the winding it declared, whatever the mesh says
+
+    A part may legitimately be wound against its own outside - LDraw draws a
+    cavity that way - so a file that certified its winding is taken at its
+    word.
+    """
+    scrambled = _scramble(_box((0, 0, 0), (10, 10, 10)))
+    left = ldraw._close_mesh(list(scrambled))
+    settled = ldraw._close_mesh(list(scrambled), orient=True)
+    assert abs(_signed_volume(settled)) == pytest.approx(1000.0)
+    assert left is None or abs(_signed_volume(left)) != pytest.approx(1000.0)
+
+
+def test_each_piece_of_a_surface_is_settled_on_its_own():
+    """A part arrives as a body and its studs, which touch nothing"""
+    tris = _scramble(_box((0, 0, 0), (10, 10, 10)) + _box((50, 50, 50), (60, 60, 60)))
+
+    fixed = ldraw._orient_consistently(tris)
+
+    edges = {}
+    for edge in _directed_edges(fixed):
+        edges[edge] = edges.get(edge, 0) + 1
+    assert all(n == 1 for n in edges.values())
+    assert abs(_signed_volume(fixed)) == pytest.approx(2000.0)
+
+
+def _seam_faults(tris):
+    """Edges two triangles traverse the same way, which is a disagreement."""
+    counted = {}
+    for edge in _directed_edges(tris):
+        counted[edge] = counted.get(edge, 0) + 1
+    return [edge for edge, n in counted.items() if n > 1]
+
+
+def test_a_seam_only_the_split_creates_is_settled_too():
+    """Two surfaces that share no edge until the T-junction split still agree
+
+    Where a 48-sided primitive meets a 16-sided one the coarse edge spans
+    several fine ones, so the two are separate orientation components and the
+    first pass has nothing to reconcile them across. Splitting is what puts the
+    shared edges in - and a seam settled only before the split keeps whatever
+    disagreement it had.
+    """
+    # An upper strip spanning the seam in one edge, and a lower one subdivided
+    # at x=5, wound against it.
+    upper = [((0, 0, 0), (10, 0, 0), (10, 0, 10)), ((0, 0, 0), (10, 0, 10), (0, 0, 10))]
+    lower = [
+        ((0, 0, 0), (5, 0, -10), (5, 0, 0)),
+        ((0, 0, 0), (0, 0, -10), (5, 0, -10)),
+        ((5, 0, 0), (5, 0, -10), (10, 0, 0)),
+        ((5, 0, -10), (10, 0, -10), (10, 0, 0)),
+    ]
+    tris = ldraw._weld(upper + [(a, c, b) for a, b, c in lower], ldraw._WELD_LDU)
+
+    # Before the split the two are separate components, so the first pass
+    # leaves the seam alone and finds nothing wrong with either side.
+    once = ldraw._orient_consistently(tris)
+    assert _seam_faults(once) == []
+    ldraw._split_t_junctions(once, ldraw._TJUNCTION_LDU)
+    assert _seam_faults(once) != []
+
+    # A second pass, which is what '_close_mesh' makes, settles it.
+    assert _seam_faults(ldraw._orient_consistently(once)) == []
