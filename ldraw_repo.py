@@ -612,12 +612,35 @@ _CONE_RE = re.compile(r"^Cone\s+(\d+)\s*x\s*(\d+)(?:\s*x\s*(\d+))?(?!\s*[.\dx])"
 # gives, and asserting anti-studs that are not there is worse than leaving the
 # geometry's shorter answer alone. The same caution the corner brick teaches.
 _PARTIAL_CONE_RE = re.compile(r"\bHalf\b", re.IGNORECASE)
+# An "Inverted" cone is the other case to keep out, for the opposite reason: it
+# stands on its narrow end, so the A x B in its name is the top and its base is
+# wherever the point comes to. "Cone 2 x 2 x 2 Inverted" ends in a circle 16 LDU
+# across, where a 2 x 2 footprint is 40, and "Cone 1 x 1 Inverted with Shaft"
+# ends in an 8 LDU bar 32.5 LDU down rather than an anti-stud 24 LDU down.
+# Neither has the base its name reads like.
+_INVERTED_CONE_RE = re.compile(r"\bInverted\b", re.IGNORECASE)
+_LDU_BRICK = 24.0  # a brick's height in LDraw units (9.6 mm)
+
+
+def _cone_courses(desc):
+    """The height in bricks a cone's name gives, or None where the description
+    names no cone whose base the name settles.
+
+    A cone written without a third dimension is a single brick tall, and a Half
+    or an Inverted one is left out here for the same reasons it is left out of
+    _cone_implements: neither stands on the rectangle its name reads like.
+    """
+    m = _CONE_RE.match(desc) if desc else None
+    if not m or _PARTIAL_CONE_RE.search(desc) or _INVERTED_CONE_RE.search(desc):
+        return None
+    return int(m.group(3)) if m.group(3) else 1
 
 
 def _cone_implements(desc):
     """The anti-stud instances of a Cone A x B [x C], or None."""
     m = _CONE_RE.match(desc)
-    if not m or _PARTIAL_CONE_RE.search(desc):
+    courses = _cone_courses(desc)
+    if not m or courses is None:
         return None
     depth, length = int(m.group(1)), int(m.group(2))
     if not (1 <= depth <= _MAX_STUDS and 1 <= length <= _MAX_STUDS):
@@ -630,7 +653,6 @@ def _cone_implements(desc):
     # the rim, which is why this reaches the 1 x 1 and the 2 x 2 and stops.
     if depth > 2 and length > 2:
         return None
-    courses = int(m.group(3)) if m.group(3) else 1
     height, _has_studs = _LEGO_KINDS["brick"]
     return _stud_instances(depth, length, height * courses, has_studs=False)
 
@@ -875,7 +897,12 @@ def _lego_implements(desc, pid=None):
     if implements is None and pid and _HEADGEAR_RE.match(desc):
         implements = _headgear_implements(pid, deadline)
     if pid:
-        implements = _with_geometry_studs(implements, pid, deadline)
+        # A cone's base plane goes with the walk: the bore in the middle of its
+        # underside is an anti-stud the tubes alone do not spell out.
+        courses = _cone_courses(desc)
+        implements = _with_geometry_studs(
+            implements, pid, deadline, None if courses is None else courses * _LDU_BRICK
+        )
     return _cone_underside(implements, cone)
 
 
@@ -929,13 +956,13 @@ def _with_geometry_technic(implements, pid, deadline=None):
     return implements or None
 
 
-def _with_geometry_anti_studs(implements, pid, deadline=None):
+def _with_geometry_anti_studs(implements, pid, deadline=None, bore_plane=None):
     """Replace the name-derived anti-studs with the ones the underside has.
 
     Only when the tubes settle it; otherwise the name's answer stands, because
     an anti-stud no tube marks may still be there.
     """
-    anti = _geometry_anti_studs(pid, deadline)
+    anti = _geometry_anti_studs(pid, deadline, bore_plane)
     if not anti:
         return implements
     implements = dict(implements) if implements else {}
@@ -946,7 +973,7 @@ def _with_geometry_anti_studs(implements, pid, deadline=None):
     return implements or None
 
 
-def _with_geometry_studs(implements, pid, deadline=None):
+def _with_geometry_studs(implements, pid, deadline=None, bore_plane=None):
     """Replace the name-derived studs with the ones the part actually has.
 
     The underside goes first, since it is read from the same walk; it keeps the
@@ -954,7 +981,7 @@ def _with_geometry_studs(implements, pid, deadline=None):
     marks nothing. When the walk cannot see the whole part the stud read returns
     None and the name's answer is left alone here too.
     """
-    implements = _with_geometry_anti_studs(implements, pid, deadline)
+    implements = _with_geometry_anti_studs(implements, pid, deadline, bore_plane)
     studs = _geometry_stud_implements(pid, deadline)
     if studs is None:
         return implements
@@ -1968,6 +1995,28 @@ _SOLID_TUBES = ("stud3", "stud3a")  # "Stud Tube Solid": sits between two
 _UNDERSIDE_CROSS = "stud12"  # "Stud Underside Cross": a different feature
 _ANTI_PLANE_OFFSET = (0.0, -4.0, 0.0)  # a tube spans y in [-4, 0] in its own frame
 
+# An open tube is a tube, and its bore is a stud across: 6 LDU of radius, which
+# is the stud's own. LDraw says as much itself, in the help text of the two
+# variants drawn without their outer cylinder - stud4o and stud4od - which call
+# the primitive 'a "antistud" to be used like a underside stud'. So where an open
+# tube opens onto a part's underside there is an anti-stud on the tube's own
+# axis, as well as the four cells around it that the walk reads below.
+#
+# It is claimed for cones and nowhere else. A brick's centre tube has the very
+# same bore, but a brick's top repeats its base, so there the bore is only ever
+# a join half a stud out of step in both directions - not something anyone
+# builds - and it is left unsaid. A cone narrows going up: a Cone 2 x 2 x 2 has
+# one stud, in the middle, directly over that bore, and stacking two of them is
+# the bore's connection or none at all, because the four cells under the upper
+# one and the single stud on the lower one's top never meet.
+#
+# Which plane counts is the name's to say, since the walk reads stud primitives
+# and never sees how far down a part goes. That is what keeps a cone carrying
+# something else on top out of this: "Cone 4 x 4 x 3 on Brick 2 x 2 Round" has
+# the round brick's tube one brick below its top, 48 LDU above the base its name
+# gives it, up inside the cone's own hollow where no stud reaches.
+_BORE_INSTANCE = "centre"
+
 
 def _tube_member(base):
     """The primitive a stud name stands for; a group resolves to what it groups."""
@@ -1984,12 +2033,16 @@ def _tube_member(base):
     return stem
 
 
-def _geometry_anti_studs(pid, deadline=None):
+def _geometry_anti_studs(pid, deadline=None, bore_plane=None):
     """The anti-stud instances of a part read from its underside tubes, or None
     when the geometry does not settle it and the name should be left to stand.
 
     None rather than an empty answer on purpose: unlike a stud, whose absence
     the walk can see, an anti-stud that no tube marks may still be there.
+
+    'bore_plane' is how far below the top a cone's name puts its base, in LDraw
+    units, and asks for the bore of a tube that opens there on the part's own
+    axis as well; see the note above.
     """
     studs, tubes = [], []
 
@@ -2010,6 +2063,7 @@ def _geometry_anti_studs(pid, deadline=None):
     lattice = {(round(p[0], 1), round(p[2], 1)) for _, p, _ in studs}
     half = _LDU_STUD_PITCH / 2.0
     found = {}
+    bore = None
     for stem, place, composed in tubes:
         if stem == _UNDERSIDE_CROSS:
             return None  # not a tube between studs; do not guess at the rest
@@ -2030,6 +2084,17 @@ def _geometry_anti_studs(pid, deadline=None):
                 return None  # the studs do not say which two this one separates
         else:
             corners = {(round(x + dx, 1), round(z + dz, 1)) for dx in (-half, half) for dz in (-half, half)}
+            # The bore, where the caller asked for it and the tube is on the
+            # part's axis, opening into the plane the name puts the base in.
+            # Its own size across, too: a tube stretched in the plane has a bore
+            # that is no longer a stud wide, whatever its mouth is level with.
+            if (
+                bore_plane is not None
+                and (x, z) == (0.0, 0.0)
+                and round(y, 1) == round(bore_plane, 1)
+                and _unscaled_across(composed)
+            ):
+                bore = y
         for corner in corners:
             found[corner] = y
     ports = [
@@ -2043,7 +2108,22 @@ def _geometry_anti_studs(pid, deadline=None):
         )
         for (x, z), y in found.items()
     ]
-    return _stud_instances_by_grid(ports)
+    instances = _stud_instances_by_grid(ports)
+    # Not where a tube of its own already stands over the middle: a Cone 3 x 3 x 2
+    # has its centre cell as the shared corner of four tubes, and one anti-stud
+    # under two names would read like two.
+    if bore is not None and (0.0, 0.0) not in found:
+        instances[_BORE_INSTANCE] = _port((0.0, -bore * _LDU_MM, 0.0), _ANTI_STUD_ROT)
+    return instances
+
+
+def _unscaled_across(composed):
+    """Whether a placement leaves a primitive its own size across its Y axis."""
+    for axis in ((1.0, 0.0, 0.0), (0.0, 0.0, 1.0)):
+        image = _matrix_apply(composed, axis)
+        if abs(math.sqrt(sum(v * v for v in image)) - 1.0) > 1e-6:
+            return False
+    return True
 
 
 # --- headgear ----------------------------------------------------------------
