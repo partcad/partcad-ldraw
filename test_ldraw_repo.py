@@ -627,12 +627,14 @@ _FAKE_LIBRARY = {
     ),
     "s/3700s01.dat": "0 ~subpart\n1 16 0 10 10 1 0 0 0 0 1 0 -1 0 peghole.dat\n",
     # a 2 x 2 brick drawn the way LDraw draws one: a group of studs on top, a
-    # tube underneath, and a cylinder that is neither.
+    # tube underneath, and a cylinder that is neither - here the body it stands
+    # on, 40 LDU across and 24 down, which is what makes the four cells round
+    # that tube cells it has.
     "3003.dat": (
         "0 Brick  2 x  2\n"
         "1 16 0 0 0 1 0 0 0 1 0 0 0 1 stug-2x2.dat\n"
         "1 16 0 4 0 1 0 0 0 -5 0 0 0 1 stud4.dat\n"
-        "1 16 0 0 0 1 0 0 0 1 0 0 0 1 4-4cyli.dat\n"
+        "1 16 0 0 0 20 0 0 0 24 0 0 0 20 4-4cyli.dat\n"
     ),
     # the corner brick: three studs, on an origin a rectangular part never uses
     "2357.dat": (
@@ -702,8 +704,8 @@ _FAKE_LIBRARY = {
         "1 16 0 12 0 1 0 0 0 -9 0 0 0 1 stud4a.dat\n"
         "1 16 0 24 0 1 0 0 0 24 0 0 0 1 axlehole.dat\n"
     ),
-    # a 1 x 1 round plate: the same lone open tube, and a base 16 LDU across.
-    # Not a cone, so this rule leaves it alone - see the test that says so.
+    # a 1 x 1 round plate: the same lone open tube as the 2 x 2 brick, and a
+    # base 16 LDU across, which is the tube's own wall and nothing more
     "6141.dat": (
         "0 Plate  1 x  1 Round\n"
         "1 16 0 0 0 1 0 0 0 1 0 0 0 1 stud.dat\n"
@@ -976,10 +978,9 @@ def test_a_bore_stretched_across_is_not_a_stud_wide(fake_library):
 
 def test_an_inverted_cone_stands_on_its_bore_alone(fake_library):
     """Its base is a ring 16 LDU across, and the cells round it are 28 apart"""
-    # A "Cone 2 x 2 x 2 Inverted" is the one place the walk's reading of a lone
-    # open tube goes wrong: the tube is not the spacer between four anti-studs,
-    # because there is no room beside it for any of them. The 2 x 2 in the name
-    # is the top it is inverted from.
+    # The tube under a "Cone 2 x 2 x 2 Inverted" is not the spacer between four
+    # anti-studs, because there is no room beside it for any of them: the 2 x 2
+    # in the name is the rim it is inverted from, not the base.
     cone = plugin._lego_implements("Cone  2 x  2 x  2 Inverted", "49309")
     assert sorted(cone[ANTI]) == ["centre"]
     assert cone[ANTI]["centre"][0] == [0.0, -19.2, 0.0]
@@ -1021,13 +1022,28 @@ def test_a_tube_up_inside_a_part_says_nothing_about_its_base(fake_library):
     ]
 
 
-def test_a_round_plate_one_stud_across_is_left_as_it_is(fake_library):
-    """The same defect, off this rule's beat: a "Plate 1 x 1 Round" is no cone"""
-    # It stands on the same 16 LDU ring as the inverted cone and claims the same
-    # four cells it has not got. Correcting that is a change to every small
-    # round part in the library rather than to the cones, and is its own piece
-    # of work.
-    assert sorted(plugin._lego_implements("Plate  1 x  1 Round", "6141")[ANTI]) == ["c0r0", "c0r1", "c1r0", "c1r1"]
+def test_a_round_plate_one_stud_across_stands_on_its_bore_too(fake_library):
+    """The same reading, the same ring 16 LDU across, and the same one socket"""
+    # A "Plate 1 x 1 Round" is stacked by the bore in the middle of its
+    # underside and by nothing else. Four cells at the corners of a 2 x 2 put it
+    # half a stud out in both directions, and leave two of them unable to stack
+    # at all, since the stud each offers is in the middle of its top.
+    assert sorted(plugin._geometry_anti_studs("6141")) == ["centre"]
+    # The name rule has been saying so all along - a 1 x 1 has one anti-stud, in
+    # the middle - and the walk has been overruling it with four. Now that the
+    # two agree, the port keeps the name the name rule gave it.
+    plate = plugin._lego_implements("Plate  1 x  1 Round", "6141")
+    assert sorted(plate[ANTI]) == ["c0r0"]
+    assert plate[ANTI]["c0r0"][0] == [0.0, -3.2, 0.0]
+    # ...directly under the one stud it has
+    assert plate[STUD]["c0r0"][0] == [0.0, 0.0, 0.0]
+
+
+def test_a_brick_two_studs_across_keeps_the_four_cells_it_has(fake_library):
+    """The reading the walk has always made, where it is the right one"""
+    # A "Brick 2 x 2" stands on 40 LDU of body, which reaches out over all four
+    # cells round its tube, so they are its.
+    assert sorted(plugin._geometry_anti_studs("3003")) == ["c0r0", "c0r1", "c1r0", "c1r1"]
 
 
 def test_the_base_is_where_the_part_stands_and_how_far_it_reaches(fake_library):
