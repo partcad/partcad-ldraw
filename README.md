@@ -243,6 +243,27 @@ Where the tubes do not settle it, the name still stands. That is deliberate and
 not the same rule as for studs: the walk can *see* that a part has no studs, but
 an anti-stud that no tube happens to mark may still be there.
 
+A tube is also a tube. An open one's bore has 6 LDU of radius, which is the
+stud's own, and LDraw says so itself in the help text of the two variants drawn
+without their outer cylinder — `stud4o` and `stud4od` call the primitive
+*a "antistud" to be used like a underside stud*. For a cone that bore is an
+anti-stud in its own right, named `centre` so that the four round it keep the
+grid names they have always had. A cone is where it matters, because a cone
+narrows going up: a `Cone 2 x 2 x 2` has four anti-studs at the corners of its
+base and one stud in the middle of its top, so without the bore two of them
+cannot be joined by an interface at all — the four cells under the upper one and
+the single stud on the lower one's top never coincide. Fourteen entries in the
+index gain one, and it takes an anti-stud away from none of them.
+
+It is claimed only where the tube stands on the part's own axis and opens into
+the plane the cone's *name* puts its base in, since the walk reads stud
+primitives and never sees how far down a part goes. That is what keeps
+`Cone 4 x 4 x 3 on Brick 2 x 2 Round` out of it: the tube there is the round
+brick's, one course below the top rather than three, up inside the cone's own
+hollow where no stud reaches. A brick's centre tube has the very same bore and
+is left unsaid, because a brick's top repeats its base and the bore would only
+ever be a join half a stud out of step in both directions.
+
 ## Reading ports from geometry
 
 The Mindstorms parts have no dimensions in their names and put no connector in

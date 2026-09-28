@@ -671,6 +671,38 @@ _FAKE_LIBRARY = {
         "1 16 0 0 0 1 0 0 0 1 0 0 0 1 stug20-2x2.dat\n"
         "1 16 0 0 0 1 0 0 0 1 0 0 0 1 stud7.dat\n"
     ),
+    # a 2 x 2 cone, drawn the way LDraw draws one: one stud in the middle of the
+    # top and one open tube stretched from just under it to the base, 48 LDU
+    # down, where its bore opens
+    "3942c.dat": (
+        "0 Cone  2 x  2 x  2 with Hollow Stud Open\n"
+        "1 16 0 0 0 1 0 0 0 1 0 0 0 1 stud2a.dat\n"
+        "1 16 0 12 0 1 0 0 0 -9 0 0 0 1 stud4a.dat\n"
+    ),
+    # a 3 x 3 cone: four tubes on the half-stud grid rather than one in the
+    # middle, so the middle cell is already the corner they share
+    "6233.dat": (
+        "0 Cone  3 x  3 x  2\n"
+        "1 16 0 0 0 1 0 0 0 1 0 0 0 1 stug10-2x2.dat\n"
+        "1 16 10 44 10 1 0 0 0 -1 0 0 0 1 stud4a.dat\n"
+        "1 16 10 44 -10 1 0 0 0 -1 0 0 0 1 stud4a.dat\n"
+        "1 16 -10 44 10 1 0 0 0 -1 0 0 0 1 stud4a.dat\n"
+        "1 16 -10 44 -10 1 0 0 0 -1 0 0 0 1 stud4a.dat\n"
+    ),
+    # a cone carrying a 2 x 2 round brick on top: the tube belongs to the brick,
+    # one course below the top, not to the base three courses down
+    "3569.dat": (
+        "0 Cone  4 x  4 x  3 on Brick  2 x  2 Round\n"
+        "1 16 0 0 0 1 0 0 0 1 0 0 0 1 stug10-2x2.dat\n"
+        "1 16 0 20 0 1 0 0 0 -1 0 0 0 1 stud4a.dat\n"
+    ),
+    # a cone whose tube is stretched across as well as along: its bore is no
+    # longer a stud wide, wherever its mouth is
+    "99999f.dat": (
+        "0 Cone  2 x  2 x  2 Stretched\n"
+        "1 16 0 0 0 1 0 0 0 1 0 0 0 1 stud2a.dat\n"
+        "1 16 0 12 0 2 0 0 0 -9 0 0 0 2 stud4a.dat\n"
+    ),
 }
 
 
@@ -855,6 +887,70 @@ def test_an_open_tube_is_four_anti_studs_and_a_solid_one_is_two(fake_library):
     # 1 x 2: one "Stud Tube Solid" between the two, and the studs say which axis
     strip = plugin._geometry_anti_studs("3004")
     assert sorted(p[0] for p in strip.values()) == [[-4.0, -9.6, 0.0], [4.0, -9.6, 0.0]]
+
+
+def test_a_cone_s_bore_is_an_anti_stud_in_the_middle_of_its_underside(fake_library):
+    """The recess a Cone 2 x 2 x 2 takes the cone below it by"""
+    # An open tube's bore is a stud across, so the tube that stands in the middle
+    # of this cone's underside is an anti-stud as well as the spacer between the
+    # four at its corners. Without it two of these cannot be joined at all: the
+    # lower one offers a stud in the middle of its top and the upper one offers
+    # anti-studs only at the corners, and they never coincide.
+    cone = plugin._lego_implements("Cone  2 x  2 x  2 with Hollow Stud Open", "3942c")
+    assert sorted(cone[ANTI]) == ["c0r0", "c0r1", "c1r0", "c1r1", "centre"]
+    assert cone[ANTI]["centre"][0] == [0.0, -19.2, 0.0]
+    assert cone[ANTI]["centre"][1:] == [list(plugin._ANTI_STUD_ROT[0]), plugin._ANTI_STUD_ROT[1]]
+    # ...and the stud on the next one down is on that very spot
+    assert cone[STUD]["c0r0"][0] == [0.0, 0.0, 0.0]
+
+
+def test_a_cone_s_corners_keep_the_names_they_have_always_had(fake_library):
+    """The bore is named for what it is so the grid is not renumbered round it"""
+    # Called c1r1 it would be the middle of a three-by-three, which would move
+    # every corner's name along and break an assembly that already says c1r1.
+    corners = plugin._lego_implements("Cone  2 x  2 x  2 with Hollow Stud Open", "3942c")[ANTI]
+    assert corners["c1r1"][0] == [4.0, -19.2, 4.0]
+
+
+def test_a_brick_s_bore_is_left_unsaid(fake_library):
+    """The same primitive, the same bore, and no claim: see the note in the code"""
+    # A brick's top repeats its base, so its centre tube's bore would only ever
+    # be a join half a stud out of step in both directions.
+    assert sorted(plugin._lego_implements("Brick  2 x  2", "3003")[ANTI]) == ["c0r0", "c0r1", "c1r0", "c1r1"]
+
+
+def test_a_cone_with_a_tube_at_each_corner_is_left_as_it_is(fake_library):
+    # A Cone 3 x 3 x 2 has no tube in the middle: it has four, on the half-stud
+    # grid, and the middle cell of its underside is already the corner all four
+    # share. One anti-stud under two names would read like two.
+    anti = plugin._lego_implements("Cone  3 x  3 x  2", "6233")[ANTI]
+    assert len(anti) == 9
+    assert "centre" not in anti
+    assert anti["c1r1"][0] == [0.0, -19.2, 0.0]
+
+
+def test_a_tube_that_is_not_at_a_cone_s_base_is_not_its_bore(fake_library):
+    # "Cone 4 x 4 x 3 on Brick 2 x 2 Round" draws the round brick's tube one
+    # course below its top, 48 LDU above the base its name gives it and up
+    # inside the cone's own hollow, where no stud reaches.
+    anti = plugin._lego_implements("Cone  4 x  4 x  3 on Brick  2 x  2 Round", "3569")[ANTI]
+    assert "centre" not in anti
+
+
+def test_a_bore_stretched_across_is_not_a_stud_wide(fake_library):
+    anti = plugin._lego_implements("Cone  2 x  2 x  2 Stretched", "99999f")[ANTI]
+    assert "centre" not in anti
+
+
+def test_the_bore_survives_the_full_base_a_cone_s_name_gives_it(fake_library):
+    """The two answers are added up rather than one replacing the other"""
+    # _cone_underside keeps the name's four against a walk that comes back with
+    # fewer; the walk that comes back with those four and the bore as well has
+    # to be believed, or the bore is dropped again.
+    cone = plugin._cone_implements("Cone  2 x  2 x  2")
+    walked = {ANTI: dict(cone[ANTI], centre=[[0.0, -19.2, 0.0], [1, 1, -1], 120])}
+
+    assert plugin._cone_underside(walked, cone) is walked
 
 
 def test_the_anti_studs_sit_on_the_plane_the_tube_reaches():
@@ -1620,7 +1716,8 @@ def test_a_cone_with_an_inside_is_left_to_the_geometry():
 
 def test_something_that_is_not_a_cone_is_left_alone():
     assert plugin._cone_implements("Brick  1 x  2") is None
-    assert plugin._cone_implements("Cone  1 x  1 Inverted with Shaft")[ANTI]
+    # ...while a variant suffix that says nothing about the base does not stop it
+    assert plugin._cone_implements("Cone  1 x  1 with Stop")[ANTI]
 
 
 def test_a_short_underside_read_does_not_shrink_a_cone():
@@ -1652,3 +1749,23 @@ def test_a_half_cone_is_left_to_the_geometry():
     """Its base is not the rectangle its name gives, whichever way it counts"""
     assert plugin._cone_implements("Cone  4 x  8 x  6 Half with Roof Tiles") is None
     assert plugin._cone_implements("Cone  4 x  2 x  4 Half") is None
+
+
+def test_an_inverted_cone_is_left_to_the_geometry():
+    """It stands on its narrow end, so its name describes the top"""
+    # Cone 2 x 2 x 2 Inverted comes to a circle 16 LDU across where a 2 x 2
+    # footprint is 40, and Cone 1 x 1 Inverted with Shaft comes to an 8 LDU bar
+    # 32.5 LDU down rather than an anti-stud 24 LDU down.
+    assert plugin._cone_implements("Cone  2 x  2 x  2 Inverted") is None
+    assert plugin._cone_implements("Cone  1 x  1 Inverted with Shaft") is None
+
+
+def test_a_cone_s_name_says_how_far_down_its_base_is():
+    """Which is what tells a tube at the base from one further up"""
+    assert plugin._cone_courses("Cone  2 x  2 Truncated") == 1
+    assert plugin._cone_courses("Cone  2 x  2 x  2 with Solid Stud") == 2
+    assert plugin._cone_courses("Cone  4 x  4 x  3 on Brick  2 x  2 Round") == 3
+    # a fractional height is not read at all, so neither is the base it implies
+    assert plugin._cone_courses("Cone  2 x  2 x  1.667 Octagonal") is None
+    assert plugin._cone_courses("Cone  1.5 x  1.5 x  0.667 Truncated") is None
+    assert plugin._cone_courses("Brick  1 x  2") is None
