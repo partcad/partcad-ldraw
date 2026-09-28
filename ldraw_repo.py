@@ -619,6 +619,11 @@ _PARTIAL_CONE_RE = re.compile(r"\bHalf\b", re.IGNORECASE)
 # ends in an 8 LDU bar 32.5 LDU down rather than an anti-stud 24 LDU down.
 # Neither has the base its name reads like.
 _INVERTED_CONE_RE = re.compile(r"\bInverted\b", re.IGNORECASE)
+# A cone, whether or not the dimension rule can read the one it is: the base
+# read below is for the family, and "Cone 1.5 x 1.5 x 0.667 Truncated" stands on
+# a base as surely as "Cone 2 x 2 x 2" does. The name picks the family and the
+# geometry says the rest, which is how the headgear rule works too.
+_ANY_CONE_RE = re.compile(r"^Cone\b", re.IGNORECASE)
 _LDU_BRICK = 24.0  # a brick's height in LDraw units (9.6 mm)
 
 
@@ -897,11 +902,17 @@ def _lego_implements(desc, pid=None):
     if implements is None and pid and _HEADGEAR_RE.match(desc):
         implements = _headgear_implements(pid, deadline)
     if pid:
-        # A cone's base plane goes with the walk: the bore in the middle of its
-        # underside is an anti-stud the tubes alone do not spell out.
+        # A cone's base goes with the walk: the bore in the middle of its
+        # underside is an anti-stud the tubes alone do not spell out, and how
+        # wide the base is settles whether the four cells round that bore are
+        # there at all.
         courses = _cone_courses(desc)
         implements = _with_geometry_studs(
-            implements, pid, deadline, None if courses is None else courses * _LDU_BRICK
+            implements,
+            pid,
+            deadline,
+            None if courses is None else courses * _LDU_BRICK,
+            cone=_ANY_CONE_RE.match(desc) is not None,
         )
     return _cone_underside(implements, cone)
 
@@ -956,13 +967,13 @@ def _with_geometry_technic(implements, pid, deadline=None):
     return implements or None
 
 
-def _with_geometry_anti_studs(implements, pid, deadline=None, bore_plane=None):
+def _with_geometry_anti_studs(implements, pid, deadline=None, bore_plane=None, cone=False):
     """Replace the name-derived anti-studs with the ones the underside has.
 
     Only when the tubes settle it; otherwise the name's answer stands, because
     an anti-stud no tube marks may still be there.
     """
-    anti = _geometry_anti_studs(pid, deadline, bore_plane)
+    anti = _geometry_anti_studs(pid, deadline, bore_plane, cone)
     if not anti:
         return implements
     implements = dict(implements) if implements else {}
@@ -973,7 +984,7 @@ def _with_geometry_anti_studs(implements, pid, deadline=None, bore_plane=None):
     return implements or None
 
 
-def _with_geometry_studs(implements, pid, deadline=None, bore_plane=None):
+def _with_geometry_studs(implements, pid, deadline=None, bore_plane=None, cone=False):
     """Replace the name-derived studs with the ones the part actually has.
 
     The underside goes first, since it is read from the same walk; it keeps the
@@ -981,7 +992,7 @@ def _with_geometry_studs(implements, pid, deadline=None, bore_plane=None):
     marks nothing. When the walk cannot see the whole part the stud read returns
     None and the name's answer is left alone here too.
     """
-    implements = _with_geometry_anti_studs(implements, pid, deadline, bore_plane)
+    implements = _with_geometry_anti_studs(implements, pid, deadline, bore_plane, cone)
     studs = _geometry_stud_implements(pid, deadline)
     if studs is None:
         return implements
@@ -1596,13 +1607,18 @@ def _parse_references(text):
     return references
 
 
-def _walk_geometry(pid, visit, deadline=None):
+def _walk_geometry(pid, visit, deadline=None, on_body=None):
     """Breadth first over a part's geometry, one parallel fetch per level.
 
     'visit(base, matrix, position)' is called for every reference the walk
     meets, with the reference's own basename and its placement in the part's
     frame; returning True claims it as a leaf. What is not claimed is followed
     when it names a part and dropped when it names a primitive.
+
+    'on_body(body, matrix, position)' is called once for every file the walk
+    reads, with the file's own text and where it sits, and with no text at all
+    where the fetch came back empty. It is what lets a caller read the lines a
+    file draws itself rather than only the references it makes.
 
     Returns True when the walk ran out of references rather than out of budget.
     That is what lets a caller tell "this part has none" from "I did not get to
@@ -1638,6 +1654,8 @@ def _walk_geometry(pid, visit, deadline=None):
         bodies = [bodies_by_name.get(name) for name, _, _ in level]
         following = []
         for (_, matrix, translation), body in zip(level, bodies, strict=True):
+            if on_body is not None:
+                on_body(body, matrix, translation)
             if not body:
                 continue
             for name, child_matrix, child_translation in _parse_references(body):
@@ -2033,7 +2051,7 @@ def _tube_member(base):
     return stem
 
 
-def _geometry_anti_studs(pid, deadline=None, bore_plane=None):
+def _geometry_anti_studs(pid, deadline=None, bore_plane=None, cone=False):
     """The anti-stud instances of a part read from its underside tubes, or None
     when the geometry does not settle it and the name should be left to stand.
 
@@ -2043,6 +2061,10 @@ def _geometry_anti_studs(pid, deadline=None, bore_plane=None):
     'bore_plane' is how far below the top a cone's name puts its base, in LDraw
     units, and asks for the bore of a tube that opens there on the part's own
     axis as well; see the note above.
+
+    'cone' says the part's name calls it a cone, which is the only family whose
+    base is measured against the four cells the walk reads round a lone open
+    tube; see the note on the base below.
     """
     studs, tubes = [], []
 
@@ -2064,6 +2086,7 @@ def _geometry_anti_studs(pid, deadline=None, bore_plane=None):
     half = _LDU_STUD_PITCH / 2.0
     found = {}
     bore = None
+    on_axis = None
     for stem, place, composed in tubes:
         if stem == _UNDERSIDE_CROSS:
             return None  # not a tube between studs; do not guess at the rest
@@ -2088,15 +2111,18 @@ def _geometry_anti_studs(pid, deadline=None, bore_plane=None):
             # part's axis, opening into the plane the name puts the base in.
             # Its own size across, too: a tube stretched in the plane has a bore
             # that is no longer a stud wide, whatever its mouth is level with.
-            if (
-                bore_plane is not None
-                and (x, z) == (0.0, 0.0)
-                and round(y, 1) == round(bore_plane, 1)
-                and _unscaled_across(composed)
-            ):
-                bore = y
+            if (x, z) == (0.0, 0.0) and _unscaled_across(composed):
+                on_axis = (y, corners)
+                if bore_plane is not None and round(y, 1) == round(bore_plane, 1):
+                    bore = y
         for corner in corners:
             found[corner] = y
+    # A part whose base is too small to hold any of the cells round its one
+    # tube has not got them: what it has is that tube's bore, on its own.
+    if cone and on_axis is not None and len(tubes) == 1:
+        y, corners = on_axis
+        if _base_holds_none_of(pid, y, corners, deadline):
+            return {_BORE_INSTANCE: _port((0.0, -y * _LDU_MM, 0.0), _ANTI_STUD_ROT)}
     ports = [
         (
             (
@@ -2124,6 +2150,178 @@ def _unscaled_across(composed):
         if abs(math.sqrt(sum(v * v for v in image)) - 1.0) > 1e-6:
             return False
     return True
+
+
+# --- how wide a part's base is ----------------------------------------------
+#
+# The read above takes a lone open tube for the spacer between the four cells
+# around it, which is what it is under a part whose footprint really is 2 x 2 or
+# bigger. Under a part one stud across it is the other thing an open tube is -
+# the socket LDraw's own help text calls it - and there are no four cells at
+# all: "Cone 2 x 2 x 2 Inverted" stands on a ring 16 LDU across, while the cells
+# the walk claims are centred 14.1 LDU out from its axis, over nothing.
+#
+# The name cannot settle which of the two it is, because a name gives a part's
+# bounding footprint and not which of its cells are solid. The 2 x 2 in that one
+# is the top it is inverted from. So the base is measured instead.
+#
+# The walk reads stud primitives and nothing else, but every file it fetches
+# carries its own lines and faces, and what it does not fetch is a primitive
+# whose size in its own frame its name gives: "4-4cyli" is the unit cylinder,
+# "4-4ring3" runs from radius 3 to 4, "box3u2p" is inside the unit cube, and a
+# stud is 8 LDU across and 4 along. Every one of those bounds holds for every
+# primitive in the library it reaches, checked against the primitives' own
+# files, and each is an upper bound - so the error it can make is to find a part
+# wider than it is, which leaves that part's anti-studs exactly as they were. A
+# primitive no bound reaches leaves the base unmeasured for the same reason.
+
+_LDU_STUD_RADIUS = 8.0  # a stud primitive across its own axis: the tube's wall
+_LDU_STUD_HEIGHT = 4.0  # ...and along it, which is also how tall a stud is
+_LDU_PLANE = 0.05  # two planes this close together are the same plane
+
+# The stud primitives that outgrow that envelope: Duplo's and Scala's, the big
+# technic ones, and the flanged tubes whose fillet reaches past the tube's wall.
+_OUTSIZE_STUDS = frozenset(
+    """stud4f1n stud4f2n stud4f2s stud4f2w stud4f3n stud4f3s stud4f4n stud4f4s stud4f5n stud5
+       stud7 stud7a stud8 stud8a stud8s2 stud11 stud14 stud16 stud19 stud20 stud24 stud25
+       stud27 stud27a stud28 stud28a""".split()
+)
+
+# "<sixteenths>-<sixteenths><shape>[<size>]": LDraw's circular primitives, drawn
+# around their own Y with the radius their name gives. A ring or a cone is as
+# wide as the number it ends in plus one, and the rest are the unit circle.
+_CIRCLE_PRIMITIVE = re.compile(r"^\d+-\d+([a-z]+)(\d*)$")
+_FLAT_CIRCLES = ("edge", "disc", "ndis", "chrd", "tang")  # all of them at y = 0
+_ROUND_CIRCLES = ("cyli", "cylo", "cylc")  # y in [0, 1]
+_BALL_CIRCLES = ("sphe", "sphc")  # the one shape that reaches back up its own axis
+_SIZED_CIRCLES = ("ring", "rin", "ri", "con")  # "rin" and "ri" are ring, shortened
+# The box, rectangle and triangle primitives, which are all inside the unit cube.
+_UNIT_PRIMITIVE = re.compile(r"^(?:box|rect|tri)[0-9a-z#_.-]*$")
+
+
+def _primitive_span(base):
+    """(radius, ylo, yhi): how far a primitive reaches in its own frame, or
+    None where its name does not say.
+    """
+    kind, offsets = _stud_primitive(base)
+    if kind is not None:
+        if _tube_member(base) in _OUTSIZE_STUDS:
+            return None
+        spread = max(max(abs(offset[0]), abs(offset[2])) for offset in offsets)
+        return spread + _LDU_STUD_RADIUS, -_LDU_STUD_HEIGHT, _LDU_STUD_HEIGHT
+    stem = base[: -len(".dat")].lower() if base.lower().endswith(".dat") else base.lower()
+    if _UNIT_PRIMITIVE.match(stem):
+        return 1.0, -1.0, 1.0
+    circle = _CIRCLE_PRIMITIVE.match(stem)
+    if not circle:
+        return None
+    shape, size = circle.group(1), circle.group(2)
+    if shape in _SIZED_CIRCLES:
+        radius = (int(size) if size else 0) + 1.0
+        return radius, 0.0, 1.0 if shape == "con" else 0.0
+    if size:
+        return None  # a number on any other shape is a name this does not know
+    if shape in _FLAT_CIRCLES:
+        return 1.0, 0.0, 0.0
+    if shape in _ROUND_CIRCLES:
+        return 1.0, 0.0, 1.0
+    if shape in _BALL_CIRCLES:
+        return 1.0, -1.0, 1.0
+    if shape == "cyls":
+        return 1.0, 0.0, 2.0  # the sloped cylinder, which rises to twice its radius
+    return None
+
+
+def _placed_box(points, composed, position):
+    """(xlo, xhi, ylo, yhi, zlo, zhi) of points placed in the part's frame."""
+    placed = []
+    for point in points:
+        moved = _matrix_apply(composed, point)
+        placed.append(tuple(moved[i] + position[i] for i in range(3)))
+    return tuple(
+        value for i in range(3) for value in (min(p[i] for p in placed), max(p[i] for p in placed))
+    )
+
+
+def _span_corners(span):
+    """The eight corners of the box a primitive's span describes."""
+    radius, ylo, yhi = span
+    return [(x, y, z) for x in (-radius, radius) for y in (ylo, yhi) for z in (-radius, radius)]
+
+
+def _drawn_boxes(body):
+    """The corners of each line, triangle and quad a file draws itself."""
+    for line in body.splitlines():
+        fields = line.split()
+        if not fields or fields[0] not in ("2", "3", "4"):
+            continue
+        count = int(fields[0])
+        try:
+            values = [float(v) for v in fields[2 : 2 + 3 * count]]
+        except ValueError:
+            continue
+        if len(values) < 3 * count:
+            continue
+        yield [tuple(values[3 * i : 3 * i + 3]) for i in range(count)]
+
+
+def _geometry_base(pid, deadline=None):
+    """(plane, x, z): the plane a part stands on and how far it reaches from its
+    own axis there, or None where the geometry does not settle it.
+
+    'plane' is in LDraw's Y, which points down, so the base is the largest of
+    them. Every reference has to be bounded for this to be an answer at all: one
+    primitive whose name says nothing about its size could be the very wall the
+    question is about.
+    """
+    boxes = []
+    unbounded = []
+
+    def visit(base, composed, position):
+        """Bound a primitive; leave a part or a subpart to be read as a file."""
+        if _PART_REF_RE.match(base):
+            return False
+        span = _primitive_span(base)
+        if span is None:
+            unbounded.append(base)
+        else:
+            boxes.append(_placed_box(_span_corners(span), composed, position))
+        return True
+
+    def drawn(body, matrix, position):
+        """Take in the lines and faces a file draws in its own right."""
+        if not body:
+            unbounded.append(None)  # a file that did not arrive: the same silence
+            return
+        for points in _drawn_boxes(body):
+            boxes.append(_placed_box(points, matrix, position))
+
+    if not _walk_geometry(pid, visit, deadline, drawn) or unbounded or not boxes:
+        return None
+    plane = max(box[3] for box in boxes)
+    standing = [box for box in boxes if box[2] <= plane + _LDU_PLANE and box[3] >= plane - _LDU_PLANE]
+    return (
+        plane,
+        max(max(abs(box[0]), abs(box[1])) for box in standing),
+        max(max(abs(box[4]), abs(box[5])) for box in standing),
+    )
+
+
+def _base_holds_none_of(pid, plane, cells, deadline=None):
+    """Whether the part stands on 'plane' on a base too small for any of 'cells'.
+
+    False where the geometry does not settle it, and false where the tube opens
+    somewhere other than the plane the part stands on - a tube up inside a part
+    says nothing about the base it never reaches.
+    """
+    base = _geometry_base(pid, deadline)
+    if base is None:
+        return False
+    standing, reach_x, reach_z = base
+    if abs(standing - plane) > _LDU_PLANE:
+        return False
+    return all(abs(x) > reach_x + _LDU_PLANE or abs(z) > reach_z + _LDU_PLANE for x, z in cells)
+
 
 
 # --- headgear ----------------------------------------------------------------

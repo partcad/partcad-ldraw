@@ -264,6 +264,30 @@ hollow where no stud reaches. A brick's centre tube has the very same bore and
 is left unsaid, because a brick's top repeats its base and the bore would only
 ever be a join half a stud out of step in both directions.
 
+Which of the two an open tube is, is the base's to say. It is the spacer between
+four cells under a part whose footprint really is 2 x 2 or bigger, and the
+socket itself under a part one stud across, and no name tells them apart:
+`Cone 2 x 2 x 2 Inverted` stands on a ring 16 LDU across — the 2 x 2 is the top
+it is inverted from — while the four cells the walk reads round its tube are
+centred 14.1 LDU out from the axis, over nothing at all. A name gives a part's
+bounding footprint and not which of its cells are solid.
+
+So a cone's base is measured: the plane it stands on and how far it reaches from
+its own axis there, out of the lines and faces its files draw themselves and the
+size each primitive's name gives — `4-4cyli` is the unit cylinder, `4-4ring3`
+runs from radius 3 to 4, `box3u2p` is inside the unit cube, a stud is 8 LDU
+across and 4 along. A cone whose base reaches over none of those four cells has
+not got them, and what it has is the bore, on its own. Three entries change:
+`Cone 2 x 2 x 2 Inverted`, the same with a waffle pattern, and
+`Cone 1.5 x 1.5 x 0.667 Truncated`.
+
+Each of those bounds is an upper bound, and a primitive no bound reaches leaves
+the base unmeasured rather than guessed at, so the measurement's own error is
+always to find a part wider than it is — which leaves that part's anti-studs
+exactly as the walk read them. `Plate 1 x 1 Round` and `Brick 1 x 1 Round with
+Hollow Stud` stand on the same 16 LDU ring and claim the same four cells they
+have not got; they are not cones, and they are a separate piece of work.
+
 ## Reading ports from geometry
 
 The Mindstorms parts have no dimensions in their names and put no connector in
