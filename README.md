@@ -158,7 +158,10 @@ All but the last are derived analytically from the part's name — no geometry i
 fetched — so attaching them costs nothing even when a whole category is
 enumerated. What a connection leaves free is declared with it: a pin turns in a
 round hole (`turnZ`), an axle slides through one (`moveZ`), and a minifig's head
-and torso turn on their joints.
+and torso turn on their joints. An axle is also the one connector that carries
+several parts on one end - the beams it runs through, bushes, gears and a wheel,
+each at its own `moveZ` - so `technic-axle` says `multiConnect: true`, and
+PartCAD's connectivity test does not report those parts as crowding one port.
 
 **Gears** are the interesting case: a mesh is a port pair once each tooth and
 each gap is a port. LEGO gears are cut to one module, so a port on the pitch

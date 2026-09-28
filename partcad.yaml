@@ -310,6 +310,11 @@ interfaces:
     # The cross hole is what drives an axle; the round hole it also fits is
     # declared by 'technic-pin-hole' above.
     mates: technic-axle-hole
+    # An axle carries whatever is threaded onto it - the beams it runs through,
+    # bushes, gears and a wheel on the same end - and each of them is joined to
+    # that end at its own 'moveZ'. One end taking several parts is what an axle
+    # is for, so PartCAD's connectivity test is told not to report it.
+    multiConnect: true
 
   # --- Duplo ------------------------------------------------------------------
   #
