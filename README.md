@@ -103,6 +103,20 @@ Run it when LDraw publishes a library update, and commit the result:
 ./build_parts_index.py --archive complete.zip
 ```
 
+A change to how connectors are *read* does not need all of that. `--refresh`
+recomputes only the entries of the parts whose own files place one of the named
+primitives, from any unpacked copy of the library, and takes a new entry only
+where it keeps every port the old one had, instance names included; a part that
+would lose or move a port is reported and left as it was, because that is a
+change to the rules and belongs to a full rebuild. Nothing else in the index is
+touched, so the listings and the archive are not needed:
+
+```sh
+./build_parts_index.py --refresh path/to/ldraw --reaching bush0.dat bush.dat
+```
+
+That is how the bush's axle hole (below) went in.
+
 It takes names, authors and licences from
 [`complete.zip`](https://library.ldraw.org/library/updates/complete.zip) — one
 download carrying the whole official library, instead of ~25,000 per-part
@@ -388,6 +402,15 @@ out of faces alone and a whole-form-only reading misses it entirely. Over the
 library 574 parts carry only whole forms, 128 only perimeters, and the 13 with
 both never put the two in the same place, so taking either as a hole never
 counts one twice.
+
+One axle hole is drawn inside a primitive rather than by the part, and the walk
+never opens a primitive: `bush0`, "Technic Bush without Collars", is an
+`axlehol5` stretched through it, and `bush` is the same bush with its collars.
+Between them they are the axle hole of every Technic cross block and of the
+bushes themselves, so the cross blocks used to be served with their pin holes
+and not the axle hole they are for — `6536`, "Cross Block 1 x 2 (Axle/Pin)", had
+a pin hole beside nothing. Both are named in the vocabulary with the hole spelled
+out, which gives 47 parts an axle hole each and changes no port anything had.
 
 `lego-demo/` builds seven assemblies out of all this, and its `README.md`
 describes the interfaces in detail.

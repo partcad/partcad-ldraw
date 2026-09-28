@@ -50,8 +50,10 @@ import zipfile
 # v7 serves the axle holes the Mindstorms parts were always known to have; v8
 # reads every part's Technic connectors from its geometry rather than from the
 # 80 names the rules happened to cover; v9 turned every part upright, which
-# moves every port and re-meshes every part.
-CACHE_VERSION = 9
+# moves every port and re-meshes every part; v10 serves the axle hole inside
+# every "Technic Bush" primitive, which is what the cross blocks and the bushes
+# are drawn with.
+CACHE_VERSION = 10
 
 _BASE = "https://library.ldraw.org"
 _CATEGORY_LIST_URL = _BASE + "/parts/category-list"
@@ -1561,6 +1563,21 @@ for _axle_hole in (
 ):
     _GEOMETRY_CONNECTORS[_axle_hole + ".dat"] = list(_AXLE_HOLE_MOUTHS)
 del _axle_hole
+
+# The same hole, drawn inside a primitive rather than by the part. "Technic Bush
+# without Collars" places an 'axlehol5' stretched from z = -10 to z = 10 in its
+# own frame, and "Technic Bush without Base Collar" is that bush plus its
+# collars, the hole unchanged; the walk never looks inside a primitive, so both
+# are named here with the hole spelled out. Between them they are the axle hole
+# of every cross block (6536, 32184, 32291, ...) and of the bushes themselves,
+# which the walk otherwise reads as parts with a pin hole beside nothing: 6536,
+# "Cross Block 1 x 2 (Axle/Pin)", had the pin and not the axle.
+_BUSH_AXLE_HOLE = [
+    (_AXLE_HOLE_IFACE, (0, 0, -10), (0, 0, -1)),
+    (_AXLE_HOLE_IFACE, (0, 0, 10), (0, 0, 1)),
+]
+_GEOMETRY_CONNECTORS["bush0.dat"] = list(_BUSH_AXLE_HOLE)
+_GEOMETRY_CONNECTORS["bush.dat"] = list(_BUSH_AXLE_HOLE)
 
 # The rest of the Technic vocabulary, on the same footing. Every entry below was
 # checked by reading it back against the parts whose ports were derived from

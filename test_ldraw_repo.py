@@ -624,6 +624,15 @@ _FAKE_LIBRARY = {
     "3700.dat": "0 Technic Brick\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 s/3700s01.dat\n",
     # a beam-style through hole: two mouths, at the ends of its own Y
     "99999c.dat": ("0 Technic Beam Test\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 beamhole.dat\n"),
+    # a cross block: a peg hole one way, and a bush - which is an axle hole
+    # inside a primitive - the other, turned so that it runs along X
+    "99999h.dat": (
+        "0 Technic Cross Block Test\n"
+        "1 16 0 0 0 0 0 1 0 1 0 -1 0 0 bush0.dat\n"
+        "1 16 0 20 -10 1 0 0 0 0 1 0 -1 0 peghole.dat\n"
+    ),
+    # a bush on its own, the collars and all
+    "99999i.dat": ("0 Technic Bush Test\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 bush.dat\n"),
     # a pin end and the middle section of a long pin at the same place: only the
     # end is a port
     "99999d.dat": (
@@ -1159,6 +1168,22 @@ def test_a_through_hole_is_two_mouths_and_a_peg_hole_is_one(fake_library):
     assert len(beam) == 2
     # +-10 LDU is +-4 mm once meshed, and each mouth faces out of the part
     assert sorted(p[0][2] for p in beam.values()) == [-4.0, 4.0]
+
+
+def test_a_bush_is_an_axle_hole_through_it(fake_library):
+    # "Technic Bush without Collars" is a primitive with an 'axlehol5' inside,
+    # which the walk never opens; the bush is named with its hole spelled out,
+    # so a cross block gets the axle hole it is for and not only its pin hole
+    block = plugin._lego_implements("Technic Cross Block Test", "99999h")
+    holes = block[AXLE_HOLE]
+    assert len(holes) == 2
+    assert sorted(p[0][0] for p in holes.values()) == [-4.0, 4.0]
+    assert all(p[0][1] == 0.0 and p[0][2] == 0.0 for p in holes.values())
+    assert len(block[PIN_HOLE]) == 1
+    # the collared one is the same hole
+    # (along LDraw's Z, which the turn upright lays along Y)
+    bush = plugin._lego_implements("Technic Bush Test", "99999i")[AXLE_HOLE]
+    assert sorted(p[0][1] for p in bush.values()) == [-4.0, 4.0]
 
 
 def test_the_middle_of_a_long_pin_is_not_a_pin_end(fake_library):

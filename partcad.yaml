@@ -56,8 +56,10 @@ dependencies:
     # the 80 names the rules happened to cover; v9 turned every part upright,
     # which moves every port and re-meshes every part - and, because the key
     # also names the directory the plugin's own files are materialized into, is
-    # what makes a cached 'ldraw.py' from before the turn stop being served.
-    cacheVersion: 9
+    # what makes a cached 'ldraw.py' from before the turn stop being served;
+    # v10 serves the axle hole inside every "Technic Bush" primitive, which is
+    # what the cross blocks and the bushes are drawn with.
+    cacheVersion: 10
 
 repositories:
   ldraw_repo:
