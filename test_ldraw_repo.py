@@ -672,12 +672,43 @@ _FAKE_LIBRARY = {
         "1 16 0 0 0 1 0 0 0 1 0 0 0 1 stud7.dat\n"
     ),
     # a 2 x 2 cone, drawn the way LDraw draws one: one stud in the middle of the
-    # top and one open tube stretched from just under it to the base, 48 LDU
-    # down, where its bore opens
+    # top, one open tube stretched from just under it to the base, 48 LDU down,
+    # where its bore opens, and the skirt it stands on - 40 LDU across, drawn
+    # out of the part's own quads rather than any primitive
     "3942c.dat": (
         "0 Cone  2 x  2 x  2 with Hollow Stud Open\n"
         "1 16 0 0 0 1 0 0 0 1 0 0 0 1 stud2a.dat\n"
         "1 16 0 12 0 1 0 0 0 -9 0 0 0 1 stud4a.dat\n"
+        "4 16 20 48 0 0 48 20 -20 48 0 0 48 -20\n"
+        "4 16 20 44 0 0 44 20 -20 44 0 0 44 -20\n"
+    ),
+    # the same cone stood on its point: the 2 x 2 in its name is the top, four
+    # studs on the rim it is inverted from, and the conical surface stops 5 LDU
+    # short of the tube it really stands on
+    "49309.dat": (
+        "0 Cone  2 x  2 x  2 Inverted\n"
+        "1 16 0 4 0 10 0 0 0 39 0 0 0 10 4-4con1.dat\n"
+        "1 16 10 0 10 1 0 0 0 1 0 0 0 1 stud6a.dat\n"
+        "1 16 10 0 -10 1 0 0 0 1 0 0 0 1 stud6a.dat\n"
+        "1 16 -10 0 10 1 0 0 0 1 0 0 0 1 stud6a.dat\n"
+        "1 16 -10 0 -10 1 0 0 0 1 0 0 0 1 stud6a.dat\n"
+        "1 16 0 44 0 1 0 0 0 -1 0 0 0 1 stud4a.dat\n"
+    ),
+    # a cone whose base is drawn with a primitive whose name says nothing about
+    # how big it is: the base is not measured, so the walk's four cells stand
+    "99999g.dat": (
+        "0 Cone  2 x  2 x  2 with Axlehole\n"
+        "1 16 0 0 0 1 0 0 0 1 0 0 0 1 stud2a.dat\n"
+        "1 16 0 12 0 1 0 0 0 -9 0 0 0 1 stud4a.dat\n"
+        "1 16 0 24 0 1 0 0 0 24 0 0 0 1 axlehole.dat\n"
+    ),
+    # a 1 x 1 round plate: the same lone open tube, and a base 16 LDU across.
+    # Not a cone, so this rule leaves it alone - see the test that says so.
+    "6141.dat": (
+        "0 Plate  1 x  1 Round\n"
+        "1 16 0 0 0 1 0 0 0 1 0 0 0 1 stud.dat\n"
+        "1 16 0 3 0 1 0 0 0 -1.25 0 0 0 1 stud4.dat\n"
+        "1 16 0 0 0 10 0 0 0 3 0 0 0 10 4-4cylo.dat\n"
     ),
     # a 3 x 3 cone: four tubes on the half-stud grid rather than one in the
     # middle, so the middle cell is already the corner they share
@@ -695,6 +726,7 @@ _FAKE_LIBRARY = {
         "0 Cone  4 x  4 x  3 on Brick  2 x  2 Round\n"
         "1 16 0 0 0 1 0 0 0 1 0 0 0 1 stug10-2x2.dat\n"
         "1 16 0 20 0 1 0 0 0 -1 0 0 0 1 stud4a.dat\n"
+        "1 16 0 0 0 40 0 0 0 72 0 0 0 40 4-4cyli.dat\n"
     ),
     # a cone whose tube is stretched across as well as along: its bore is no
     # longer a stud wide, wherever its mouth is
@@ -940,6 +972,91 @@ def test_a_tube_that_is_not_at_a_cone_s_base_is_not_its_bore(fake_library):
 def test_a_bore_stretched_across_is_not_a_stud_wide(fake_library):
     anti = plugin._lego_implements("Cone  2 x  2 x  2 Stretched", "99999f")[ANTI]
     assert "centre" not in anti
+
+
+def test_an_inverted_cone_stands_on_its_bore_alone(fake_library):
+    """Its base is a ring 16 LDU across, and the cells round it are 28 apart"""
+    # A "Cone 2 x 2 x 2 Inverted" is the one place the walk's reading of a lone
+    # open tube goes wrong: the tube is not the spacer between four anti-studs,
+    # because there is no room beside it for any of them. The 2 x 2 in the name
+    # is the top it is inverted from.
+    cone = plugin._lego_implements("Cone  2 x  2 x  2 Inverted", "49309")
+    assert sorted(cone[ANTI]) == ["centre"]
+    assert cone[ANTI]["centre"][0] == [0.0, -19.2, 0.0]
+    # the four studs on the rim are its own and stay
+    assert sorted(cone[STUD]) == ["c0r0", "c0r1", "c1r0", "c1r1"]
+
+
+def test_a_cone_that_stands_on_a_full_base_keeps_its_four(fake_library):
+    """The same tube, the same bore, and four cells the base really has"""
+    # A "Cone 2 x 2 x 2" stands on 40 LDU of skirt, which reaches out past all
+    # four cells, so the walk's reading of its tube is the right one.
+    assert sorted(plugin._lego_implements("Cone  2 x  2 x  2 with Hollow Stud Open", "3942c")[ANTI]) == [
+        "c0r0",
+        "c0r1",
+        "c1r0",
+        "c1r1",
+        "centre",
+    ]
+
+
+def test_a_base_the_walk_cannot_bound_leaves_the_corners_alone(fake_library):
+    """One primitive whose name says nothing about its size, and no answer"""
+    # The measurement is only ever worth acting on when everything under the
+    # part was bounded: the one thing that was not could be the wall the
+    # question is about.
+    anti = plugin._lego_implements("Cone  2 x  2 x  2 with Axlehole", "99999g")[ANTI]
+    assert sorted(anti) == ["c0r0", "c0r1", "c1r0", "c1r1", "centre"]
+
+
+def test_a_tube_up_inside_a_part_says_nothing_about_its_base(fake_library):
+    # The round brick's tube in "Cone 4 x 4 x 3 on Brick 2 x 2 Round" opens 48
+    # LDU above the plane the part stands on, so how wide the part is there is
+    # not what settles the cells around it.
+    assert sorted(plugin._lego_implements("Cone  4 x  4 x  3 on Brick  2 x  2 Round", "3569")[ANTI]) == [
+        "c0r0",
+        "c0r1",
+        "c1r0",
+        "c1r1",
+    ]
+
+
+def test_a_round_plate_one_stud_across_is_left_as_it_is(fake_library):
+    """The same defect, off this rule's beat: a "Plate 1 x 1 Round" is no cone"""
+    # It stands on the same 16 LDU ring as the inverted cone and claims the same
+    # four cells it has not got. Correcting that is a change to every small
+    # round part in the library rather than to the cones, and is its own piece
+    # of work.
+    assert sorted(plugin._lego_implements("Plate  1 x  1 Round", "6141")[ANTI]) == ["c0r0", "c0r1", "c1r0", "c1r1"]
+
+
+def test_the_base_is_where_the_part_stands_and_how_far_it_reaches(fake_library):
+    # The inverted cone: 48 LDU down, and 8 out from the axis, which is the
+    # tube's own wall and nothing else - the conical surface above it stops 5
+    # LDU short and is not part of the base.
+    assert plugin._geometry_base("49309") == (48.0, 8.0, 8.0)
+    # ...against the cone that stands on a skirt 40 LDU across
+    assert plugin._geometry_base("3942c") == (48.0, 20.0, 20.0)
+
+
+def test_a_primitive_says_how_big_it_is_in_its_own_name(fake_library):
+    # The circular primitives are drawn in a unit circle unless they are a ring
+    # or a cone, which are named for the radius they start at.
+    assert plugin._primitive_span("4-4cyli.dat") == (1.0, 0.0, 1.0)
+    assert plugin._primitive_span("4-4edge.dat") == (1.0, 0.0, 0.0)
+    assert plugin._primitive_span("4-4ring3.dat") == (4.0, 0.0, 0.0)
+    assert plugin._primitive_span("1-16ri19.dat") == (20.0, 0.0, 0.0)
+    assert plugin._primitive_span("4-4con2.dat") == (3.0, 0.0, 1.0)
+    assert plugin._primitive_span("box3u2p.dat") == (1.0, -1.0, 1.0)
+    assert plugin._primitive_span("4-8sphe.dat") == (1.0, -1.0, 1.0)
+    # a stud is 8 LDU across and 4 along, and a group of them is that around
+    # each of the places it puts one
+    assert plugin._primitive_span("stud4a.dat") == (8.0, -4.0, 4.0)
+    assert plugin._primitive_span("stug-2x2.dat") == (18.0, -4.0, 4.0)
+    # ...and what is not on the list is not guessed at
+    assert plugin._primitive_span("axlehole.dat") is None
+    assert plugin._primitive_span("stud7.dat") is None  # Duplo's, which is wider
+    assert plugin._primitive_span("4-4ering.dat") is None
 
 
 def test_the_bore_survives_the_full_base_a_cone_s_name_gives_it(fake_library):
@@ -1658,7 +1775,8 @@ def test_every_walk_of_one_part_shares_one_deadline(monkeypatch, fake_library):
     monkeypatch.setattr(
         plugin,
         "_walk_geometry",
-        lambda pid, visit, deadline=None: seen.append(deadline) or original(pid, visit, deadline),
+        lambda pid, visit, deadline=None, on_body=None: seen.append(deadline)
+        or original(pid, visit, deadline, on_body),
     )
     plugin._lego_implements("Brick  2 x  2", "3003")
     assert len(seen) > 1, "expected more than one walk for a part"
