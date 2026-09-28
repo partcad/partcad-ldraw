@@ -619,11 +619,6 @@ _PARTIAL_CONE_RE = re.compile(r"\bHalf\b", re.IGNORECASE)
 # ends in an 8 LDU bar 32.5 LDU down rather than an anti-stud 24 LDU down.
 # Neither has the base its name reads like.
 _INVERTED_CONE_RE = re.compile(r"\bInverted\b", re.IGNORECASE)
-# A cone, whether or not the dimension rule can read the one it is: the base
-# read below is for the family, and "Cone 1.5 x 1.5 x 0.667 Truncated" stands on
-# a base as surely as "Cone 2 x 2 x 2" does. The name picks the family and the
-# geometry says the rest, which is how the headgear rule works too.
-_ANY_CONE_RE = re.compile(r"^Cone\b", re.IGNORECASE)
 _LDU_BRICK = 24.0  # a brick's height in LDraw units (9.6 mm)
 
 
@@ -912,7 +907,6 @@ def _lego_implements(desc, pid=None):
             pid,
             deadline,
             None if courses is None else courses * _LDU_BRICK,
-            cone=_ANY_CONE_RE.match(desc) is not None,
         )
     return _cone_underside(implements, cone)
 
@@ -967,13 +961,13 @@ def _with_geometry_technic(implements, pid, deadline=None):
     return implements or None
 
 
-def _with_geometry_anti_studs(implements, pid, deadline=None, bore_plane=None, cone=False):
+def _with_geometry_anti_studs(implements, pid, deadline=None, bore_plane=None):
     """Replace the name-derived anti-studs with the ones the underside has.
 
     Only when the tubes settle it; otherwise the name's answer stands, because
     an anti-stud no tube marks may still be there.
     """
-    anti = _geometry_anti_studs(pid, deadline, bore_plane, cone)
+    anti = _geometry_anti_studs(pid, deadline, bore_plane)
     if not anti:
         return implements
     implements = dict(implements) if implements else {}
@@ -984,7 +978,7 @@ def _with_geometry_anti_studs(implements, pid, deadline=None, bore_plane=None, c
     return implements or None
 
 
-def _with_geometry_studs(implements, pid, deadline=None, bore_plane=None, cone=False):
+def _with_geometry_studs(implements, pid, deadline=None, bore_plane=None):
     """Replace the name-derived studs with the ones the part actually has.
 
     The underside goes first, since it is read from the same walk; it keeps the
@@ -992,7 +986,7 @@ def _with_geometry_studs(implements, pid, deadline=None, bore_plane=None, cone=F
     marks nothing. When the walk cannot see the whole part the stud read returns
     None and the name's answer is left alone here too.
     """
-    implements = _with_geometry_anti_studs(implements, pid, deadline, bore_plane, cone)
+    implements = _with_geometry_anti_studs(implements, pid, deadline, bore_plane)
     studs = _geometry_stud_implements(pid, deadline)
     if studs is None:
         return implements
@@ -2051,7 +2045,7 @@ def _tube_member(base):
     return stem
 
 
-def _geometry_anti_studs(pid, deadline=None, bore_plane=None, cone=False):
+def _geometry_anti_studs(pid, deadline=None, bore_plane=None):
     """The anti-stud instances of a part read from its underside tubes, or None
     when the geometry does not settle it and the name should be left to stand.
 
@@ -2118,8 +2112,12 @@ def _geometry_anti_studs(pid, deadline=None, bore_plane=None, cone=False):
         for corner in corners:
             found[corner] = y
     # A part whose base is too small to hold any of the cells round its one
-    # tube has not got them: what it has is that tube's bore, on its own.
-    if cone and on_axis is not None and len(tubes) == 1:
+    # tube has not got them: what it has is that tube's bore, on its own. The
+    # bore is left unsaid under a brick, because a brick's top repeats its base
+    # and the join would be half a stud out of step in both directions; here it
+    # is not out of step with anything, being dead under the part's own stud,
+    # and it is the only join the part has got.
+    if on_axis is not None and len(tubes) == 1:
         y, corners = on_axis
         if _base_holds_none_of(pid, y, corners, deadline):
             return {_BORE_INSTANCE: _port((0.0, -y * _LDU_MM, 0.0), _ANTI_STUD_ROT)}
@@ -2158,12 +2156,17 @@ def _unscaled_across(composed):
 # around it, which is what it is under a part whose footprint really is 2 x 2 or
 # bigger. Under a part one stud across it is the other thing an open tube is -
 # the socket LDraw's own help text calls it - and there are no four cells at
-# all: "Cone 2 x 2 x 2 Inverted" stands on a ring 16 LDU across, while the cells
-# the walk claims are centred 14.1 LDU out from its axis, over nothing.
+# all: "Plate 1 x 1 Round" stands on a ring 16 LDU across, and so does "Brick
+# 1 x 1 Round with Hollow Stud", and so does "Cone 2 x 2 x 2 Inverted", while
+# the cells the walk claims are centred 14.1 LDU out from the axis, over
+# nothing. That is the socket each of them is stacked by, and it is the only
+# one they have.
 #
 # The name cannot settle which of the two it is, because a name gives a part's
-# bounding footprint and not which of its cells are solid. The 2 x 2 in that one
-# is the top it is inverted from. So the base is measured instead.
+# bounding footprint and not which of its cells are solid: the 2 x 2 in that
+# cone is the top it is inverted from, and "Rock 4 x 4 x 0.667 Octagonal Bottom"
+# stands on the same single ring under four studs' worth of rock. So the base is
+# measured instead.
 #
 # The walk reads stud primitives and nothing else, but every file it fetches
 # carries its own lines and faces, and what it does not fetch is a primitive
