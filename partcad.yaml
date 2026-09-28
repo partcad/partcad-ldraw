@@ -136,6 +136,20 @@ interfaces:
     # here would be silently ignored rather than settable from an assembly.
     # Freedom that is real goes under 'parameters', as the Technic ones below do.
     mates: anti-stud
+    # The same turn the anti-stud states, from this side. A connection names one
+    # of the two interfaces and reads the parameters off that one, so a part
+    # joined by its stud - which is what an assembly does when it puts a brick
+    # in underneath something already placed - could not say it was turned at
+    # all, and there is nothing about a stud that makes it the fixed half of the
+    # pair. Note that the two run opposite ways round, because each interface's
+    # Z points into its own part.
+    parameters:
+      turnZ:
+        min: -180
+        max: 180
+        default: 0
+        type: turn
+        dir: [0, 0, 1]
     # One stud in one anti-stud turns freely about the stud: a 1 x 1 plate on a
     # single stud spins. It takes a second stud to hold an angle, and that is a
     # property of the pair of connections, not of this one.
