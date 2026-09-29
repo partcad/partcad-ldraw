@@ -563,13 +563,63 @@ def _grid_positions(n):
     return [round((i - (n - 1) / 2.0) * _STUD_MM, 4) for i in range(n)]
 
 
+# Every rule above hands '_port' millimetres in the frame the mesh used to come
+# out in: LDraw's, scaled by _LDU_MM with Y negated, so that up is +Y. That is
+# the frame to reason about a part in, because it is one negation away from the
+# .dat file the measurements are read off.
+#
+# _scaled() now turns the mesh a further quarter about X, to stand the part up
+# in the Z-up world PartCAD serves. This is the same turn for the ports, so that
+# they go on landing on the geometry they describe.
+#
+# Making it here rather than at each of the thirty-odd call sites is not only
+# shorter. A port is a position *and* a roll, and turning the part turns both;
+# composed in one place they cannot come apart, and no rule added later can
+# forget to make the turn.
+_Y_UP_TO_Z_UP = ((1.0, 0.0, 0.0), 90.0)
+
+
+def _quaternion(axis, angle):
+    """A rotation as (w, x, y, z), from an axis and an angle in degrees."""
+    length = math.sqrt(sum(c * c for c in axis)) or 1.0
+    half = math.radians(angle) / 2.0
+    scale = math.sin(half) / length
+    return (math.cos(half), axis[0] * scale, axis[1] * scale, axis[2] * scale)
+
+
+def _turned(first, second):
+    """'second' turned by 'first', both as axis and angle in degrees."""
+    aw, ax, ay, az = _quaternion(*first)
+    bw, bx, by, bz = _quaternion(*second)
+    w = aw * bw - ax * bx - ay * by - az * bz
+    x = aw * bx + ax * bw + ay * bz - az * by
+    y = aw * by - ax * bz + ay * bw + az * bx
+    z = aw * bz + ax * by - ay * bx + az * bw
+    w = max(-1.0, min(1.0, w))
+    angle = math.degrees(2.0 * math.acos(w))
+    sine = math.sqrt(max(0.0, 1.0 - w * w))
+    if sine < 1e-9:
+        return ((0.0, 0.0, 1.0), 0.0)
+    axis = (x / sine, y / sine, z / sine)
+    # These are all turns of a cube onto itself, so the axis comes out on the
+    # integer lattice; dividing by the largest component says so, and keeps the
+    # configuration readable rather than full of 0.5773502691896258.
+    largest = max(abs(c) for c in axis)
+    return (tuple(round(c / largest, 6) + 0.0 for c in axis), round(angle, 4))
+
+
 def _port(position, orientation):
-    """An OCCT location: a port at 'position' turned by 'orientation'."""
-    axis, angle = orientation
+    """An OCCT location: a port at 'position' turned by 'orientation'.
+
+    Both given in the meshed millimetre frame described above, and both turned
+    the quarter about X that stands the part up, on the way out.
+    """
+    x, y, z = (float(v) for v in position)
+    axis, angle = _turned(_Y_UP_TO_Z_UP, orientation)
     # '+ 0.0' turns a negative zero back into a zero: a position mirrored out of
     # the geometry can arrive as -0.0, which is equal to 0.0 but does not read
     # like it in the config this ends up in.
-    return [[round(float(v), 4) + 0.0 for v in position], list(axis), angle]
+    return [[round(v, 4) + 0.0 for v in (x, -z, y)], list(axis), angle]
 
 
 def _stud_instances(depth, length, height, has_studs):

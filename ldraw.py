@@ -279,7 +279,8 @@ def _compose(pm, pt, cm, ct):
 
 def _xform(m, t, p):
     r = _mat_vec(m, p)
-    # Still LDraw units on LDraw's axes: _scaled() converts, at STL time.
+    # Still LDraw units on LDraw's axes: _scaled() turns them upright and
+    # converts to millimetres, at STL time.
     return (r[0] + t[0], r[1] + t[1], r[2] + t[2])
 
 
@@ -397,10 +398,15 @@ def _mesh(text, m, t, tris, cache, invert=False, uncertified=None):
 
 
 def _scaled(p):
-    # 1 LDU is 0.4 mm, and LDraw's up is -Y, so negating Y here is what stands
-    # the part up for a Z-is-up render. It is also a reflection - see the
-    # vertex swap in _write_binary_stl(), which is there to answer for it.
-    return (p[0] * _LDU_MM, -p[1] * _LDU_MM, p[2] * _LDU_MM)
+    # 1 LDU is 0.4 mm, and LDraw's up is -Y. Negating Y makes up +Y; a further
+    # quarter turn about X makes it +Z, which is where PartCAD's is, so the part
+    # comes out standing on the XY plane the way every other PartCAD part does.
+    # An assembly that uses one no longer has to turn it itself. Written out,
+    # the two steps together are (x, -z, -y).
+    #
+    # This is still a reflection, exactly as negating Y alone was - the vertex
+    # swap in _write_binary_stl() answers for it and goes on answering for it.
+    return (p[0] * _LDU_MM, -p[2] * _LDU_MM, -p[1] * _LDU_MM)
 
 
 def _normal(a, b, c):
@@ -1046,9 +1052,9 @@ def _solid_from_mesh(tris):
     # leaves faces disagreeing about which way they face.
     sewer = BRepBuilderAPI_Sewing(_SEW_TOL_MM, True, True, False, False)
     for a, b, c in tris:
-        # _scaled() negates Y, and a reflection turns every triangle inside
-        # out, so two vertices are swapped back as it happens - the same
-        # bargain _write_binary_stl() makes.
+        # _scaled() is a reflection, and a reflection turns every triangle
+        # inside out, so two vertices are swapped back as it happens - the
+        # same bargain _write_binary_stl() makes.
         a, b, c = _scaled(a), _scaled(c), _scaled(b)
         if _normal(a, b, c) is None:
             continue
@@ -1120,8 +1126,9 @@ def _solid_from_mesh(tris):
 def _write_binary_stl(tris, path):
     facets = []
     for a, b, c in tris:
-        # _scaled() negates Y, and a reflection turns every triangle it passes
-        # through inside out, so two vertices are swapped back as it happens.
+        # _scaled() is a reflection, and a reflection turns every triangle it
+        # passes through inside out, so two vertices are swapped back as it
+        # happens.
         # Without this the winding _mesh() worked out means the opposite thing
         # in millimetres from what it meant in LDraw units, and the part comes
         # out with its whole surface facing inward and its volume negative.

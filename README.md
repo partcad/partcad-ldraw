@@ -76,6 +76,24 @@ Two mechanisms are combined:
    as a shell, exactly as every part did before; so does one whose solid the
    kernel will not certify. The step can only improve a part or leave it alone.
 
+## Which way is up
+
+LDraw's up is `-Y`; PartCAD's is `+Z`. The wrapper reconciles them, so a part
+served from here stands on the XY plane like every other PartCAD part, and the
+stud grid is XY rather than XZ. In full, a point at LDraw `(x, y, z)` comes out
+at `(x, -z, -y) * 0.4` millimetres.
+
+Ports make the same turn, in `_port()` — a port is a position *and* a roll, and
+both are turned, so a port goes on landing on the geometry it names. Nothing
+about a *connection* changes: studs still mate anti-studs, and an assembly built
+out of `connect:` is untouched by this.
+
+What does change is an assembly that placed an LDraw part by hand. A `location:`
+written to stand a part upright — a quarter turn about X — is now exactly that
+turn too many, and should be deleted. Any other `location:` that *rotates* wants
+re-deriving, because it composes with a part that starts out somewhere new. One
+that only translates still means what it meant.
+
 ## Rebuilding the index
 
 Run it when LDraw publishes a library update, and commit the result:
