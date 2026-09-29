@@ -109,20 +109,35 @@ AXLE = "//pub/universe/lego:technic-axle"
 AXLE_HOLE = "//pub/universe/lego:technic-axle-hole"
 
 
+def test_a_port_is_turned_upright_with_the_geometry_it_describes():
+    # '_scaled' stands the mesh up in Z; a port has to make the same turn or it
+    # stops landing on the surface it names. So the studs of a 1 x 2 are on its
+    # top face at z = 0, 8 mm apart along X, and the anti-studs are a brick
+    # below them at z = -9.6 - not 8 mm apart along Z as they were when the
+    # parts came out Y-up.
+    brick = plugin._lego_implements("Brick  1 x  2")
+    assert sorted(p[0] for p in brick[STUD].values()) == [[-4, 0, 0], [4, 0, 0]]
+    assert sorted(p[0] for p in brick[ANTI].values()) == [[-4, 0, -9.6], [4, 0, -9.6]]
+    # A stud's own +Z is the world's, so it needs no rotation at all; an
+    # anti-stud faces the other way, into the part above it.
+    assert _Placement.of(brick[STUD]["c0r0"]).axis((0, 0, 1)) == pytest.approx((0, 0, 1), abs=1e-6)
+    assert _Placement.of(brick[ANTI]["c0r0"]).axis((0, 0, 1)) == pytest.approx((0, 0, -1), abs=1e-6)
+
+
 def test_brick_carries_a_stud_and_an_anti_stud_per_stud():
     implements = plugin._lego_implements("Brick  2 x  4")
     assert set(implements) == {STUD, ANTI}
     assert len(implements[STUD]) == 8 and len(implements[ANTI]) == 8
     # The 2 x 4 is 2 studs deep (Z) and 4 long (X), on an 8 mm grid.
-    assert implements[STUD]["c0r0"] == [[-12.0, 0, -4.0], [1, 0, 0], 270]
-    assert implements[STUD]["c3r1"] == [[12.0, 0, 4.0], [1, 0, 0], 270]
+    assert implements[STUD]["c0r0"] == [[-12, 4, 0], [0, 0, 1], 0]
+    assert implements[STUD]["c3r1"] == [[12, -4, 0], [0, 0, 1], 0]
     # The anti-studs are the same grid on the part's own bottom plane.
-    assert implements[ANTI]["c0r0"] == [[-12.0, -9.6, -4.0], [1, 1, -1], 120]
+    assert implements[ANTI]["c0r0"] == [[-12, 4, -9.6], [1, 1, 0], 180]
 
 
 def test_tile_has_no_studs_and_a_plate_is_thinner():
     assert set(plugin._lego_implements("Tile  2 x  2")) == {ANTI}
-    assert plugin._lego_implements("Plate  1 x  2")[ANTI]["c0r0"][0] == [-4.0, -3.2, 0.0]
+    assert plugin._lego_implements("Plate  1 x  2")[ANTI]["c0r0"][0] == [-4, 0, -3.2]
 
 
 def test_a_third_dimension_is_not_a_second_one():
@@ -141,21 +156,21 @@ def test_technic_brick_with_holes_gets_studs_and_holes_between_them():
     # Three holes, each between two studs: 4 mm below the top plane, through
     # the part's two 1-stud-wide faces.
     assert len(implements[PIN_HOLE]) == 6
-    assert implements[PIN_HOLE]["h0-front"] == [[-8.0, -4.0, 4.0], [0, 0, 1], 0]
-    assert implements[PIN_HOLE]["h0-back"] == [[-8.0, -4.0, -4.0], [1, 0, 0], 180]
-    assert implements[PIN_HOLE]["h1-front"][0] == [0.0, -4.0, 4.0]
-    assert implements[PIN_HOLE]["h2-front"][0] == [8.0, -4.0, 4.0]
+    assert implements[PIN_HOLE]["h0-front"] == [[-8, -4, -4], [1, 0, 0], 90]
+    assert implements[PIN_HOLE]["h0-back"] == [[-8, 4, -4], [1, 0, 0], 270]
+    assert implements[PIN_HOLE]["h1-front"][0] == [0, -4, -4]
+    assert implements[PIN_HOLE]["h2-front"][0] == [8, -4, -4]
 
 
 def test_technic_brick_hole_shapes_of_the_short_bricks():
     # "with Hole" is one hole on the center line (3700 is a 1 x 2, 6541 a 1 x 1).
     for desc in ("Technic Brick  1 x  2 with Hole", "Technic Brick  1 x  1 with Hole"):
         holes = plugin._lego_implements(desc)[PIN_HOLE]
-        assert len(holes) == 2 and holes["h0-front"][0] == [0.0, -4.0, 4.0]
+        assert len(holes) == 2 and holes["h0-front"][0] == [0, -4, -4]
     # The 1 x 2 "with Holes" (32000) is the exception: two holes, under the studs.
     holes = plugin._lego_implements("Technic Brick  1 x  2 with Holes")[PIN_HOLE]
     assert len(holes) == 4
-    assert [holes["h0-front"][0], holes["h1-front"][0]] == [[-4.0, -4.0, 4.0], [4.0, -4.0, 4.0]]
+    assert [holes["h0-front"][0], holes["h1-front"][0]] == [[-4, -4, -4], [4, -4, -4]]
 
 
 def test_technic_brick_with_axlehole():
@@ -167,8 +182,8 @@ def test_technic_brick_with_axlehole():
     ):
         implements = plugin._lego_implements(desc)
         assert set(implements) == {STUD, ANTI, AXLE_HOLE}
-        assert implements[AXLE_HOLE]["axle-front"] == [[0.0, -4.0, 4.0], [0, 0, 1], 0]
-        assert implements[AXLE_HOLE]["axle-back"] == [[0.0, -4.0, -4.0], [1, 0, 0], 180]
+        assert implements[AXLE_HOLE]["axle-front"] == [[0, -4, -4], [1, 0, 0], 90]
+        assert implements[AXLE_HOLE]["axle-back"] == [[0, 4, -4], [1, 0, 0], 270]
 
 
 def test_technic_beam_holes_run_the_other_way_and_it_has_no_studs():
@@ -176,34 +191,34 @@ def test_technic_beam_holes_run_the_other_way_and_it_has_no_studs():
     assert set(implements) == {PIN_HOLE}
     assert len(implements[PIN_HOLE]) == 10
     # A beam lies along Z, is 8 mm thick along Y, and its holes go through that.
-    assert implements[PIN_HOLE]["h0-top"] == [[0, 4.0, -16.0], [1, 0, 0], 270]
-    assert implements[PIN_HOLE]["h0-bottom"] == [[0, -4.0, -16.0], [1, 0, 0], 90]
-    assert implements[PIN_HOLE]["h4-top"][0] == [0.0, 4.0, 16.0]
+    assert implements[PIN_HOLE]["h0-top"] == [[0, 16, 4], [0, 0, 1], 0]
+    assert implements[PIN_HOLE]["h0-bottom"] == [[0, 16, -4], [1, 0, 0], 180]
+    assert implements[PIN_HOLE]["h4-top"][0] == [0, -16, 4]
 
 
 def test_technic_axle_ends_point_at_each_other():
     implements = plugin._lego_implements("Technic Axle  4")
     assert set(implements) == {AXLE}
     # 4 modules = 32 mm along X, centered; each port's Z points down the shaft.
-    assert implements[AXLE]["left"] == [[-16.0, 0, 0], [0, 1, 0], 90]
-    assert implements[AXLE]["right"] == [[16.0, 0, 0], [0, 1, 0], 270]
-    assert plugin._lego_implements("Technic Axle 32")[AXLE]["right"][0] == [128.0, 0, 0]
+    assert implements[AXLE]["left"] == [[-16, 0, 0], [1, 1, 1], 120]
+    assert implements[AXLE]["right"] == [[16, 0, 0], [-1, 1, 1], 240]
+    assert plugin._lego_implements("Technic Axle 32")[AXLE]["right"][0] == [128, 0, 0]
 
 
 def test_technic_pins():
     # A 2-module pin: one collar, in the middle, with a pin either side of it.
     for desc in ("Technic Pin", "Technic Pin with Friction", "Technic Pin with Friction and Slots"):
         pins = plugin._lego_implements(desc)[PIN]
-        assert pins["left"] == [[0, 0, 0], [0, 1, 0], 270]
-        assert pins["right"] == [[0, 0, 0], [0, 1, 0], 90]
+        assert pins["left"] == [[0, 0, 0], [-1, 1, 1], 240]
+        assert pins["right"] == [[0, 0, 0], [1, 1, 1], 120]
     # A 3-module pin has two collars, half a module either side of the middle.
     pins = plugin._lego_implements("Technic Pin Long")[PIN]
-    assert [pins["left"][0], pins["right"][0]] == [[-4.0, 0, 0], [4.0, 0, 0]]
+    assert [pins["left"][0], pins["right"][0]] == [[-4, 0, 0], [4, 0, 0]]
     # The 1/2 pin is a pin one way and a stud the other.
     half = plugin._lego_implements("Technic Pin  1/2")
     assert set(half) == {PIN, STUD}
-    assert half[PIN]["left"] == [[0, 0, 0], [0, 1, 0], 270]
-    assert half[STUD]["stud"] == [[0, 0, 0], [0, 1, 0], 90]
+    assert half[PIN]["left"] == [[0, 0, 0], [-1, 1, 1], 240]
+    assert half[STUD]["stud"] == [[0, 0, 0], [1, 1, 1], 120]
 
 
 def test_a_name_that_says_more_than_the_rule_knows_gets_nothing():
@@ -313,10 +328,10 @@ def test_a_brick_stacks_a_brick_height_above_another():
     brick = plugin._lego_implements("Brick  2 x  4")
     upper = _connect(_Placement(), brick[STUD]["c0r0"], brick[ANTI]["c0r0"])
     assert upper.is_upright()
-    assert upper.position() == (0.0, 9.6, 0.0)
+    assert upper.position() == (0, 0, 9.6)
     # A different stud is the same connection, one grid step along X.
     offset = _connect(_Placement(), brick[STUD]["c1r0"], brick[ANTI]["c0r0"])
-    assert offset.position() == (8.0, 9.6, 0.0)
+    assert offset.position() == (8, 0, 9.6)
 
 
 def test_a_plate_seats_on_a_brick_and_not_inside_it():
@@ -324,7 +339,7 @@ def test_a_plate_seats_on_a_brick_and_not_inside_it():
     plate = plugin._lego_implements("Plate  2 x  4")
     where = _connect(_Placement(), brick[STUD]["c0r0"], plate[ANTI]["c0r0"])
     # The plate's own bottom plane (y = -3.2) lands on the brick's top (y = 0).
-    assert where.at((0, -3.2, 0)) == (0.0, 0.0, 0.0)
+    assert where.at((0, 0, -3.2)) == (0, 0, 0)
 
 
 def test_a_pin_goes_into_a_beam_and_a_second_beam_onto_the_pin():
@@ -334,14 +349,14 @@ def test_a_pin_goes_into_a_beam_and_a_second_beam_onto_the_pin():
     # The pin's right-hand half enters the middle hole through the beam's top
     # face: the collar lands on that face and the pin points into the material.
     placed_pin = _connect(_Placement(), beam[PIN_HOLE]["h2-top"], pin["right"])
-    assert placed_pin.position() == (0.0, 4.0, 0.0)
-    assert placed_pin.axis((1, 0, 0)) == (0.0, -1.0, 0.0)
+    assert placed_pin.position() == (0, 0, 4)
+    assert placed_pin.axis((1, 0, 0)) == (0, 0, -1)
 
     # A second beam hangs its own hole on the half of the pin still sticking
     # out: it ends up parallel to the first one, one beam thickness above it.
     second = _connect(placed_pin, pin["left"], beam[PIN_HOLE]["h2-bottom"])
     assert second.is_upright()
-    assert second.position() == (0.0, 8.0, 0.0)
+    assert second.position() == (0, 0, 8)
 
 
 def test_a_pin_joins_two_technic_bricks_face_to_face():
@@ -351,20 +366,20 @@ def test_a_pin_joins_two_technic_bricks_face_to_face():
     second = _connect(placed_pin, pin["left"], brick[PIN_HOLE]["h1-back"])
     # Both bricks upright, touching along the faces the pin went through.
     assert second.is_upright()
-    assert second.position() == (0.0, 0.0, 8.0)
+    assert second.position() == (0, -8, 0)
 
 
 def test_an_axle_lies_through_an_axle_hole_and_moveZ_pushes_it_further():
     brick = plugin._lego_implements("Technic Brick  1 x  2 with Reduced Axlehole")
     axle = plugin._lego_implements("Technic Axle  4")
     placed = _connect(_Placement(), brick[AXLE_HOLE]["axle-front"], axle[AXLE]["left"])
-    # The axle's left end sits in the mouth of the hole (z = 4) and the shaft
-    # runs from there through the brick, along -Z.
-    assert placed.at((-16.0, 0, 0)) == (0.0, -4.0, 4.0)
-    assert placed.at((16.0, 0, 0)) == (0.0, -4.0, -28.0)
+    # The axle's left end sits in the mouth of the hole (y = -4) and the shaft
+    # runs from there through the brick, along +Y.
+    assert placed.at((-16, 0, 0)) == (0, -4, -4)
+    assert placed.at((16, 0, 0)) == (0, 28, -4)
     # 'moveZ' is the freedom the interface declares: it drives the axle in.
     deeper = _connect(_Placement(), brick[AXLE_HOLE]["axle-front"], axle[AXLE]["left"], _Placement((0, 0, 8.0)))
-    assert deeper.at((-16.0, 0, 0)) == (0.0, -4.0, -4.0)
+    assert deeper.at((-16, 0, 0)) == (0, 4, -4)
 
 
 def test_a_half_pin_carries_a_brick_on_its_stud():
@@ -373,11 +388,11 @@ def test_a_half_pin_carries_a_brick_on_its_stud():
     brick = plugin._lego_implements("Brick  2 x  4")
     # Its pin end goes into a beam...
     placed = _connect(_Placement(), beam[PIN_HOLE]["h1-top"], half[PIN]["left"])
-    assert placed.position() == (0.0, 4.0, 0.0)
+    assert placed.position() == (0, 0, 4)
     # ... and its stud takes an ordinary brick, which is what the part is for.
     on_top = _connect(placed, half[STUD]["stud"], brick[ANTI]["c0r0"])
     # The brick's bottom plane ends up on the stud, which points straight up.
-    assert on_top.at((-12.0, -9.6, -4.0)) == (0.0, 4.0, 0.0)
+    assert on_top.at((-12, 4, -9.6)) == (0, 0, 4)
 
 
 # --- the demo assemblies ----------------------------------------------------
@@ -481,9 +496,9 @@ def test_duplo_is_the_stud_system_at_twice_the_size():
     implements = plugin._lego_implements("Duplo Brick  2 x  4")
     assert set(implements) == {DUPLO_STUD, DUPLO_ANTI}
     studs = {tuple(port[0]) for port in implements[DUPLO_STUD].values()}
-    assert studs == {(x, 0.0, z) for x in (-24.0, -8.0, 8.0, 24.0) for z in (-8.0, 8.0)}
+    assert studs == {(x, y, 0.0) for x in (-24.0, -8.0, 8.0, 24.0) for y in (-8.0, 8.0)}
     # ... on a body 19.2 mm deep, both twice the system brick
-    assert {port[0][1] for port in implements[DUPLO_ANTI].values()} == {-19.2}
+    assert {port[0][2] for port in implements[DUPLO_ANTI].values()} == {-19.2}
 
 
 def test_duplo_takes_only_the_plain_name():
@@ -500,7 +515,7 @@ def test_minifig_parts_carry_the_joints_of_their_class():
     assert set(torso) == {NECK, WAIST_SOCKET}
     assert set(hips) == {WAIST}
     # The head's top is an ordinary system stud, so hats and hair need nothing new.
-    assert head[STUD]["stud"] == [[0, 0, 0], [1, 0, 0], 270]
+    assert head[STUD]["stud"] == [[0, 0, 0], [0, 0, 1], 0]
 
 
 def test_a_sculpted_head_is_not_a_standard_one():
@@ -516,10 +531,10 @@ def test_gear_teeth_and_gaps_sit_on_the_pitch_circle():
     for ports in (implements[GEAR_TOOTH], implements[GEAR_GAP]):
         for port in ports.values():
             x, y, z = port[0]
-            assert abs(math.hypot(x, y) - 12.0) < 1e-3 and z == 0
+            assert abs(math.hypot(x, z) - 12.0) < 1e-3 and y == 0
     # Tooth 0 is on the +X axis and the gap that follows it half a pitch on.
-    assert implements[GEAR_TOOTH]["t0"][0] == [12.0, 0.0, 0]
-    assert implements[GEAR_GAP]["g0"][0] == pytest.approx([11.8973, 1.5663, 0], abs=1e-3)  # half a pitch on: 7.5 deg
+    assert implements[GEAR_TOOTH]["t0"][0] == [12, 0, 0]
+    assert implements[GEAR_GAP]["g0"][0] == pytest.approx([11.8973, 0, 1.5663], abs=1e-3)  # half a pitch on: 7.5 deg
 
 
 def test_a_gear_the_system_does_not_cut_is_left_alone():
@@ -545,7 +560,7 @@ def test_duplo_bricks_stack_a_duplo_height_apart():
     brick = plugin._lego_implements("Duplo Brick  2 x  4")
     upper = _connect(_Placement(), brick[DUPLO_STUD]["c0r0"], brick[DUPLO_ANTI]["c0r0"])
     assert upper.is_upright()
-    assert upper.position() == (0.0, 19.2, 0.0)
+    assert upper.position() == (0, 0, 19.2)
 
 
 def test_a_minifig_stacks_the_way_ldraw_draws_one():
@@ -554,10 +569,10 @@ def test_a_minifig_stacks_the_way_ldraw_draws_one():
     hips = plugin._lego_implements("Minifig Hips")
     on_hips = _connect(_Placement(), hips[WAIST]["waist"], torso[WAIST_SOCKET]["waist"])
     assert on_hips.is_upright()
-    assert on_hips.position() == (0.0, 12.8, 0.0)  # 32 LDU, as 979 and 980 place it
+    assert on_hips.position() == (0, 0, 12.8)  # 32 LDU, as 979 and 980 place it
     on_torso = _connect(on_hips, torso[NECK]["neck"], head[NECK_SOCKET]["neck"])
     assert on_torso.is_upright()
-    assert on_torso.position() == (0.0, 24.0, 0.0)  # a further 28 LDU
+    assert on_torso.position() == (0, 0, 24)  # a further 28 LDU
 
 
 def test_a_tyre_fits_a_wheel_concentrically():
@@ -577,7 +592,7 @@ def test_meshing_gears_end_up_a_pitch_radius_apart_and_coplanar():
     assert math.hypot(*placed.position()[:2]) == pytest.approx(16.0, abs=1e-3)
     # And the small gear's axle stays parallel to the big one's: a mesh that
     # tipped the second gear would be no mesh at all.
-    assert placed.axis((0, 0, 1)) == pytest.approx((0.0, 0.0, 1.0), abs=1e-6)
+    assert placed.axis((0, -1, 0)) == pytest.approx((0, -1, 0), abs=1e-6)
 
 
 def test_gears_of_every_size_mesh_at_the_distance_they_are_cut_for():
@@ -795,12 +810,12 @@ def test_a_u_prefixed_file_is_a_part_and_a_hyphenated_one_is_not():
 
 def test_geometry_ports_land_where_the_geometry_says(fake_library):
     implements = plugin._geometry_connector_implements("3700")
-    # LDraw (0, 10, 10) is (0, -4, 4) once the wrapper has meshed it, and the
+    # LDraw (0, -10, 10) is (0, -4, -4) once the wrapper has meshed it, and the
     # port faces out of the part, the way the name-derived holes do.
     port = implements[PIN_HOLE]["h0"]
-    assert port[0] == [0.0, -4.0, 4.0]
+    assert port[0] == [0, -4, -4]
     turned = _Placement.of(port)
-    assert turned.axis((0, 0, 1)) == pytest.approx((0.0, 0.0, 1.0), abs=1e-6)
+    assert turned.axis((0, -1, 0)) == pytest.approx((0, 0, -1), abs=1e-6)
 
 
 def test_an_orientation_survives_the_round_trip():
@@ -862,7 +877,7 @@ def test_the_corner_brick_gets_the_studs_it_has(fake_library):
     studs = implements[STUD]
     # three, not the four the name implies, and on the part's own origin
     assert len(studs) == 3
-    assert sorted(p[0] for p in studs.values()) == [[0.0, 0.0, 0.0], [0.0, 0.0, 8.0], [8.0, 0.0, 0.0]]
+    assert sorted(p[0] for p in studs.values()) == [[0, -8, 0], [0, 0, 0], [8, 0, 0]]
     # and the underside matches: the two solid tubes put three anti-studs under
     # the three studs, where the name put four in a square
     assert len(implements[ANTI]) == 3
@@ -917,10 +932,10 @@ def test_an_open_tube_is_four_anti_studs_and_a_solid_one_is_two(fake_library):
     # 2 x 2: one "Stud Tube Open" at the centre of the four
     square = plugin._geometry_anti_studs("3003")
     assert len(square) == 4
-    assert sorted(p[0][:1] + p[0][2:] for p in square.values()) == [[-4.0, -4.0], [-4.0, 4.0], [4.0, -4.0], [4.0, 4.0]]
+    assert sorted(p[0][:2] for p in square.values()) == [[-4.0, -4.0], [-4.0, 4.0], [4.0, -4.0], [4.0, 4.0]]
     # 1 x 2: one "Stud Tube Solid" between the two, and the studs say which axis
     strip = plugin._geometry_anti_studs("3004")
-    assert sorted(p[0] for p in strip.values()) == [[-4.0, -9.6, 0.0], [4.0, -9.6, 0.0]]
+    assert sorted(p[0] for p in strip.values()) == [[-4, 0, -9.6], [4, 0, -9.6]]
 
 
 def test_a_cone_s_bore_is_an_anti_stud_in_the_middle_of_its_underside(fake_library):
@@ -932,10 +947,10 @@ def test_a_cone_s_bore_is_an_anti_stud_in_the_middle_of_its_underside(fake_libra
     # anti-studs only at the corners, and they never coincide.
     cone = plugin._lego_implements("Cone  2 x  2 x  2 with Hollow Stud Open", "3942c")
     assert sorted(cone[ANTI]) == ["c0r0", "c0r1", "c1r0", "c1r1", "centre"]
-    assert cone[ANTI]["centre"][0] == [0.0, -19.2, 0.0]
-    assert cone[ANTI]["centre"][1:] == [list(plugin._ANTI_STUD_ROT[0]), plugin._ANTI_STUD_ROT[1]]
+    assert cone[ANTI]["centre"][0] == [0, 0, -19.2]
+    assert cone[ANTI]["centre"][1:] == plugin._port((0, 0, 0), plugin._ANTI_STUD_ROT)[1:]
     # ...and the stud on the next one down is on that very spot
-    assert cone[STUD]["c0r0"][0] == [0.0, 0.0, 0.0]
+    assert cone[STUD]["c0r0"][0] == [0, 0, 0]
 
 
 def test_a_cone_s_corners_keep_the_names_they_have_always_had(fake_library):
@@ -943,7 +958,7 @@ def test_a_cone_s_corners_keep_the_names_they_have_always_had(fake_library):
     # Called c1r1 it would be the middle of a three-by-three, which would move
     # every corner's name along and break an assembly that already says c1r1.
     corners = plugin._lego_implements("Cone  2 x  2 x  2 with Hollow Stud Open", "3942c")[ANTI]
-    assert corners["c1r1"][0] == [4.0, -19.2, 4.0]
+    assert corners["c1r1"][0] == [4, -4, -19.2]
 
 
 def test_a_brick_s_bore_is_left_unsaid(fake_library):
@@ -960,7 +975,7 @@ def test_a_cone_with_a_tube_at_each_corner_is_left_as_it_is(fake_library):
     anti = plugin._lego_implements("Cone  3 x  3 x  2", "6233")[ANTI]
     assert len(anti) == 9
     assert "centre" not in anti
-    assert anti["c1r1"][0] == [0.0, -19.2, 0.0]
+    assert anti["c1r1"][0] == [0, 0, -19.2]
 
 
 def test_a_tube_that_is_not_at_a_cone_s_base_is_not_its_bore(fake_library):
@@ -983,7 +998,7 @@ def test_an_inverted_cone_stands_on_its_bore_alone(fake_library):
     # in the name is the rim it is inverted from, not the base.
     cone = plugin._lego_implements("Cone  2 x  2 x  2 Inverted", "49309")
     assert sorted(cone[ANTI]) == ["centre"]
-    assert cone[ANTI]["centre"][0] == [0.0, -19.2, 0.0]
+    assert cone[ANTI]["centre"][0] == [0, 0, -19.2]
     # the four studs on the rim are its own and stay
     assert sorted(cone[STUD]) == ["c0r0", "c0r1", "c1r0", "c1r1"]
 
@@ -1034,9 +1049,9 @@ def test_a_round_plate_one_stud_across_stands_on_its_bore_too(fake_library):
     # two agree, the port keeps the name the name rule gave it.
     plate = plugin._lego_implements("Plate  1 x  1 Round", "6141")
     assert sorted(plate[ANTI]) == ["c0r0"]
-    assert plate[ANTI]["c0r0"][0] == [0.0, -3.2, 0.0]
+    assert plate[ANTI]["c0r0"][0] == [0, 0, -3.2]
     # ...directly under the one stud it has
-    assert plate[STUD]["c0r0"][0] == [0.0, 0.0, 0.0]
+    assert plate[STUD]["c0r0"][0] == [0, 0, 0]
 
 
 def test_a_brick_two_studs_across_keeps_the_four_cells_it_has(fake_library):
@@ -1096,7 +1111,7 @@ def test_the_corner_brick_gets_the_underside_it_has(fake_library):
     anti = plugin._lego_implements("Brick  2 x  2 Corner", "2357")[ANTI]
     # three, under its three studs, not the four the name implies
     assert len(anti) == 3
-    assert sorted(p[0] for p in anti.values()) == [[0.0, -9.6, 0.0], [0.0, -9.6, 8.0], [8.0, -9.6, 0.0]]
+    assert sorted(p[0] for p in anti.values()) == [[0, -8, -9.6], [0, 0, -9.6], [8, 0, -9.6]]
 
 
 def test_a_part_the_tubes_do_not_settle_keeps_the_name_grid(fake_library):
@@ -1120,15 +1135,15 @@ def test_the_three_quarter_pin_says_which_end_is_which():
     # toward +X; the name says neither, which is why this needed the geometry
     pin = plugin._lego_implements("Technic Pin  3/4")[PIN]
     assert sorted(pin) == ["left", "rightHalf"]
-    assert pin["left"][1:] == [list(plugin._Z_TO_MINUS_X[0]), plugin._Z_TO_MINUS_X[1]]
-    assert pin["rightHalf"][1:] == [list(plugin._Z_TO_PLUS_X[0]), plugin._Z_TO_PLUS_X[1]]
+    assert pin["left"][1:] == plugin._port((0, 0, 0), plugin._Z_TO_MINUS_X)[1:]
+    assert pin["rightHalf"][1:] == plugin._port((0, 0, 0), plugin._Z_TO_PLUS_X)[1:]
 
 
 def test_an_axle_hole_has_a_mouth_at_each_end_of_its_stretch(fake_library):
     holes = plugin._lego_implements("Electric Mindstorms Test Motor", "99999a")[AXLE_HOLE]
     # two mouths, at the two ends of the 20 LDU the matrix stretches it over
     assert len(holes) == 2
-    assert sorted(p[0][1] for p in holes.values()) == [-4.0, 4.0]
+    assert sorted(p[0][2] for p in holes.values()) == [-4.0, 4.0]
 
 
 def test_a_perimeter_marks_a_hole_a_whole_form_would_have_missed(fake_library):
@@ -1143,7 +1158,7 @@ def test_a_through_hole_is_two_mouths_and_a_peg_hole_is_one(fake_library):
     beam = plugin._lego_implements("Technic Beam Test", "99999c")[PIN_HOLE]
     assert len(beam) == 2
     # +-10 LDU is +-4 mm once meshed, and each mouth faces out of the part
-    assert sorted(p[0][1] for p in beam.values()) == [-4.0, 4.0]
+    assert sorted(p[0][2] for p in beam.values()) == [-4.0, 4.0]
 
 
 def test_the_middle_of_a_long_pin_is_not_a_pin_end(fake_library):
@@ -1814,13 +1829,13 @@ def test_a_walk_reached_directly_still_gets_a_budget(fake_library):
 def test_a_cone_gets_the_anti_studs_its_base_has():
     got = plugin._cone_implements("Cone  2 x  2 x  2 with Hollow Stud and Axlehole Teeth")
     assert sorted(got[ANTI]) == ["c0r0", "c0r1", "c1r0", "c1r1"]
-    assert {round(port[0][1], 2) for port in got[ANTI].values()} == {-19.2}
+    assert {round(port[0][2], 2) for port in got[ANTI].values()} == {-19.2}
 
 
 def test_a_cone_written_without_a_height_is_one_brick_tall():
     got = plugin._cone_implements("Cone  1 x  1")
     assert sorted(got[ANTI]) == ["c0r0"]
-    assert {round(port[0][1], 2) for port in got[ANTI].values()} == {-9.6}
+    assert {round(port[0][2], 2) for port in got[ANTI].values()} == {-9.6}
 
 
 def test_a_cone_is_given_no_studs_by_its_name():
@@ -1834,7 +1849,7 @@ def test_a_cone_s_third_dimension_is_its_height_rather_than_a_reason_to_refuse()
     # would be wrong: for a cone the third number is what makes it right.
     tall = plugin._cone_implements("Cone  2 x  2 x  6")
     assert len(tall[ANTI]) == 4
-    assert {round(port[0][1], 2) for port in tall[ANTI].values()} == {-57.6}
+    assert {round(port[0][2], 2) for port in tall[ANTI].values()} == {-57.6}
 
 
 def test_a_cone_with_an_inside_is_left_to_the_geometry():

@@ -392,13 +392,24 @@ def _facets(tris):
     return out
 
 
+def test_ldraw_s_up_comes_out_as_partcad_s_up():
+    # LDraw's up is -Y: the top of a one-brick-tall part is at y = -24 LDU and
+    # its underside at y = 0. PartCAD's up is +Z, so the top has to come out
+    # 9.6 mm along +Z, and LDraw's XZ stud grid has to become the XY plane.
+    # This is what saves every assembly from turning each part itself.
+    assert ldraw._scaled((0, -24, 0)) == pytest.approx((0.0, 0.0, 9.6))
+    assert ldraw._scaled((0, 0, 0)) == pytest.approx((0.0, 0.0, 0.0))
+    assert ldraw._scaled((20, 0, 20)) == pytest.approx((8.0, -8.0, 0.0))
+
+
 def test_a_surface_facing_ldraw_s_up_still_faces_up_in_millimetres():
-    # This triangle's outward side is -Y, which is up in LDraw. Y is negated
-    # on the way to millimetres, so up is +Y there, and that is where the
-    # normal has to end up. Without the reversal it comes out as -Y: the part
-    # is inside out, and its volume is negative.
+    # This triangle's outward side is -Y, which is up in LDraw. The part is
+    # turned a quarter about X on the way to millimetres, so up is +Z there,
+    # and that is where the normal has to end up. Without the reversal that
+    # answers for the reflection it comes out as -Z: the part is inside out,
+    # and its volume is negative.
     (facet,) = _facets([((0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 1.0))])
-    assert facet[0:3] == pytest.approx((0.0, 1.0, 0.0), abs=1e-6)
+    assert facet[0:3] == pytest.approx((0.0, 0.0, 1.0), abs=1e-6)
 
 
 def test_the_facet_normal_says_the_same_thing_as_the_vertices_beside_it():

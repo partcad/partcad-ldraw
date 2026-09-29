@@ -118,14 +118,16 @@ interfaces:
   # from the part's "<type> A x B" name.
   #
   # Coordinates are in the meshed part-space (the wrapper meshes each .dat as
-  # (x, -y, z) * 0.4, so +Y is up). A stud port's Z points up (+Y) out of the top
-  # plane (y = 0); an anti-stud port's Z points down (-Y) into the part's bottom
-  # plane (y = -9.6 mm for a brick, -3.2 mm for a plate or tile). With that
+  # (x, -z, -y) * 0.4, which is LDraw's -Y up turned onto PartCAD's +Z, so a
+  # part stands up the way every other PartCAD part does). A stud port's Z
+  # points up (+Z) out of the top plane (z = 0); an anti-stud port's Z points
+  # down (-Z) into the part's bottom plane (z = -9.6 mm for a brick, -3.2 mm
+  # for a plate or tile). With that
   # pairing the 180-degree mate flip about [1,1,0] cancels the rotation, so the
   # upper part is translated by exactly stud_pos - anti_stud_pos: aligned studs
   # stack cleanly and a different stud gives an 8 mm-grid offset.
   stud:
-    desc: A LEGO stud (male). Its Z axis points up (+Y), out of the top surface.
+    desc: A LEGO stud (male). Its Z axis points up (+Z), out of the top surface.
     ports:
       stud:
         sketch: stud-sketch
@@ -159,7 +161,7 @@ interfaces:
   anti-stud:
     desc: >-
       A LEGO anti-stud recess (female) on the underside of a part. Its Z axis
-      points down (-Y), into the opening that receives a stud.
+      points down (-Z), into the opening that receives a stud.
     ports:
       anti:
         sketch: stud-sketch
@@ -312,7 +314,7 @@ interfaces:
   duplo-stud:
     desc: >-
       A Duplo stud (male), 9.6 mm across on a 16 mm grid. Its Z axis points up
-      (+Y), out of the top surface.
+      (+Z), out of the top surface.
     ports:
       stud:
         sketch: duplo-stud-sketch
@@ -323,7 +325,7 @@ interfaces:
   duplo-anti-stud:
     desc: >-
       A Duplo anti-stud recess (female) on the underside of a Duplo part. Its Z
-      axis points down (-Y), out of the opening that receives a stud.
+      axis points down (-Z), out of the opening that receives a stud.
     ports:
       anti:
         sketch: duplo-stud-sketch
@@ -338,7 +340,7 @@ interfaces:
   # Both joints turn: a minifig's head and legs are meant to be posed.
   minifig-neck:
     desc: >-
-      The neck stud on top of a minifig torso (male). Its Z axis points up (+Y),
+      The neck stud on top of a minifig torso (male). Its Z axis points up (+Z),
       out of the shoulder plane the head's rim rests on.
     ports:
       neck:
@@ -357,7 +359,7 @@ interfaces:
       axis: [0, 0, 1]
   minifig-neck-socket:
     desc: >-
-      The socket under a minifig head (female). Its Z axis points down (-Y), out
+      The socket under a minifig head (female). Its Z axis points down (-Z), out
       of the opening that receives the neck.
     ports:
       neck:
@@ -377,7 +379,7 @@ interfaces:
   minifig-waist:
     desc: >-
       The waist stud on top of a pair of minifig hips (male). Its Z axis points
-      up (+Y), out of the plane the torso sits on.
+      up (+Z), out of the plane the torso sits on.
     ports:
       waist:
         sketch: minifig-sketch
@@ -395,7 +397,7 @@ interfaces:
   minifig-waist-socket:
     desc: >-
       The opening in the bottom of a minifig torso (female). Its Z axis points
-      down (-Y), out of the opening that receives the waist.
+      down (-Z), out of the opening that receives the waist.
     ports:
       waist:
         sketch: minifig-sketch
