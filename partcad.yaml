@@ -47,8 +47,11 @@ dependencies:
     # walk finishes, which is what the last 198 of them were; v7 serves the axle
     # holes the Mindstorms parts were already known to have but never got; v8
     # reads every part's Technic connectors from its geometry rather than from
-    # the 80 names the rules happened to cover.
-    cacheVersion: 8
+    # the 80 names the rules happened to cover; v9 turned every part upright,
+    # which moves every port and re-meshes every part - and, because the key
+    # also names the directory the plugin's own files are materialized into, is
+    # what makes a cached 'ldraw.py' from before the turn stop being served.
+    cacheVersion: 9
 
 repositories:
   ldraw_repo:
