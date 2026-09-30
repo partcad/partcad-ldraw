@@ -261,7 +261,18 @@ interfaces:
         dir: [0, 0, 1]
     # The collar seats against the face, so the depth is not free: a pin either
     # is in the hole or is not.
-    mates: technic-pin-hole
+    mates:
+      technic-pin-hole:
+        # A Technic pin is slotted and ridged at each end, and it goes in by
+        # squeezing the slot shut past the lip of the hole, which it then springs
+        # open behind. A model holds no springs, so it holds the ridge inside the
+        # lip, and PartCAD's interference test is told that this overlap is the
+        # joint rather than a fault. Nothing else about a pin excuses one: a pin
+        # that also reaches into a part it is not joined to still shows.
+        #
+        # Said of the pairing and not of either interface: an axle goes into the
+        # same round hole and snaps past nothing.
+        snapIn: true
     # The same freedom the hole states from its side.
     motion:
       type: continuous

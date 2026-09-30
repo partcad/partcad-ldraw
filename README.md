@@ -161,7 +161,12 @@ round hole (`turnZ`), an axle slides through one (`moveZ`), and a minifig's head
 and torso turn on their joints. An axle is also the one connector that carries
 several parts on one end - the beams it runs through, bushes, gears and a wheel,
 each at its own `moveZ` - so `technic-axle` says `multiConnect: true`, and
-PartCAD's connectivity test does not report those parts as crowding one port.
+PartCAD's connectivity test does not report those parts as crowding one port. A pin
+in a round hole is a snap fit - its slotted end is squeezed past the lip and
+springs open behind it - so that mating says `snapIn: true`, and PartCAD's
+interference test takes the ridge inside the lip for the joint it is. An axle
+snaps past nothing, in a round hole or a cross one, so neither of its matings
+says so: an axle that overlaps the part it goes through is reported.
 
 **Gears** are the interesting case: a mesh is a port pair once each tooth and
 each gap is a port. LEGO gears are cut to one module, so a port on the pitch
