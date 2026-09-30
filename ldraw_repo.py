@@ -32,6 +32,27 @@ import urllib.parse
 import urllib.request
 import zipfile
 
+# When this plugin's answers stopped meaning what they meant before.
+#
+# PartCAD keys the cache of everything this returns - and the directory the
+# plugin's own files are materialized into - on this number. Nothing else tells
+# it that the code has moved on, so an existing checkout goes on being served
+# what it cached until this is raised.
+#
+# v1 added the LEGO stud / anti-stud interfaces to every Brick / Plate / Tile;
+# v2 added the Technic interfaces (pin, pin hole, axle, axle hole) and the stud
+# grid of the Technic bricks that carry them; v3 added the gear, minifig, Duplo,
+# wheel/tyre and RJ12 interfaces; v4 moved the studs off the part's name and onto
+# its geometry, which changes which studs a part carries and where; v5 did the
+# same for the anti-studs underneath, and added the headgear socket and the 3/4
+# pin, both of which the geometry settles and a name cannot; v6 raised the
+# geometry walk's budget so that no part is cut off before the walk finishes;
+# v7 serves the axle holes the Mindstorms parts were always known to have; v8
+# reads every part's Technic connectors from its geometry rather than from the
+# 80 names the rules happened to cover; v9 turned every part upright, which
+# moves every port and re-meshes every part.
+CACHE_VERSION = 9
+
 _BASE = "https://library.ldraw.org"
 _CATEGORY_LIST_URL = _BASE + "/parts/category-list"
 _PARTS_LIST_URL = _BASE + "/parts/list?tableFilters%5Bcategory%5D%5Bvalues%5D%5B0%5D="

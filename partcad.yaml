@@ -34,6 +34,12 @@ dependencies:
     type: external
     plugin: :ldraw_repo
     desc: The LDraw parts library, with one sub-package per category.
+    # Kept for PartCAD releases older than partcad/partcad#703, which read the
+    # number from here. From that release on it is the plugin that states it,
+    # as 'CACHE_VERSION' in ldraw_repo.py, and this is ignored with a warning -
+    # so the two have to be raised together until the older releases are no
+    # longer supported, and then this one goes.
+    #
     # Bump whenever ldraw_repo.py changes the shape of the data it returns, so
     # stale entries cached by an older plugin are invalidated. v1 added the LEGO
     # stud / anti-stud interfaces to every Brick / Plate / Tile config; v2 added
