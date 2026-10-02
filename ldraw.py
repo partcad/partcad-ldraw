@@ -1391,7 +1391,6 @@ def _solid_from_regions(tris):
     from OCP.BRepTools import BRepTools
     from OCP.GProp import GProp_GProps
     from OCP.gp import gp_Pnt
-    from OCP.ShapeUpgrade import ShapeUpgrade_UnifySameDomain
     from OCP.TopAbs import TopAbs_FACE, TopAbs_REVERSED, TopAbs_SOLID
     from OCP.TopExp import TopExp_Explorer
     from OCP.TopoDS import TopoDS
@@ -1466,14 +1465,6 @@ def _solid_from_regions(tris):
         if not fuse.IsDone():
             raise LDrawNotSolid("the regions inside it could not be joined")
         result = fuse.Shape()
-
-    # Coplanar triangles merged back into the faces they were cut from: the
-    # same solid with a fraction of the faces, which every later boolean
-    # against the part is the faster for. Kept only if it checks out.
-    unify = ShapeUpgrade_UnifySameDomain(result, True, True, False)
-    unify.Build()
-    if not _solid_problems(unify.Shape()):
-        result = unify.Shape()
 
     props = GProp_GProps()
     BRepGProp.VolumeProperties_s(result, props)
