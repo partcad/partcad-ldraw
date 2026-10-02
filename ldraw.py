@@ -27,7 +27,6 @@ import math
 import os
 import re
 import struct
-import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -76,6 +75,16 @@ _NEGATIVE_TTL = {_MISSING: 7 * 24 * 3600, _UNAVAILABLE: 300}
 # still tried either way, so a wrong guess costs one request and never an
 # answer.
 _PRIMITIVE_RE = re.compile(r"^(?:\d+-\d+|(?:48|8)/)")
+
+
+class LDrawNotSolid(Exception):
+    """A part whose surface could not be turned into a solid.
+
+    Raised rather than handing back the surface: a shell measures, renders and
+    exports like the part, and every boolean taken against it - interference,
+    mass, a cut - answers with a number that means nothing. A part that fails
+    says so; one that is wrong says nothing.
+    """
 
 
 class LDrawSubfileMissing(Exception):
@@ -472,6 +481,28 @@ _PLANAR_LDU = 0.05
 # By the time the mesh is sewn its triangles share vertices exactly, so the
 # kernel is given only enough room for the conversion to millimetres.
 _SEW_TOL_MM = 1e-4
+# How far from flat a hole the plain capping left may be and still be capped
+# on the way to a solid, by a fan from its centre. A Technic friction pin
+# leaves its ridges' footprints open, 0.26 LDU off flat; the side holes of the
+# Power Functions servo leave loops 9.7 LDU off flat, which are the walls of a
+# pin hole's counterbore and nothing a fan describes - capping those would
+# seal the hole a pin goes into. 0.5 LDU is 0.2 mm.
+_SHALLOW_LDU = 0.5
+# How wide a hole may be and still be stitched shut, however far from flat it
+# runs. Most of what is left open is not a missing face but a seam: two of
+# LDraw's surfaces that meet a fraction of a millimetre apart rather than on
+# shared vertices, typically where a 16-sided circle meets a 48-sided one and
+# the chord stands off the arc by more than _TJUNCTION_LDU. Measured on the
+# parts of the LEGO F1 car, those seams are 0.56 to 0.98 LDU across and
+# anything wider (1.2 LDU up) is a face that is missing. Stitching moves no
+# surface; the triangles it adds span the gap and are no further from either
+# side than the gap is wide. 1 LDU is 0.4 mm.
+_SEAM_LDU = 1.0
+# How far a solid built from regions may stray from the volume the surface
+# itself encloses before it is taken to have lost (or gained) part of the
+# part: the larger of this fraction and three standard errors of the sample.
+_VOLUME_SLACK = 0.1
+_VOLUME_SAMPLES = 2000
 
 
 def _weld(tris, tol):
@@ -1156,36 +1187,377 @@ def _resolve_dat(request):
     return dat
 
 
-def _build_shape(tris, uncertified=False):
-    # Pin pyexpat before importing build123d/OCP (see wrapper_import_mesh.py).
-    import pyexpat  # noqa: F401
-    import build123d as b3d
+def _drop_slivers(tris, tol, passes=8):
+    """Take out triangles too thin to have a side, and mend the edge they leave.
 
-    # Close the surface first and build the solid it describes. A part this
-    # cannot close - 6233, Cone 3 x 3 x 2, is one, where hand-written eighth
-    # segments meet 48-sided primitives several LDU away - falls through to
-    # the mesh import below and comes back exactly as it did before.
+    Splitting a T-junction makes them: where the vertex split at sits on the
+    edge of the triangle beside it, that triangle's three corners are on one
+    line. It has no area, so nothing built from the mesh keeps it, and the
+    surface opens along it. Its middle corner lies on its longest edge;
+    splitting the triangle across that edge at the same corner hands the two
+    short edges to a triangle that can carry them, and the sliver can go.
+    """
+    removed = 0
+    for _ in range(passes):
+        walks = {}
+        for i, t in enumerate(tris):
+            for j in range(3):
+                walks[(t[j], t[(j + 1) % 3])] = i
+        drop, replace = set(), {}
+        for i, t in enumerate(tris):
+            if i in drop or i in replace:
+                continue
+            longest, j = max((math.dist(t[(j + 1) % 3], t[j]), j) for j in range(3))
+            p, q, m = t[j], t[(j + 1) % 3], t[(j + 2) % 3]
+            ux, uy, uz = q[0] - p[0], q[1] - p[1], q[2] - p[2]
+            vx, vy, vz = m[0] - p[0], m[1] - p[1], m[2] - p[2]
+            area2 = math.sqrt((uy * vz - uz * vy) ** 2 + (uz * vx - ux * vz) ** 2 + (ux * vy - uy * vx) ** 2)
+            if longest == 0.0 or area2 / longest > tol:
+                continue
+            k = walks.get((q, p))
+            if k is None or k == i or k in drop or k in replace:
+                continue
+            o = tris[k]
+            a = o.index(q)
+            if o[(a + 1) % 3] != p:
+                continue
+            r = o[(a + 2) % 3]
+            replace[k] = [(q, m, r), (m, p, r)]
+            drop.add(i)
+        if not drop:
+            break
+        out = []
+        for i, t in enumerate(tris):
+            if i not in drop:
+                out.extend(replace.get(i, [t]))
+        tris[:] = out
+        removed += len(drop)
+    return removed
+
+
+def _stitch(cap):
+    """Triangles closing a long, thin loop: always across the shortest gap left.
+
+    A seam is two runs of vertices lying side by side, and taking the ear whose
+    new edge is shortest walks down it pairing each vertex with its neighbour
+    across the gap - a zip - rather than reaching from one end to the other.
+    """
+    ring = list(cap)
+    made = []
+    while len(ring) > 3:
+        n = len(ring)
+        i = min(range(n), key=lambda k: math.dist(ring[k - 1], ring[(k + 1) % n]))
+        made.append((ring[i - 1], ring[i], ring[(i + 1) % n]))
+        del ring[i]
+    made.append((ring[0], ring[1], ring[2]))
+    return made
+
+
+def _cap_shallow_loops(tris, tol, seam=0.0):
+    """Close every hole still open that is all but flat, or no wider than 'seam'.
+
+    Returns the holes left open. A fan from the centre of a loop within 'tol'
+    of flat is the surface it is missing; a loop no wider than 'seam' (twice
+    its area over its length) is a seam and is stitched. Anything else would
+    be a guess, and is left for the caller to refuse.
+    """
+    left = 0
+    for loop in _boundary_loops(tris):
+        cap = list(reversed(loop))
+        k = len(cap)
+        centre = tuple(sum(p[i] for p in cap) / k for i in range(3))
+        nx, ny, nz = _newell(cap)
+        size = math.sqrt(nx * nx + ny * ny + nz * nz)
+        if size < 1e-12:
+            left += 1
+            continue
+        off = max(abs((p[0] - centre[0]) * nx + (p[1] - centre[1]) * ny + (p[2] - centre[2]) * nz) for p in cap) / size
+        if off <= tol:
+            tris.extend((cap[i], cap[(i + 1) % k], centre) for i in range(k))
+            continue
+        perimeter = sum(math.dist(cap[i], cap[(i + 1) % k]) for i in range(k))
+        if perimeter > 0.0 and size / perimeter <= seam:  # size is twice the area
+            tris.extend(_stitch(cap))
+            continue
+        left += 1
+    return left
+
+
+def _solid_problems(shape):
+    """What keeps 'shape' from being a part. Empty when it is closed, valid solids and nothing else."""
+    from OCP.BRep import BRep_Tool
+    from OCP.BRepCheck import BRepCheck_Analyzer
+    from OCP.BRepGProp import BRepGProp
+    from OCP.GProp import GProp_GProps
+    from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_FORWARD, TopAbs_REVERSED, TopAbs_SOLID
+    from OCP.TopExp import TopExp, TopExp_Explorer
+    from OCP.TopoDS import TopoDS
+    from OCP.TopTools import TopTools_IndexedDataMapOfShapeListOfShape
+
+    if shape is None or shape.IsNull():
+        return ["nothing was built"]
+    found = []
+    solids = []
+    explorer = TopExp_Explorer(shape, TopAbs_SOLID)
+    while explorer.More():
+        solids.append(explorer.Current())
+        explorer.Next()
+    if not solids:
+        found.append("no solid")
+    if TopExp_Explorer(shape, TopAbs_FACE, TopAbs_SOLID).More():
+        found.append("faces outside any solid")
+    if not BRepCheck_Analyzer(shape).IsValid():
+        found.append("not valid")
+    for solid in solids:
+        # An edge with one face on it is a hole in the surface - unless it is
+        # one a face carries inside itself, which is what INTERNAL says.
+        edges = TopTools_IndexedDataMapOfShapeListOfShape()
+        TopExp.MapShapesAndAncestors_s(solid, TopAbs_EDGE, TopAbs_FACE, edges)
+        for i in range(1, edges.Extent() + 1):
+            edge = TopoDS.Edge_s(edges.FindKey(i))
+            if (
+                edges.FindFromIndex(i).Extent() == 1
+                and not BRep_Tool.Degenerated_s(edge)
+                and edge.Orientation() in (TopAbs_FORWARD, TopAbs_REVERSED)
+            ):
+                found.append("a solid that is open")
+                break
+        props = GProp_GProps()
+        BRepGProp.VolumeProperties_s(solid, props)
+        if props.Mass() <= 0.0:
+            found.append("a solid with no volume inside it")
+    return found
+
+
+def _enclosed_volume(tris_mm):
+    """The volume the surface encloses, by sampling, as (estimate, standard error).
+
+    Asked independently of how the solid was built: a point is inside when the
+    triangles wind around it, which a surface with gaps in it still answers
+    for nearly every point. It is what a solid assembled from regions is held
+    to, so that one that lost the body of the part - a servo reduced to its
+    bosses - is refused instead of returned. The sample is seeded, so a part
+    gets the same answer every time it is built.
+    """
+    import numpy as np
+
+    T = np.array(tris_mm, dtype=float)
+    lo, hi = T.reshape(-1, 3).min(axis=0), T.reshape(-1, 3).max(axis=0)
+    box = float(np.prod(hi - lo))
+    if box <= 0.0:
+        return 0.0, 0.0
+    points = lo + np.random.default_rng(0).random((_VOLUME_SAMPLES, 3)) * (hi - lo)
+    winding = np.zeros(len(points))
+    for start in range(0, len(points), 64):
+        P = points[start : start + 64, None, :]
+        A, B, C = T[None, :, 0] - P, T[None, :, 1] - P, T[None, :, 2] - P
+        la, lb, lc = (np.linalg.norm(X, axis=2) for X in (A, B, C))
+        det = np.einsum("pij,pij->pi", A, np.cross(B, C))
+        dot = (
+            la * lb * lc
+            + np.einsum("pij,pij->pi", A, B) * lc
+            + np.einsum("pij,pij->pi", B, C) * la
+            + np.einsum("pij,pij->pi", C, A) * lb
+        )
+        winding[start : start + 64] = np.sum(2.0 * np.arctan2(det, dot), axis=1) / (4.0 * math.pi)
+    inside = float(np.mean(winding > 0.5))
+    return inside * box, box * math.sqrt(inside * (1.0 - inside) / len(points))
+
+
+def _solid_from_regions(tris):
+    """The solid an LDraw surface encloses, where sewing it into shells cannot.
+
+    LDraw draws a part's surfaces, not its body, and freely lays one surface
+    over another: a bush's end face on the face of the block it sits in, a
+    primitive closing a face another one closes too. Sewn edge to edge, such a
+    mesh has edges with three and four faces on them and no shell to take a
+    solid from. So the faces are handed to OCCT whole instead: it cuts them
+    against each other where they cross or coincide and returns every closed
+    region they bound. Which regions are the part is read off the triangles
+    themselves - each knows which of its sides is out - by asking, for each
+    region, whether the faces around it face out the way the triangles they
+    were cut from do. Area-weighted, so that a membrane drawn both ways round
+    counts for nothing and one stray face cannot outvote a wall.
+
+    Every face of the result lies on a triangle LDraw drew; nothing is moved,
+    rounded or approximated.
+    """
+    from OCP.BOPAlgo import BOPAlgo_MakerVolume
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from OCP.BRepAlgoAPI import BRepAlgoAPI_Fuse
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace, BRepBuilderAPI_MakePolygon
+    from OCP.BRepGProp import BRepGProp
+    from OCP.BRepLProp import BRepLProp_SLProps
+    from OCP.BRepTools import BRepTools
+    from OCP.GProp import GProp_GProps
+    from OCP.gp import gp_Pnt
+    from OCP.ShapeUpgrade import ShapeUpgrade_UnifySameDomain
+    from OCP.TopAbs import TopAbs_FACE, TopAbs_REVERSED, TopAbs_SOLID
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopoDS import TopoDS
+    from OCP.TopTools import TopTools_IndexedMapOfShape, TopTools_ListOfShape
+
+    faces, made, normals, mm = TopTools_ListOfShape(), [], [], []
+    for a, b, c in tris:
+        a, b, c = _scaled(a), _scaled(c), _scaled(b)  # the reflection swap, as in _solid_from_mesh
+        n = _normal(a, b, c)
+        if n is None:
+            raise LDrawNotSolid("a triangle with no area is left in the surface")
+        face = BRepBuilderAPI_MakeFace(BRepBuilderAPI_MakePolygon(gp_Pnt(*a), gp_Pnt(*b), gp_Pnt(*c), True).Wire())
+        if not face.IsDone():
+            raise LDrawNotSolid("a triangle could not be made into a face")
+        faces.Append(face.Face())
+        made.append(face.Face())
+        normals.append(n)
+        mm.append((a, b, c))
+
+    maker = BOPAlgo_MakerVolume()
+    maker.SetArguments(faces)
+    maker.Perform()
+    if maker.HasErrors():
+        raise LDrawNotSolid("its faces could not be split into regions")
+
+    images, owners = TopTools_IndexedMapOfShape(), {}
+    for i, face in enumerate(made):
+        modified = list(maker.Modified(face))
+        for image in modified if modified else ([] if maker.IsDeleted(face) else [face]):
+            owners.setdefault(images.Add(image), []).append(i)
+
+    kept = []
+    regions = TopExp_Explorer(maker.Shape(), TopAbs_SOLID)
+    while regions.More():
+        region = regions.Current()
+        regions.Next()
+        vote = 0.0
+        around = TopExp_Explorer(region, TopAbs_FACE)
+        while around.More():
+            face = TopoDS.Face_s(around.Current())
+            around.Next()
+            index = images.FindIndex(face)
+            if not index:
+                continue
+            u1, u2, v1, v2 = BRepTools.UVBounds_s(face)
+            local = BRepLProp_SLProps(BRepAdaptor_Surface(face), (u1 + u2) / 2, (v1 + v2) / 2, 1, 1e-6)
+            if not local.IsNormalDefined():
+                continue
+            out = local.Normal()
+            if face.Orientation() == TopAbs_REVERSED:
+                out.Reverse()
+            props = GProp_GProps()
+            BRepGProp.SurfaceProperties_s(face, props)
+            for i in owners[index]:
+                agrees = out.X() * normals[i][0] + out.Y() * normals[i][1] + out.Z() * normals[i][2] > 0.0
+                vote += props.Mass() if agrees else -props.Mass()
+        if vote > 0.0:
+            kept.append(region)
+    if not kept:
+        raise LDrawNotSolid("no region its faces bound is inside it")
+
+    result = kept[0]
+    if len(kept) > 1:
+        arguments, tools = TopTools_ListOfShape(), TopTools_ListOfShape()
+        arguments.Append(kept[0])
+        for region in kept[1:]:
+            tools.Append(region)
+        fuse = BRepAlgoAPI_Fuse()
+        fuse.SetArguments(arguments)
+        fuse.SetTools(tools)
+        fuse.Build()
+        if not fuse.IsDone():
+            raise LDrawNotSolid("the regions inside it could not be joined")
+        result = fuse.Shape()
+
+    # Coplanar triangles merged back into the faces they were cut from: the
+    # same solid with a fraction of the faces, which every later boolean
+    # against the part is the faster for. Kept only if it checks out.
+    unify = ShapeUpgrade_UnifySameDomain(result, True, True, False)
+    unify.Build()
+    if not _solid_problems(unify.Shape()):
+        result = unify.Shape()
+
+    props = GProp_GProps()
+    BRepGProp.VolumeProperties_s(result, props)
+    expected, error = _enclosed_volume(mm)
+    if abs(props.Mass() - expected) > max(3.0 * error, _VOLUME_SLACK * expected):
+        raise LDrawNotSolid(
+            "the solid built is %.0f mm^3 but its surface encloses about %.0f mm^3" % (props.Mass(), expected)
+        )
+    return result
+
+
+def _single(shape):
+    """A compound holding one solid is that solid; anything else is as it is."""
+    from OCP.TopAbs import TopAbs_COMPOUND, TopAbs_SOLID
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopoDS import TopoDS
+
+    if shape.ShapeType() != TopAbs_COMPOUND:
+        return shape
+    explorer = TopExp_Explorer(shape, TopAbs_SOLID)
+    solids = []
+    while explorer.More():
+        solids.append(explorer.Current())
+        explorer.Next()
+    return TopoDS.Solid_s(solids[0]) if len(solids) == 1 else shape
+
+
+def _build_shape(tris, uncertified=False):
+    """The part's solid, or LDrawNotSolid saying why there is none. Never a shell.
+
+    Two ways to it, the cheaper first. A mesh that closes edge to edge is sewn
+    into shells and those into the solid they bound (_solid_from_mesh). One
+    that does not - surfaces laid over each other, slivers, small holes left
+    open - is mended as far as it can be without guessing and then handed to
+    the region builder (_solid_from_regions). Whatever either returns is
+    checked before it leaves: closed, valid solids and nothing else.
+
+    There used to be a third way, an STL import of the raw mesh, and it is
+    gone on purpose. What it returned was a shell, which renders like the part
+    and makes every boolean taken against it meaningless.
+    """
+    # Pin pyexpat before importing OCP (see wrapper_import_mesh.py).
+    import pyexpat  # noqa: F401
+
+    if not tris:
+        raise LDrawNotSolid("it has no surface")
+
     closed = _close_mesh(list(tris), orient=uncertified)
     if closed:
         try:
             solid = _solid_from_mesh(closed)
         except Exception:
             solid = None
-        if solid is not None:
+        if solid is not None and not _solid_problems(solid):
             return solid
 
-    stl_path = tempfile.mktemp(".stl")
+    mended = _weld(list(tris), _WELD_LDU)
+    if uncertified:
+        mended = _orient_consistently(mended)
+    _split_t_junctions(mended, _TJUNCTION_LDU)
+    if uncertified:
+        mended = _orient_consistently(mended)
+    _drop_slivers(mended, _WELD_LDU)
+    _cap_planar_loops(mended, _PLANAR_LDU)
+    # What is still open is not capped: anything put there would be a guess.
+    # It is not refused here either. An open edge is not always a leak - the
+    # missing face is often drawn, by a primitive that does not share its
+    # edges - and the region builder cuts faces against each other wherever
+    # they meet. A hole that does leak leaves the part's body without a closed
+    # region, which the volume check below refuses.
+    left = _cap_shallow_loops(mended, _SHALLOW_LDU, _SEAM_LDU)
+    _drop_slivers(mended, _WELD_LDU)
     try:
-        n = _write_binary_stl(tris, stl_path)
-        if n == 0:
-            return None
-        try:
-            return b3d.Mesher().read(stl_path)[0].wrapped
-        except Exception:
-            return b3d.import_stl(stl_path).wrapped
-    finally:
-        if os.path.exists(stl_path):
-            os.unlink(stl_path)
+        solid = _single(_solid_from_regions(mended))
+    except LDrawNotSolid as e:
+        if left:
+            raise LDrawNotSolid("%s; %d holes in its surface were left open rather than guessed at" % (e, left))
+        raise
+    except Exception as e:
+        raise LDrawNotSolid("building it failed: %s" % e)
+    found = _solid_problems(solid)
+    if found:
+        raise LDrawNotSolid("what was built is %s" % ", ".join(found))
+    return solid
 
 
 if __name__ == "__partcad_part__":
@@ -1211,11 +1583,8 @@ if __name__ == "__partcad_part__":
             except LDrawSubfileMissing as e:
                 tris = None
                 output = {"exception": "%s (needed by %s)" % (e, dat)}
-            shape = _build_shape(tris, bool(uncertified)) if tris else None
-            if shape is None:
-                # 'output' is already set when a subfile went missing; only a
-                # part that meshed to nothing needs the generic message.
-                if tris is not None:
-                    output = {"exception": "LDraw part produced no geometry: %s" % dat}
-            else:
-                output = {"shape": shape}
+            if tris is not None:
+                try:
+                    output = {"shape": _build_shape(tris, bool(uncertified))}
+                except LDrawNotSolid as e:
+                    output = {"exception": "LDraw part is not a solid: %s (%s)" % (dat, e)}

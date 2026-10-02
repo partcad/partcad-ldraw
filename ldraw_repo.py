@@ -52,8 +52,10 @@ import zipfile
 # 80 names the rules happened to cover; v9 turned every part upright, which
 # moves every port and re-meshes every part; v10 serves the axle hole inside
 # every "Technic Bush" primitive, which is what the cross blocks and the bushes
-# are drawn with.
-CACHE_VERSION = 10
+# are drawn with; v11 serves a part as a solid or not at all - repaired where
+# LDraw's surfaces overlap or stop short, and refused where they cannot be
+# closed without guessing - instead of handing back a shell.
+CACHE_VERSION = 11
 
 _BASE = "https://library.ldraw.org"
 _CATEGORY_LIST_URL = _BASE + "/parts/category-list"

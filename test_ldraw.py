@@ -547,6 +547,114 @@ def test_a_hole_that_is_not_flat_is_left_open_rather_than_guessed_at():
     assert ldraw._close_mesh(moved) is None
 
 
+def _kernel():
+    pytest.importorskip("build123d")
+    try:
+        from OCP.BRepGProp import BRepGProp  # noqa: F401
+    except ImportError as e:
+        pytest.skip("no CAD kernel: %s" % e)
+
+
+def _mm3(shape):
+    from OCP.BRepGProp import BRepGProp
+    from OCP.GProp import GProp_GProps
+
+    props = GProp_GProps()
+    BRepGProp.VolumeProperties_s(shape, props)
+    return props.Mass()
+
+
+def test_a_sliver_left_by_a_split_is_taken_out_and_its_edge_mended():
+    # A triangle whose corners are on one line, and the triangle on the other
+    # side of its long edge. Dropping the sliver alone would open the surface
+    # along that edge; splitting its neighbour at the middle corner does not.
+    tris = [
+        ((0.0, 0.0, 0.0), (10.0, 0.0, 0.0), (5.0, 0.0, 0.0)),
+        ((10.0, 0.0, 0.0), (0.0, 0.0, 0.0), (5.0, 5.0, 0.0)),
+    ]
+    assert ldraw._drop_slivers(tris, ldraw._WELD_LDU) == 1
+    assert len(tris) == 2
+    edges = ldraw._half_edges(tris)
+    assert ((10.0, 0.0, 0.0), (5.0, 0.0, 0.0)) in edges
+    assert ((5.0, 0.0, 0.0), (0.0, 0.0, 0.0)) in edges
+
+
+def test_a_hole_all_but_flat_is_capped_and_one_far_from_flat_is_not():
+    tris = _box((0, 0, 0), (10, 10, 10), omit=("y-",))
+    nudged = [tuple((p[0], 0.2, p[2]) if p == (0.0, 0.0, 0.0) else p for p in t) for t in tris]
+    assert ldraw._cap_shallow_loops(nudged, ldraw._SHALLOW_LDU) == 0
+    assert ldraw._boundary_loops(nudged) == []
+    pulled = [tuple((p[0], -6.0, p[2]) if p == (0.0, 0.0, 0.0) else p for p in t) for t in tris]
+    assert ldraw._cap_shallow_loops(pulled, ldraw._SHALLOW_LDU) == 1
+
+
+def test_a_face_laid_over_a_face_of_the_part_still_makes_a_solid():
+    # What LDraw does at every bush in a cross block: one primitive's end face
+    # lies on the face of the block it sits in, cut into different triangles.
+    # Sewn edge to edge that is an edge with three or four faces on it and no
+    # shell; built from regions it is the box it is.
+    _kernel()
+    tris = _box((0, 0, 0), (10, 10, 10))
+    patch = [
+        ((2.0, 10.0, 2.0), (6.0, 10.0, 2.0), (6.0, 10.0, 6.0)),
+        ((2.0, 10.0, 2.0), (6.0, 10.0, 6.0), (2.0, 10.0, 6.0)),
+    ]
+    patch = [(a, c, b) for a, b, c in patch]  # facing out of the box, as its top does
+    solid = ldraw._build_shape(tris + patch)
+    assert ldraw._solid_problems(solid) == []
+    assert _mm3(solid) == pytest.approx((10 * ldraw._LDU_MM) ** 3)
+
+
+def test_a_surface_that_cannot_be_closed_is_refused_rather_than_returned():
+    # The STL import used to take this and hand back a shell: something that
+    # renders as the part and makes every boolean against it meaningless.
+    _kernel()
+    tris = _box((0, 0, 0), (10, 10, 10), omit=("y-",))
+    pulled = [tuple((p[0], -6.0, p[2]) if p == (0.0, 0.0, 0.0) else p for p in t) for t in tris]
+    with pytest.raises(ldraw.LDrawNotSolid, match="left open rather than guessed at"):
+        ldraw._build_shape(pulled)
+
+
+def test_nothing_but_a_closed_valid_solid_leaves_the_builder(monkeypatch):
+    # However it was built: a shell from the sewing path is not passed on
+    # because the sewing path produced it.
+    _kernel()
+    from OCP.TopAbs import TopAbs_SHELL
+    from OCP.TopExp import TopExp_Explorer
+
+    real = ldraw._solid_from_mesh(_box((0, 0, 0), (10, 10, 10)))
+    shell = TopExp_Explorer(real, TopAbs_SHELL).Current()
+    monkeypatch.setattr(ldraw, "_solid_from_mesh", lambda tris: shell)
+    assert ldraw._solid_problems(shell) != []
+    solid = ldraw._build_shape(_box((0, 0, 0), (10, 10, 10)))
+    assert solid.ShapeType() != shell.ShapeType()
+    assert ldraw._solid_problems(solid) == []
+
+
+def test_a_solid_that_lost_the_body_of_the_part_is_refused(monkeypatch):
+    # The region builder keeps the regions the faces vote for. Were it to keep
+    # too few - a servo reduced to its bosses - the result would be a valid
+    # solid and still not the part, so it is held to the volume the surface
+    # itself encloses.
+    _kernel()
+    monkeypatch.setattr(ldraw, "_enclosed_volume", lambda tris: (10 * _mm3_box(10), 1.0))
+    tris = _box((0, 0, 0), (10, 10, 10))
+    with pytest.raises(ldraw.LDrawNotSolid, match="encloses about"):
+        ldraw._solid_from_regions(tris)
+
+
+def _mm3_box(side_ldu):
+    return (side_ldu * ldraw._LDU_MM) ** 3
+
+
+def test_the_enclosed_volume_is_what_the_surface_encloses():
+    pytest.importorskip("numpy")
+    tris = [(ldraw._scaled(a), ldraw._scaled(c), ldraw._scaled(b)) for a, b, c in _box((0, 0, 0), (10, 10, 10))]
+    estimate, error = ldraw._enclosed_volume(tris)
+    assert estimate == pytest.approx(_mm3_box(10), abs=1e-9)
+    assert error == 0.0
+
+
 #
 # The two below reach ldraw.org, and the second wants a CAD kernel as well.
 # Both skip rather than fail where they cannot have what they need, because

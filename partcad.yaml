@@ -58,8 +58,9 @@ dependencies:
     # also names the directory the plugin's own files are materialized into, is
     # what makes a cached 'ldraw.py' from before the turn stop being served;
     # v10 serves the axle hole inside every "Technic Bush" primitive, which is
-    # what the cross blocks and the bushes are drawn with.
-    cacheVersion: 10
+    # what the cross blocks and the bushes are drawn with; v11 serves a part as
+    # a solid or not at all.
+    cacheVersion: 11
 
 repositories:
   ldraw_repo:
