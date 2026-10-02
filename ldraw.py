@@ -1401,7 +1401,11 @@ def _solid_from_regions(tris):
         a, b, c = _scaled(a), _scaled(c), _scaled(b)  # the reflection swap, as in _solid_from_mesh
         n = _normal(a, b, c)
         if n is None:
-            raise LDrawNotSolid("a triangle with no area is left in the surface")
+            # No area, so no surface to lose: stitching a seam whose vertices
+            # run in a straight line makes these. Were one ever the only thing
+            # closing a gap, the region behind it would leak and the volume
+            # check below would say so.
+            continue
         face = BRepBuilderAPI_MakeFace(BRepBuilderAPI_MakePolygon(gp_Pnt(*a), gp_Pnt(*b), gp_Pnt(*c), True).Wire())
         if not face.IsDone():
             raise LDrawNotSolid("a triangle could not be made into a face")
