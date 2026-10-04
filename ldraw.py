@@ -849,9 +849,36 @@ def _ear_clip(poly, eps):
                     cut = True
                     break
         if not cut:
-            return None
-    if len(idx) == 3:
+            break
+    if len(idx) == 3 and abs(_turn(poly[idx[0]], poly[idx[1]], poly[idx[2]])) > eps:
         out.append(tuple(idx))
+        return out
+    if len(idx) < 3:
+        return out
+    # What is left has no area: vertices on one line. A hole whose side runs
+    # straight through several vertices ends this way whenever the clipping
+    # starts at the far corner - the Power Functions battery box's end recesses
+    # do, 8 vertices with four of them on one edge - and the ears already taken
+    # cover the whole hole. Refusing there left the box open. Instead each
+    # leftover vertex is put into the ear edge it lies on, the way a T-junction
+    # is split, so the cap meets the surface around it vertex for vertex.
+    if abs(_area2([poly[i] for i in idx])) > eps * len(idx):
+        return None
+    for j in idx:
+        for k, (i0, i1, i2) in enumerate(out):
+            if j in (i0, i1, i2):
+                continue
+            for a, b, c in ((i0, i1, i2), (i1, i2, i0), (i2, i0, i1)):
+                pa, pb, pj = poly[a], poly[b], poly[j]
+                along = (pj[0] - pa[0]) * (pb[0] - pa[0]) + (pj[1] - pa[1]) * (pb[1] - pa[1])
+                span = (pb[0] - pa[0]) ** 2 + (pb[1] - pa[1]) ** 2
+                if abs(_turn(pa, pb, pj)) <= eps and 0.0 < along < span:
+                    out[k] = (a, j, c)
+                    out.append((j, b, c))
+                    break
+            else:
+                continue
+            break
     return out
 
 

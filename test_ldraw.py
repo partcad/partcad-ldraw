@@ -658,6 +658,30 @@ def test_the_enclosed_volume_is_what_the_surface_encloses():
 # where it stops.
 
 
+def test_a_flat_hole_with_a_straight_side_through_several_vertices_is_capped():
+    # The battery box's end recess: clipped from its far corner, the polygon
+    # comes down to four vertices on one line, an ear with no area, and the
+    # capper used to give up on a hole its ears had already covered.
+    poly = [
+        (-26.5, -107.0),
+        (-26.364, -106.364),
+        (-26.364, -93.636),
+        (-26.5, -93.0),
+        (-32.0, -93.0),
+        (-32.0, -93.64),
+        (-32.0, -106.36),
+        (-32.0, -107.0),
+    ]
+    ears = ldraw._ear_clip(poly, 1e-12 * 107 * 107)
+    assert ears is not None
+    assert sum(ldraw._area2([poly[i] for i in ear]) for ear in ears) == pytest.approx(ldraw._area2(poly))
+    # Every side of the hole is a side of exactly one ear, so the cap meets
+    # the surface around it vertex for vertex.
+    sides = {(i, (i + 1) % len(poly)) for i in range(len(poly))}
+    ear_edges = [(e[k], e[(k + 1) % 3]) for e in ears for k in range(3)]
+    assert all(ear_edges.count(side) == 1 for side in sides)
+
+
 def test_regions_kept_side_by_side_are_joined_into_one_solid():
     # Regions cut from one arrangement share their faces exactly; joined from
     # the faces only one of them uses they make one solid without a boolean,
