@@ -739,6 +739,38 @@ def test_laying_an_edge_down_keeps_it_in_the_plane_of_a_face_it_overlaps():
     assert all(abs(p[0] - 3.0) < 1e-9 for p in moved)
 
 
+def test_a_vertex_on_an_edge_that_is_not_open_still_splits_it():
+    # Something ending on a surface that is whole: its edge is shared by two
+    # faces and is no T-junction, but a vertex of the open face standing 0.001
+    # LDU from its middle misses it by that much unless the edge is cut there.
+    pytest.importorskip("numpy")
+    a, b = (0.0, 0.0, 0.0), (10.0, 0.0, 0.0)
+    v = (5.0, 0.001, 0.0)
+    tris = [(a, b, (5.0, 5.0, 0.0)), (b, a, (5.0, -5.0, 0.0)), (v, (5.0, 0.0, 5.0), (6.0, 0.0, 5.0))]
+    assert ldraw._split_at_loose_vertices(tris, ldraw._LOOSE_LDU) == 2
+    edges = ldraw._half_edges(tris)
+    assert (a, b) not in edges and (b, a) not in edges
+    assert (a, v) in edges and (v, a) in edges and (v, b) in edges and (b, v) in edges
+
+
+def test_a_vertex_further_from_an_edge_than_rounding_does_not_split_it():
+    pytest.importorskip("numpy")
+    a, b = (0.0, 0.0, 0.0), (10.0, 0.0, 0.0)
+    tris = [(a, b, (5.0, 5.0, 0.0)), (b, a, (5.0, -5.0, 0.0)), ((5.0, 0.1, 0.0), (5.0, 0.0, 5.0), (6.0, 0.0, 5.0))]
+    assert ldraw._split_at_loose_vertices(tris, ldraw._LOOSE_LDU) == 0
+
+
+def test_a_vertex_of_another_polygon_round_the_same_circle_does_not_split_an_edge():
+    # The friction pin's 16-sided ring stands 0.03 LDU off a chord of the ring
+    # drawn beside it: near the edge, but not ending on it.
+    pytest.importorskip("numpy")
+    a, b = (0.0, 0.0, 0.0), (10.0, 0.0, 0.0)
+    tris = [(a, b, (5.0, 5.0, 0.0)), (b, a, (5.0, -5.0, 0.0)), ((5.0, 0.03, 0.0), (5.0, 0.0, 5.0), (6.0, 0.0, 5.0))]
+    assert ldraw._split_at_loose_vertices(tris, ldraw._LOOSE_LDU) == 0
+    tris[2] = ((5.0, 0.016, 0.0), (5.0, 0.0, 5.0), (6.0, 0.0, 5.0))
+    assert ldraw._split_at_loose_vertices(tris, ldraw._LOOSE_LDU) == 2
+
+
 def test_a_flat_hole_with_a_straight_side_through_several_vertices_is_capped():
     # The battery box's end recess: clipped from its far corner, the polygon
     # comes down to four vertices on one line, an ear with no area, and the

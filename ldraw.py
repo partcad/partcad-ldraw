@@ -503,6 +503,17 @@ _SEAM_LDU = 1.0
 # edge within that of a face belongs to that face and not to the next facet
 # round; anything steeper is a different surface meeting it.
 _SEAM_SLOPE = math.sin(math.pi / 16)
+# How close a vertex of an open edge must be to an edge that is not open to be
+# taken to end on it, and cut into it. That edge belongs to a surface already
+# closed, so this is no seam between two resolutions: it is how far a face that
+# ends on a line misses it once both are written to LDraw's few decimals and
+# moved into place. The servo's housing ends 0.016 LDU off the straight side
+# its 16-sided rim runs into; the nearest thing that is not such an end, on the
+# parts of the LEGO F1 car, is the friction pin 2780's 16-sided ring standing
+# 0.029 to 0.048 LDU off the chords of the ring drawn beside it - a different
+# polygon round the same circle, which cutting would bend by that much. 0.02
+# LDU is 8 micrometres.
+_LOOSE_LDU = 0.02
 # How far a solid built from regions may stray from the volume the surface
 # itself encloses before it is taken to have lost (or gained) part of the
 # part: the larger of this fraction and three standard errors of the sample.
@@ -1482,6 +1493,60 @@ def _lay_onto_faces(tris, tol):
     return len(move)
 
 
+def _split_at_loose_vertices(tris, tol):
+    """Cut any edge, open or not, where a vertex of an open edge lies on it.
+
+    Returns the number of triangles cut. _split_t_junctions joins an open
+    vertex to an open edge; this is the case where the edge is not open,
+    because the surface it belongs to is whole and something else ends on it.
+    The fairing 64681 stands its fill faces on the line where two facets of a
+    connector boss meet, in the middle of that line; the servo's top housing
+    ends 0.0005 LDU from the corner between two facets of the bottom housing's
+    wall. Unsplit, the edge has no vertex there and the faces that end on it
+    miss it by that much, which is a leak.
+
+    The reach is _LOOSE_LDU, well inside _TJUNCTION_LDU and _WELD_LDU: the edge
+    being cut belongs to a surface that is already closed, and a vertex further
+    from it than that is not on it - it is something standing beside it.
+    """
+    import numpy as np
+
+    he = _half_edges(tris)
+    loose = {v for e in _unmatched(he) for v in e}
+    if not loose:
+        return 0
+    keys = list({frozenset(e): e for e in he}.values())
+    E = np.array(keys, dtype=float)
+    lo = np.minimum(E[:, 0], E[:, 1]) - tol
+    hi = np.maximum(E[:, 0], E[:, 1]) + tol
+    cuts = {}
+    for v in loose:
+        for k in np.nonzero(np.all((lo <= v) & (v <= hi), axis=1))[0]:
+            a, b = keys[k]
+            if v != a and v != b and _point_on_segment(v, a, b, tol) is not None:
+                cuts.setdefault(frozenset((a, b)), set()).add(v)
+    if not cuts:
+        return 0
+    out = []
+    n = 0
+    for t in tris:
+        pieces = [t]
+        for j in range(3):
+            a, b = t[j], t[(j + 1) % 3]
+            on = cuts.get(frozenset((a, b)))
+            if on:
+                chain = (
+                    [a] + [v for _, v in sorted(((_point_on_segment(v, a, b, 2 * tol) or 0.0), v) for v in on)] + [b]
+                )
+                apex = t[(j + 2) % 3]
+                pieces = [(chain[k], chain[k + 1], apex) for k in range(len(chain) - 1)]
+                n += 1
+                break
+        out.extend(pieces)
+    tris[:] = out
+    return n
+
+
 def _solid_problems(shape):
     """What keeps 'shape' from being a part. Empty when it is closed, valid solids and nothing else."""
     from OCP.BRep import BRep_Tool
@@ -1759,11 +1824,15 @@ def _build_shape(tris, uncertified=False):
     if uncertified:
         mended = _orient_consistently(mended)
     _drop_slivers(mended, _WELD_LDU)
-    # An edge that stops just short of a face, rather than of an edge, is a
-    # seam the T-junction split does not see. Laying it onto the face can put
-    # a vertex on an open edge, so the split runs again after it.
+    # The seams a T-junction split leaves: an edge that stops short of a face
+    # rather than of an edge, and a vertex on an edge that is not open. Laying
+    # an edge onto a face can put a vertex on an open edge, so the split runs
+    # again after it.
     _lay_onto_faces(mended, _TJUNCTION_LDU)
     _split_t_junctions(mended, _TJUNCTION_LDU)
+    for _ in range(3):
+        if not _split_at_loose_vertices(mended, _LOOSE_LDU):
+            break
     _drop_slivers(mended, _WELD_LDU)
     _cap_planar_loops(mended, _PLANAR_LDU)
     # What is still open is not capped: anything put there would be a guess.
