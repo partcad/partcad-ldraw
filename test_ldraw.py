@@ -650,6 +650,42 @@ def test_the_enclosed_volume_is_what_the_surface_encloses():
     assert error == 0.0
 
 
+# --- seams the T-junction split does not reach --------------------------------
+#
+# Each of these is a gap LDraw leaves between two of its own surfaces by
+# rounding, small enough to be one and too irregular for the weld or the
+# T-junction split to close. Each repair is bounded, and each test also says
+# where it stops.
+
+
+def test_regions_kept_side_by_side_are_joined_into_one_solid():
+    # Regions cut from one arrangement share their faces exactly; joined from
+    # the faces only one of them uses they make one solid without a boolean,
+    # where a fuse of the Cone 4 x 4 x 2's 21 regions came back empty.
+    _kernel()
+    tris = _box((0, 0, 0), (10, 10, 10)) + _box((10, 0, 0), (20, 10, 10))
+    solid = ldraw._single(ldraw._solid_from_regions(tris))
+    assert solid.ShapeType() == ldraw_topabs_solid()
+    assert ldraw._solid_problems(solid) == []
+    assert _mm3(solid) == pytest.approx(2 * _mm3_box(10))
+
+
+def test_joining_regions_does_not_fill_a_cavity_none_of_them_is():
+    # The faces left after joining also bound the cavity, which was never
+    # kept; joined without a second vote it would come back filled.
+    _kernel()
+    tris = _box((0, 0, 0), (10, 10, 10)) + _box((10, 0, 0), (20, 10, 10)) + _box((2, 2, 2), (8, 8, 8), outward=False)
+    solid = ldraw._single(ldraw._solid_from_regions(tris))
+    assert ldraw._solid_problems(solid) == []
+    assert _mm3(solid) == pytest.approx(2 * _mm3_box(10) - _mm3_box(6))
+
+
+def ldraw_topabs_solid():
+    from OCP.TopAbs import TopAbs_SOLID
+
+    return TopAbs_SOLID
+
+
 #
 # The two below reach ldraw.org, and the second wants a CAD kernel as well.
 # Both skip rather than fail where they cannot have what they need, because

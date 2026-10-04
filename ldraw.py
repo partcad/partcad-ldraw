@@ -1383,8 +1383,8 @@ def _solid_from_regions(tris):
     rounded or approximated.
     """
     from OCP.BOPAlgo import BOPAlgo_MakerVolume
+    from OCP.BRep import BRep_Builder
     from OCP.BRepAdaptor import BRepAdaptor_Surface
-    from OCP.BRepAlgoAPI import BRepAlgoAPI_Fuse
     from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace, BRepBuilderAPI_MakePolygon
     from OCP.BRepGProp import BRepGProp
     from OCP.BRepLProp import BRepLProp_SLProps
@@ -1393,7 +1393,7 @@ def _solid_from_regions(tris):
     from OCP.gp import gp_Pnt
     from OCP.TopAbs import TopAbs_FACE, TopAbs_REVERSED, TopAbs_SOLID
     from OCP.TopExp import TopExp_Explorer
-    from OCP.TopoDS import TopoDS
+    from OCP.TopoDS import TopoDS, TopoDS_Compound
     from OCP.TopTools import TopTools_IndexedMapOfShape, TopTools_ListOfShape
 
     faces, made, normals, mm = TopTools_ListOfShape(), [], [], []
@@ -1426,49 +1426,77 @@ def _solid_from_regions(tris):
         for image in modified if modified else ([] if maker.IsDeleted(face) else [face]):
             owners.setdefault(images.Add(image), []).append(i)
 
-    kept = []
-    regions = TopExp_Explorer(maker.Shape(), TopAbs_SOLID)
-    while regions.More():
-        region = regions.Current()
-        regions.Next()
-        vote = 0.0
-        around = TopExp_Explorer(region, TopAbs_FACE)
-        while around.More():
-            face = TopoDS.Face_s(around.Current())
-            around.Next()
-            index = images.FindIndex(face)
-            if not index:
-                continue
-            u1, u2, v1, v2 = BRepTools.UVBounds_s(face)
-            local = BRepLProp_SLProps(BRepAdaptor_Surface(face), (u1 + u2) / 2, (v1 + v2) / 2, 1, 1e-6)
-            if not local.IsNormalDefined():
-                continue
-            out = local.Normal()
-            if face.Orientation() == TopAbs_REVERSED:
-                out.Reverse()
-            props = GProp_GProps()
-            BRepGProp.SurfaceProperties_s(face, props)
-            for i in owners[index]:
-                agrees = out.X() * normals[i][0] + out.Y() * normals[i][1] + out.Z() * normals[i][2] > 0.0
-                vote += props.Mass() if agrees else -props.Mass()
-        if vote > 0.0:
-            kept.append(region)
+    def inside(shape):
+        """The regions of 'shape' whose faces face out the way their triangles do."""
+        kept = []
+        regions = TopExp_Explorer(shape, TopAbs_SOLID)
+        while regions.More():
+            region = regions.Current()
+            regions.Next()
+            vote = 0.0
+            around = TopExp_Explorer(region, TopAbs_FACE)
+            while around.More():
+                face = TopoDS.Face_s(around.Current())
+                around.Next()
+                index = images.FindIndex(face)
+                if not index:
+                    continue
+                u1, u2, v1, v2 = BRepTools.UVBounds_s(face)
+                local = BRepLProp_SLProps(BRepAdaptor_Surface(face), (u1 + u2) / 2, (v1 + v2) / 2, 1, 1e-6)
+                if not local.IsNormalDefined():
+                    continue
+                out = local.Normal()
+                if face.Orientation() == TopAbs_REVERSED:
+                    out.Reverse()
+                props = GProp_GProps()
+                BRepGProp.SurfaceProperties_s(face, props)
+                for i in owners[index]:
+                    agrees = out.X() * normals[i][0] + out.Y() * normals[i][1] + out.Z() * normals[i][2] > 0.0
+                    vote += props.Mass() if agrees else -props.Mass()
+            if vote > 0.0:
+                kept.append(region)
+        return kept
+
+    kept = inside(maker.Shape())
     if not kept:
         raise LDrawNotSolid("no region its faces bound is inside it")
 
+    # The regions kept are cut from one arrangement of faces, so where two of
+    # them meet they share the face between them exactly, and their union is
+    # the solid bounded by the faces only one of them uses. That union is built
+    # from those faces by the same maker with intersection turned off, which
+    # has nothing to compute: every face is already split against every other.
+    # A boolean fuse of the regions was used before, and it is not to be
+    # trusted with them - on the Cone 4 x 4 x 2's 21 regions it came back
+    # empty, or with a solid of no volume, varying from run to run. The joined
+    # regions are put to the vote again, because faces that bound only kept
+    # regions can also enclose a cavity that was never kept.
+    if len(kept) > 1:
+        uses, seen = {}, TopTools_IndexedMapOfShape()
+        for region in kept:
+            around = TopExp_Explorer(region, TopAbs_FACE)
+            while around.More():
+                index = seen.Add(around.Current())
+                uses[index] = uses.get(index, 0) + 1
+                around.Next()
+        boundary = TopTools_ListOfShape()
+        for index, n in uses.items():
+            if n == 1:
+                boundary.Append(seen.FindKey(index))
+        joiner = BOPAlgo_MakerVolume()
+        joiner.SetArguments(boundary)
+        joiner.SetIntersect(False)
+        joiner.Perform()
+        kept = [] if joiner.HasErrors() else inside(joiner.Shape())
+        if not kept:
+            raise LDrawNotSolid("the regions inside it could not be joined")
     result = kept[0]
     if len(kept) > 1:
-        arguments, tools = TopTools_ListOfShape(), TopTools_ListOfShape()
-        arguments.Append(kept[0])
-        for region in kept[1:]:
-            tools.Append(region)
-        fuse = BRepAlgoAPI_Fuse()
-        fuse.SetArguments(arguments)
-        fuse.SetTools(tools)
-        fuse.Build()
-        if not fuse.IsDone():
-            raise LDrawNotSolid("the regions inside it could not be joined")
-        result = fuse.Shape()
+        result = TopoDS_Compound()
+        builder = BRep_Builder()
+        builder.MakeCompound(result)
+        for region in kept:
+            builder.Add(result, region)
 
     props = GProp_GProps()
     BRepGProp.VolumeProperties_s(result, props)
