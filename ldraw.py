@@ -498,6 +498,11 @@ _SHALLOW_LDU = 0.5
 # surface; the triangles it adds span the gap and are no further from either
 # side than the gap is wide. 1 LDU is 0.4 mm.
 _SEAM_LDU = 1.0
+# How steeply an open edge may run against the face it is laid onto: half the
+# turn between two sides of a 16-sided circle, the coarsest LDraw draws. An
+# edge within that of a face belongs to that face and not to the next facet
+# round; anything steeper is a different surface meeting it.
+_SEAM_SLOPE = math.sin(math.pi / 16)
 # How far a solid built from regions may stray from the volume the surface
 # itself encloses before it is taken to have lost (or gained) part of the
 # part: the larger of this fraction and three standard errors of the sample.
@@ -1310,6 +1315,173 @@ def _cap_shallow_loops(tris, tol, seam=0.0):
     return left
 
 
+def _closest_on_triangle(p, a, b, c):
+    """The point of triangle a-b-c nearest p (Ericson, Real-Time Collision Detection, 5.1.5)."""
+
+    def dot(u, v):
+        return u[0] * v[0] + u[1] * v[1] + u[2] * v[2]
+
+    def along(o, u, s, v=(0.0, 0.0, 0.0), t=0.0):
+        return (o[0] + s * u[0] + t * v[0], o[1] + s * u[1] + t * v[1], o[2] + s * u[2] + t * v[2])
+
+    ab = (b[0] - a[0], b[1] - a[1], b[2] - a[2])
+    ac = (c[0] - a[0], c[1] - a[1], c[2] - a[2])
+    ap = (p[0] - a[0], p[1] - a[1], p[2] - a[2])
+    d1, d2 = dot(ab, ap), dot(ac, ap)
+    if d1 <= 0.0 and d2 <= 0.0:
+        return a
+    bp = (p[0] - b[0], p[1] - b[1], p[2] - b[2])
+    d3, d4 = dot(ab, bp), dot(ac, bp)
+    if d3 >= 0.0 and d4 <= d3:
+        return b
+    vc = d1 * d4 - d3 * d2
+    if vc <= 0.0 and d1 >= 0.0 and d3 <= 0.0:
+        return along(a, ab, d1 / (d1 - d3))
+    cp = (p[0] - c[0], p[1] - c[1], p[2] - c[2])
+    d5, d6 = dot(ab, cp), dot(ac, cp)
+    if d6 >= 0.0 and d5 <= d6:
+        return c
+    vb = d5 * d2 - d1 * d6
+    if vb <= 0.0 and d2 >= 0.0 and d6 <= 0.0:
+        return along(a, ac, d2 / (d2 - d6))
+    va = d3 * d6 - d5 * d4
+    if va <= 0.0 and (d4 - d3) >= 0.0 and (d5 - d6) >= 0.0:
+        return along(b, (c[0] - b[0], c[1] - b[1], c[2] - b[2]), (d4 - d3) / ((d4 - d3) + (d5 - d6)))
+    denom = 1.0 / (va + vb + vc)
+    return along(a, ab, vb * denom, ac, vc * denom)
+
+
+def _lay_onto_faces(tris, tol):
+    """Move each open edge that stops just short of a face onto that face.
+
+    Returns the number of vertices moved. This is the seam a T-junction split
+    cannot reach: an edge that ends not at another edge but somewhere in the
+    middle of another face. The Technic cross block 32557 draws the bridge
+    between its two pin bosses 1.38 LDU either side of centre, where the
+    boss's 16-sided cylinder is at 1.396, so the bridge stops 0.017 LDU short
+    of the boss along 20 LDU; and the web under its axle holes stops 0.027
+    short of the half cylinder above it. The region builder cuts faces where
+    they meet and nowhere else, so a gap that narrow is a leak like any other
+    and the whole body of the part went with it. The Power Functions servo's
+    two housings draw the same wall twice, 0.001 LDU apart, and the rim of the
+    top housing ends 0.001 off the bottom housing's wall; a wheel rim's drive
+    keys stand 0.0001 off the rim. Every one of those is rounding.
+
+    An open edge is laid onto a face when its middle stands over the face (the
+    foot of the perpendicular is inside it) within 'tol', both its ends are
+    within 'tol' of the face's plane, and it runs within _SEAM_SLOPE of that
+    plane - along the face rather than into it. Its two ends are moved onto
+    the plane by the least distance that does it. What this will not do:
+
+    - Move an edge whose face already runs through the other face by more than
+      _WELD_LDU. That face is cut there by the region builder as it is; the
+      48-sided disc of a wheel hub reaching 0.15 LDU past the 16-sided wall it
+      stands on is one, and pulling it back changes nothing but the part.
+    - Tilt a face out of the plane of a face it overlaps. A vertex on a face
+      that lies in exactly the plane of another face nearby (a quad laid over
+      a disc primitive, as 32557's web is) keeps to that plane while it moves;
+      tilting it opens a sliver between the two that leaks in its turn.
+    - Move a vertex further than 'tol', or where the faces it is asked onto
+      cannot all be met at once.
+
+    'tol' is _TJUNCTION_LDU: an edge this close to a face is on it, as a
+    vertex that close to an edge is on that.
+    """
+    import numpy as np
+
+    he = _half_edges(tris)
+    free = _unmatched(he)
+    if not free:
+        return 0
+    T = np.array(tris, dtype=float)
+    lo = T.min(axis=1) - tol
+    hi = T.max(axis=1) + tol
+
+    def plane_of(t):
+        n = _normal(*t)
+        return None if n is None else (n, n[0] * t[0][0] + n[1] * t[0][1] + n[2] * t[0][2])
+
+    def height(p, plane):
+        n, d = plane
+        return p[0] * n[0] + p[1] * n[1] + p[2] * n[2] - d
+
+    onto = {}
+    for a, b in free:
+        mid = ((a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0, (a[2] + b[2]) / 2.0)
+        near = np.nonzero(np.all((lo <= mid) & (mid <= hi), axis=1))[0]
+        own = set(he[(a, b)])
+        best = None
+        for i in near:
+            t = tris[i]
+            if i in own or (a in t and b in t):
+                continue
+            plane = plane_of(t)
+            if plane is None:
+                continue
+            gap = math.dist(_closest_on_triangle(mid, *t), mid)
+            # Only a face the edge stands over: the nearest point is the foot
+            # of the perpendicular, not a point on the face's rim.
+            if gap > tol or abs(gap - abs(height(mid, plane))) > 1e-9 * max(1.0, gap):
+                continue
+            if best is None or gap < best[0]:
+                best = (gap, plane)
+        if best is None or best[0] <= 1e-9:
+            continue
+        plane = best[1]
+        ha, hb = height(a, plane), height(b, plane)
+        if abs(ha) > tol or abs(hb) > tol or abs(ha - hb) > _SEAM_SLOPE * math.dist(a, b):
+            continue
+        t = tris[he[(a, b)][0]]
+        mine = _normal(*t)
+        parallel = mine is not None and abs(sum(mine[k] * plane[0][k] for k in range(3))) >= math.cos(math.pi / 16)
+        hc = height(t[(t.index(a) + 2) % 3], plane)
+        if not parallel and hc * (ha + hb) < 0.0 and max(abs(ha), abs(hb)) > _WELD_LDU:
+            continue
+        onto.setdefault(a, []).append(plane)
+        onto.setdefault(b, []).append(plane)
+
+    fan = {}
+    for i, t in enumerate(tris):
+        for v in t:
+            if v in onto:
+                fan.setdefault(v, []).append(i)
+    move = {}
+    for v, planes in onto.items():
+        mine = fan.get(v, [])
+        edges = {frozenset((tris[i][j], tris[i][(j + 1) % 3])) for i in mine for j in range(3)}
+        held = []
+        for i in mine:
+            plane = plane_of(tris[i])
+            if plane is None:
+                continue
+            box_lo, box_hi = T[i].min(axis=0) - 1e-6, T[i].max(axis=0) + 1e-6
+            for j in np.nonzero(np.all((lo + tol <= box_hi) & (hi - tol >= box_lo), axis=1))[0]:
+                o = tris[j]
+                if v in o or any(frozenset((o[k], o[(k + 1) % 3])) in edges for k in range(3)):
+                    continue
+                if all(abs(height(q, plane)) <= 1e-9 for q in o):
+                    held.append(plane[0])
+                    break
+        # The least move that puts v on every face asked of it while keeping
+        # it in every plane it is held to: minimum norm, by pseudo-inverse.
+        rows = np.array([p[0] for p in planes] + held)
+        want = np.array([-height(v, p) for p in planes] + [0.0] * len(held))
+        delta = np.linalg.pinv(rows, rcond=1e-9) @ want
+        if not np.allclose(rows @ delta, want, atol=1e-9):
+            continue
+        if 1e-9 < float(np.linalg.norm(delta)) <= tol:
+            move[v] = (v[0] + float(delta[0]), v[1] + float(delta[1]), v[2] + float(delta[2]))
+    if not move:
+        return 0
+    out = []
+    for t in tris:
+        t = (move.get(t[0], t[0]), move.get(t[1], t[1]), move.get(t[2], t[2]))
+        if t[0] != t[1] and t[1] != t[2] and t[0] != t[2]:
+            out.append(t)
+    tris[:] = out
+    return len(move)
+
+
 def _solid_problems(shape):
     """What keeps 'shape' from being a part. Empty when it is closed, valid solids and nothing else."""
     from OCP.BRep import BRep_Tool
@@ -1586,6 +1758,12 @@ def _build_shape(tris, uncertified=False):
     _split_t_junctions(mended, _TJUNCTION_LDU)
     if uncertified:
         mended = _orient_consistently(mended)
+    _drop_slivers(mended, _WELD_LDU)
+    # An edge that stops just short of a face, rather than of an edge, is a
+    # seam the T-junction split does not see. Laying it onto the face can put
+    # a vertex on an open edge, so the split runs again after it.
+    _lay_onto_faces(mended, _TJUNCTION_LDU)
+    _split_t_junctions(mended, _TJUNCTION_LDU)
     _drop_slivers(mended, _WELD_LDU)
     _cap_planar_loops(mended, _PLANAR_LDU)
     # What is still open is not capped: anything put there would be a guess.

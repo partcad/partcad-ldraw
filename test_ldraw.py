@@ -658,6 +658,87 @@ def test_the_enclosed_volume_is_what_the_surface_encloses():
 # where it stops.
 
 
+def _wall():
+    """A square face in the plane x = 0, facing +x, as two triangles."""
+    return [
+        ((0.0, -10.0, -10.0), (0.0, 10.0, -10.0), (0.0, 10.0, 10.0)),
+        ((0.0, -10.0, -10.0), (0.0, 10.0, 10.0), (0.0, -10.0, 10.0)),
+    ]
+
+
+def _web(x_near, x_far=5.0):
+    """A face in the plane y = 0 running from x_near to x_far: its edge at x_near is open."""
+    return [
+        ((x_near, 0.0, -3.0), (x_far, 0.0, -3.0), (x_far, 0.0, 3.0)),
+        ((x_near, 0.0, -3.0), (x_far, 0.0, 3.0), (x_near, 0.0, 3.0)),
+    ]
+
+
+def _xs(tris, z_ok=lambda z: True):
+    return sorted({p[0] for t in tris for p in t if p[1] == 0.0 and z_ok(p[2])})
+
+
+def test_an_edge_that_stops_just_short_of_a_face_is_laid_onto_it():
+    # The bridge between Technic cross block 32557's pin bosses: drawn to 1.38
+    # LDU where the boss's cylinder is at 1.396, it stops 0.017 short along
+    # 20 LDU, and the body of the part leaked away through the slit.
+    pytest.importorskip("numpy")
+    tris = _wall() + _web(0.02)
+    assert ldraw._lay_onto_faces(tris, ldraw._TJUNCTION_LDU) == 2
+    assert _xs(tris) == [0.0, 5.0]
+
+
+def test_an_edge_further_from_a_face_than_a_seam_is_left_where_it_is():
+    pytest.importorskip("numpy")
+    tris = _wall() + _web(0.5)
+    assert ldraw._lay_onto_faces(tris, ldraw._TJUNCTION_LDU) == 0
+    assert _xs(tris) == [0.5, 5.0]
+
+
+def test_an_edge_that_already_runs_through_a_face_is_not_pulled_back():
+    # A wheel hub's 48-sided disc reaches 0.15 LDU past the 16-sided wall it
+    # stands on. The region builder cuts it at the wall as it is; moving it
+    # would change the part and close nothing.
+    pytest.importorskip("numpy")
+    tris = _wall() + _web(-0.15)
+    assert ldraw._lay_onto_faces(tris, ldraw._TJUNCTION_LDU) == 0
+
+
+def test_an_edge_that_runs_into_a_face_rather_than_along_it_is_left_alone():
+    # Within reach at one end and not at the other: steeper than half a step of
+    # a 16-sided circle, so another surface meeting this one, not a seam.
+    pytest.importorskip("numpy")
+    steep = [
+        ((0.02, 0.0, -0.3), (5.0, 0.0, -0.3), (5.0, 0.0, 0.3)),
+        ((0.02, 0.0, -0.3), (5.0, 0.0, 0.3), (0.19, 0.0, 0.3)),
+    ]
+    tris = _wall() + steep
+    assert ldraw._lay_onto_faces(tris, ldraw._TJUNCTION_LDU) == 0
+
+
+def test_laying_an_edge_down_keeps_it_in_the_plane_of_a_face_it_overlaps():
+    # Cross block 32557 lays a quad over a disc primitive in one plane. Moving
+    # one of the quad's corners out of that plane, even by 0.002 LDU, opens a
+    # sliver between the two faces that leaks in its turn. Here the face the
+    # web stops short of leans, so the shortest way onto it would also move
+    # the web's open corners out of y = 0; with a face lying in y = 0 under
+    # the web they keep to y = 0 and move further along x instead.
+    pytest.importorskip("numpy")
+    lean = [
+        ((0.0, -10.0, -10.0), (6.0, 10.0, -10.0), (6.0, 10.0, 10.0)),
+        ((0.0, -10.0, -10.0), (6.0, 10.0, 10.0), (0.0, -10.0, 10.0)),
+    ]
+    alone = lean + _web(3.05)
+    ldraw._lay_onto_faces(alone, ldraw._TJUNCTION_LDU)
+    assert any(abs(p[1]) > 1e-6 for t in alone[2:] for p in t)
+    under = [((2.0, 0.0, -1.0), (4.0, 0.0, 1.0), (2.0, 0.0, 1.0))]  # in y = 0, sharing no edge with the web
+    held = lean + _web(3.05) + under
+    assert ldraw._lay_onto_faces(held, ldraw._TJUNCTION_LDU) == 2
+    moved = {p for t in held[2:4] for p in t if p[0] < 4.0}
+    assert all(abs(p[1]) < 1e-12 for p in moved)
+    assert all(abs(p[0] - 3.0) < 1e-9 for p in moved)
+
+
 def test_a_flat_hole_with_a_straight_side_through_several_vertices_is_capped():
     # The battery box's end recess: clipped from its far corner, the polygon
     # comes down to four vertices on one line, an ear with no area, and the
