@@ -284,8 +284,7 @@ def test_nocertify_stops_the_file_s_later_bfc_statements_being_read():
 
 def test_invertnext_turns_over_the_subfile_it_precedes():
     tris = _bfc(
-        "0 BFC CERTIFY CCW\n0 BFC INVERTNEXT\n"
-        "1 16 0 0 0 1 0 0 0 1 0 0 0 1 s\\one.dat\n",
+        "0 BFC CERTIFY CCW\n0 BFC INVERTNEXT\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 s\\one.dat\n",
         {"s/one.dat": "0 BFC CERTIFY CCW\n" + _TRI},
     )
     assert tris == [(_A, _C, _B)]
@@ -305,8 +304,7 @@ def test_an_inversion_carries_on_down_the_reference_branch():
     # itself inverted. Stopping at the first level leaves everything a stud
     # or a tube is made of wound against the part it belongs to.
     tris = _bfc(
-        "0 BFC CERTIFY CCW\n0 BFC INVERTNEXT\n"
-        "1 16 0 0 0 1 0 0 0 1 0 0 0 1 s\\mid.dat\n",
+        "0 BFC CERTIFY CCW\n0 BFC INVERTNEXT\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 s\\mid.dat\n",
         {
             "s/mid.dat": "0 BFC CERTIFY CCW\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 s\\leaf.dat\n",
             "s/leaf.dat": "0 BFC CERTIFY CCW\n" + _TRI,
@@ -330,8 +328,7 @@ def test_a_mirror_and_an_invertnext_cancel_each_other_out():
     # They compound rather than override, so what matters is their parity.
     # Applying whichever is noticed first and stopping gets this one wrong.
     tris = _bfc(
-        "0 BFC CERTIFY CCW\n0 BFC INVERTNEXT\n"
-        "1 16 0 0 0 -1 0 0 0 1 0 0 0 1 s\\one.dat\n",
+        "0 BFC CERTIFY CCW\n0 BFC INVERTNEXT\n1 16 0 0 0 -1 0 0 0 1 0 0 0 1 s\\one.dat\n",
         {"s/one.dat": "0 BFC CERTIFY CCW\n" + _TRI},
     )
     assert tris == [((-1.0, 0.0, 0.0), _B, _C)]
@@ -461,9 +458,7 @@ def _signed_volume(tris):
     total = 0.0
     for a, b, c in tris:
         total += (
-            a[0] * (b[1] * c[2] - b[2] * c[1])
-            - a[1] * (b[0] * c[2] - b[2] * c[0])
-            + a[2] * (b[0] * c[1] - b[1] * c[0])
+            a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0])
         ) / 6.0
     return total
 
