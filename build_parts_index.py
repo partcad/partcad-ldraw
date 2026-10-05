@@ -45,6 +45,8 @@ Usage:
     ./build_parts_index.py [--archive complete.zip] [--output parts-index.zip]
     ./build_parts_index.py --refresh LIBRARY --reaching PRIMITIVE [PRIMITIVE ...]
 
+    ./build_parts_index.py --patch-users LIBRARY
+
 The second form is for a change to how connectors are read, rather than to the
 library: it recomputes only the entries of parts whose geometry reaches one of
 the named primitives - read from LIBRARY, an unpacked 'ldraw' directory - and
@@ -54,6 +56,11 @@ needs neither the archive nor the category listings, and cannot move a port an
 assembly already names. A part that would lose or move a port is reported and
 keeps its old entry: that is a change to the rules, and the full rebuild is the
 place for it.
+
+The third fills in, for every patch in 'patches/manifest.json', the parts whose
+geometry reads the file it patches - read from LIBRARY as the second form does -
+which are the parts whose cache key the patch goes into. Run it whenever a
+patch is added, and when the library is updated.
 
 Run it when the LDraw library publishes an update; commit the result. The
 list pages are cached on disk between runs like every other fetch, so a second
@@ -320,6 +327,29 @@ def refresh(path, library, primitives, plugin):
     print("%s: %d entries refreshed, %d left as they were" % (os.path.basename(path), changed, kept), file=sys.stderr)
 
 
+def patch_users(path, library, manifest_path):
+    """Fill in each patch's 'parts': every indexed part whose geometry reads the file it patches.
+
+    Those are the parts whose cache key carries the patch (see _patch_digest in
+    ldraw_repo.py), so a patch to a subpart or a primitive that leaves a user
+    out leaves that user's cached shape as the unpatched file built it.
+    """
+    files = _library_files(library)
+    with zipfile.ZipFile(path) as z:
+        ids = sorted({pid for ids in json.loads(z.read("index.json"))["categories"].values() for pid in ids})
+    with open(manifest_path, encoding="utf-8") as f:
+        manifest = json.load(f)
+    for entry in manifest["patches"]:
+        target = entry["file"].replace("\\", "/").lower()
+        memo = {}
+        users = [pid for pid in ids if (pid + ".dat").lower() == target or _reaches(pid, files, {target}, memo)]
+        entry["parts"] = users
+        print("  %s: %d parts: %s" % (target, len(users), " ".join(users)), file=sys.stderr)
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2)
+        f.write("\n")
+
+
 def _load_plugin():
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     spec = importlib.util.spec_from_file_location(
@@ -344,7 +374,18 @@ def main():
     parser.add_argument(
         "--reaching", nargs="+", default=(), help="with --refresh: the primitives whose users to recompute"
     )
+    parser.add_argument(
+        "--patch-users",
+        metavar="LIBRARY",
+        default=None,
+        help="an unpacked 'ldraw' directory: fill in the parts each patch in patches/manifest.json is read by",
+    )
     args = parser.parse_args()
+
+    if args.patch_users:
+        manifest = os.path.join(os.path.dirname(os.path.abspath(__file__)), "patches", "manifest.json")
+        patch_users(args.output, args.patch_users, manifest)
+        return
 
     if args.refresh:
         if not args.reaching:

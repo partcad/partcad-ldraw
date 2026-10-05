@@ -10,6 +10,7 @@ offline key/value dispatch are exercised directly. A network-gated test checks a
 real category enumeration end to end.
 """
 
+import base64
 import importlib.util
 import json
 import math
@@ -1943,3 +1944,43 @@ def test_a_cone_s_name_says_how_far_down_its_base_is():
     assert plugin._cone_courses("Cone  2 x  2 x  1.667 Octagonal") is None
     assert plugin._cone_courses("Cone  1.5 x  1.5 x  0.667 Truncated") is None
     assert plugin._cone_courses("Brick  1 x  2") is None
+
+
+# --- the patch list ----------------------------------------------------------
+
+
+def test_the_served_wrapper_carries_the_patch_list(tmp_path):
+    # PartCAD writes the wrapper it is served into a directory of its own, so
+    # the 'patches' directory beside it here does not go with it: the list has
+    # to be inside the file. Run from that directory, it still has every patch.
+    manifest, files = plugin._patches()
+    served = base64.b64decode(plugin._ldraw_py_b64()).decode("utf-8")
+    assert served.count("_EMBEDDED_PATCHES = {") == 1
+    copy = tmp_path / "ldraw.py"
+    copy.write_text(served, encoding="utf-8")
+    spec = importlib.util.spec_from_file_location("ldraw_served", str(copy))
+    served_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(served_module)
+    assert served_module._EMBEDDED_PATCHES == {"manifest": manifest, "files": files}
+    assert set(served_module._patches()) == {entry["file"] for entry in manifest["patches"]}
+
+
+def test_the_wrapper_in_the_checkout_is_left_to_read_the_directory():
+    with open(os.path.join(_here, "ldraw.py"), encoding="utf-8") as f:
+        assert len(plugin._EMBED_RE.findall(f.read())) == 1
+
+
+def test_a_patched_part_carries_its_patch_in_its_cache_key(monkeypatch):
+    # PartCAD keys a built shape on the part's config, so a part whose build
+    # reads a patched file says so there - and only that part, so that a patch
+    # changing rebuilds exactly the parts that read it.
+    manifest = {
+        "format": 1,
+        "patches": [{"file": "s/x01.dat", "sha256": "0" * 64, "patch": "x01.patch", "parts": ["x1", "x2"]}],
+    }
+    monkeypatch.setattr(plugin, "_patch_list", (manifest, {"x01.patch": "0 !PATCH ADD\n3 16 0 0 0 1 0 0 0 1 0\n"}))
+    first = plugin._part_config("x1", None)["parameters"]["patches"]["default"]
+    assert plugin._part_config("x2", None)["parameters"]["patches"]["default"] == first
+    assert "patches" not in plugin._part_config("3001", None)["parameters"]
+    monkeypatch.setattr(plugin, "_patch_list", (manifest, {"x01.patch": "0 !PATCH ADD\n3 16 0 0 0 1 0 0 0 0 1\n"}))
+    assert plugin._part_config("x1", None)["parameters"]["patches"]["default"] != first

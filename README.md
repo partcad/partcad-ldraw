@@ -72,9 +72,130 @@ Two mechanisms are combined:
    of the closed shells, cutting the ones LDraw drew facing inward, which are
    its cavities, rather than fusing them.
 
-   A part the wrapper cannot close comes back from the mesh import unchanged,
-   as a shell, exactly as every part did before; so does one whose solid the
-   kernel will not certify. The step can only improve a part or leave it alone.
+   A part the wrapper cannot close is refused, with the reason, rather than
+   handed back as a shell: a shell renders like the part and makes every
+   boolean taken against it meaningless. Where the reason is a defect in one
+   particular LDraw file, the file is mended as it is read, by a patch from the
+   maintained list in `patches/` (see [Patches](#patches)).
+
+## Patches
+
+Most of what keeps an LDraw surface from closing is general, and is mended by a
+rule that holds for every part. What is left is particular to one file: a face
+its author left out, or two faces that were meant to meet and miss by a tenth of
+an LDraw unit. No general rule can tell that from a part that really is open
+there - a rule that guessed would guess wrong somewhere else - so those are
+mended one file at a time, by a maintained list of patches applied as the file
+is read. The library's file itself, and the copy in the cache, are left as they
+are.
+
+A patch is justified when, and only when:
+
+- the part is refused (or wrong) because of a defect **in that LDraw file**,
+  traced to its lines;
+- the file is evidence for what was meant - the corner the next face starts
+  from, the edge lines (`2`) it draws, the primitive that stops a step short of
+  the one beside it - so the patch adds or corrects what the author evidently
+  intended, and invents nothing;
+- a general rule cannot or should not do it, because it would have to guess;
+- the part then builds a solid whose volume agrees with an independent estimate
+  of what its surface encloses, and whose extent is the LDraw geometry's.
+
+A file whose header says it is unfinished (`Needs Work: Inner side not
+modelled`) is not patched: there is nothing in it to say what the missing side
+is. Prefer patching the part's own file or its own subpart over a primitive or
+a subpart other parts share, and patch a shared one only if the change is right
+for every part that uses it.
+
+### Format
+
+`patches/manifest.json` lists the patches, one entry per LDraw file:
+
+```json
+{
+  "file": "s/919s01.dat",
+  "sha256": "40fcc09f...",
+  "patch": "s/919s01.dat.patch",
+  "parts": ["58119"],
+  "reason": ["What LDraw gets wrong, with the lines and primitives that show it,", "and what the patch changes."]
+}
+```
+
+- `file` is the file as a part refers to it, lowercase with `/`: `58121.dat`,
+  `s/919s01.dat`, `48/1-4disc.dat`.
+- `sha256` pins the exact upstream text the patch was written against (the
+  hash of its lines, so CRLF and LF line ends are the same file).
+- `patch` is the patch file under `patches/`.
+- `parts` are the library parts whose geometry reads the file, which are the
+  parts whose cache key the patch goes into (see below).
+- `reason` is for the reviewer: the defect, the evidence for it, and the change.
+
+The patch file is LDraw lines under directives naming the upstream file's lines,
+counted from 1 as an editor counts them:
+
+```
+0 // Notes for the reader, before the first directive; not copied.
+0 !PATCH REPLACE 43
+4 16 3.44415 -48.31492 20 3.56 -47.5 20 3.56 -47.5 8 3.44415 -48.31492 8
+0 !PATCH AFTER 21
+4 16 6.5 -8 34 6.5 -8 86 5 -8 86 5 -8 34
+0 !PATCH DELETE 105
+0 !PATCH ADD
+1 16 0 0 0 1 0 0 0 1 0 0 0 1 4-4disc.dat
+```
+
+`AFTER n` inserts after line `n` (`AFTER 0` before the first), `REPLACE n` puts
+the lines that follow in place of line `n`, `DELETE n` removes it, and `ADD`
+appends to the end. Every number refers to the file as written, whatever an
+earlier directive did, and everything after a directive is copied verbatim,
+`0 BFC` statements included. Keep a patch to the lines it needs; where the file
+evidently meant a primitive (a `4-4disc.dat` closing a `4-4cyli.dat`), add the
+primitive rather than its triangles.
+
+### Pinning
+
+A patch is applied only to the text it was written against. When the library
+changes the file, the hash no longer matches, and the patch is **not** applied:
+the run says so on stderr and builds the file as the library has it, which may
+mean the part is refused again until the patch is rewritten (or found to be no
+longer needed). A patch that does not make sense for the text - a line it names
+that is not there - is skipped the same way. Neither ever fails a build.
+
+### Adding one
+
+1. Trace the defect to its file and lines, and write the smallest patch that
+   mends it.
+2. Add the manifest entry, with the hash (`ldraw._content_hash(text)` of the
+   upstream file) and the reason.
+3. Fill in `parts`: `./build_parts_index.py --patch-users LIBRARY` reads every
+   patch's file and writes the parts that reach it, from an unpacked library.
+4. Check that the part builds, and how its volume and extent compare with an
+   independent estimate; run the tests, which check the manifest (and, with
+   `LDRAW_LIBRARY` set to an unpacked library, each patch against its file).
+5. Raise `CACHE_VERSION` in `ldraw_repo.py` and `cacheVersion` in
+   `partcad.yaml`.
+
+### How a patch reaches a build, and the cache
+
+`ldraw.py` reads the `patches/` directory beside it, which is what a checkout
+and the tests have. PartCAD runs the wrapper elsewhere: it writes the file the
+repository serves under `files/ldraw.py` into a directory of its own, with
+nothing beside it. So the repository serves it with the patch list written into
+it, in place of its `_EMBEDDED_PATCHES = None` line, and the copy that runs
+carries every patch.
+
+PartCAD keys a built part on its configuration, so a part built from a patched
+file carries a `patches` parameter, a hash of every patch it reads: change a
+patch and exactly the parts that read it are built again. A changed patch is
+served only once the cache version is raised, since the repository's answers
+and the wrapper are cached under it; raising it alone does not rebuild a part
+whose configuration is unchanged.
+
+### The list
+
+| File | Parts | What it mends |
+| --- | --- | --- |
+| (none yet) | | |
 
 ## Which way is up
 
@@ -430,6 +551,7 @@ describes the interfaces in detail.
 | `partcad.yaml` | `//pub/universe/lego`; the `ldraw` external dependency (the library), the `ldraw_repo` repository, the `ldraw` partType, and the LEGO interfaces. |
 | `ldraw_repo.py` | Repository plugin: categories, paginated part lists, `.dat`-header metadata, the interfaces each part implements, the partType, and the wrapper file. |
 | `ldraw.py` | The `:ldraw` partType wrapper: fetch + recursively mesh a `.dat`. |
+| `patches/` | The maintained list of patches to LDraw files (see [Patches](#patches)). |
 | `lego-demo/` | Assemblies built purely out of those interfaces. |
 
 ## Usage

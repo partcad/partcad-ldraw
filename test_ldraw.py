@@ -15,7 +15,9 @@ end, which say so and skip.
 """
 
 import importlib.util
+import json
 import os
+import re
 import struct
 import tempfile
 import urllib.error
@@ -1073,3 +1075,192 @@ def test_a_seam_only_the_split_creates_is_settled_too():
 
     # A second pass, which is what '_close_mesh' makes, settles it.
     assert _seam_faults(ldraw._orient_consistently(once)) == []
+
+
+# --- the patch list ----------------------------------------------------------
+#
+# Known defects in particular LDraw files, mended as the file is read. A patch
+# is pinned to the exact text it was written against, so it has to go on only
+# there and nowhere else - and a patch that no longer fits has to cost the part
+# its patch, never the build.
+
+_UPSTREAM = "0 Test Part\n0 BFC CERTIFY CCW\n3 16 0 0 0 1 0 0 0 1 0\n3 16 0 0 0 0 0 1 1 0 0\n"
+
+
+def _with_patches(monkeypatch, patches):
+    """Install a patch list in place of the shipped one: {key: (upstream text, patch text)}."""
+    monkeypatch.setattr(
+        ldraw,
+        "_patches_loaded",
+        {
+            key: (ldraw._content_hash(upstream), patch, "test/%s.patch" % key)
+            for key, (upstream, patch) in patches.items()
+        },
+    )
+    monkeypatch.setattr(ldraw, "_patch_warned", set())
+
+
+def test_a_patch_is_applied_to_the_file_it_was_written_against(monkeypatch):
+    patch = "0 // a face the file leaves out\n0 !PATCH ADD\n3 16 1 0 0 0 1 0 0 0 1\n"
+    _with_patches(monkeypatch, {"s/tests01.dat": (_UPSTREAM, patch)})
+    assert ldraw._patched("s/tests01.dat", _UPSTREAM) == _UPSTREAM + "3 16 1 0 0 0 1 0 0 0 1\n"
+    # Every other file is read as the library has it.
+    assert ldraw._patched("s/tests02.dat", _UPSTREAM) == _UPSTREAM
+
+
+def test_a_patch_names_the_lines_of_the_file_as_it_was_written():
+    # Line numbers are the upstream file's, whatever order the directives come
+    # in and whatever an earlier one has inserted.
+    text = "a\nb\nc\nd\n"
+    patch = (
+        "notes, not copied\n"
+        "0 !PATCH AFTER 1\nafter-a\n"
+        "0 !PATCH REPLACE 3\nC1\nC2\n"
+        "0 !PATCH DELETE 4\n"
+        "0 !PATCH AFTER 0\nfirst\n"
+    )
+    assert ldraw._apply_patch(text, patch) == "first\na\nafter-a\nb\nC1\nC2\n"
+    assert ldraw._apply_patch(text, "0 !PATCH ADD\n0 BFC INVERTNEXT\nlast\n") == text + "0 BFC INVERTNEXT\nlast\n"
+
+
+@pytest.mark.parametrize(
+    "patch",
+    [
+        "0 !PATCH REPLACE 9\nx\n",  # past the end of the file
+        "0 !PATCH DELETE 0\n",  # there is no line 0 to delete
+        "0 !PATCH REPLACE 2\nx\n0 !PATCH DELETE 2\n",  # one line, two fates
+        "0 !PATCH MOVE 2\n",  # not a directive
+        "0 // only notes\n",  # changes nothing
+        "0 !PATCH DELETE 2\n3 16 0 0 0 1 0 0 0 1 0\n",  # a line a DELETE cannot carry
+    ],
+)
+def test_a_patch_that_does_not_make_sense_is_refused(patch):
+    with pytest.raises(ValueError):
+        ldraw._apply_patch("a\nb\nc\n", patch)
+
+
+def test_a_patch_written_against_other_text_is_not_applied(monkeypatch, capsys):
+    # The library has changed the file since the patch was written. The patch
+    # may not fit any more, or not be needed: the file is built as the library
+    # has it, and the run says so - once, however often the file is read.
+    _with_patches(monkeypatch, {"s/tests01.dat": (_UPSTREAM, "0 !PATCH ADD\n3 16 1 0 0 0 1 0 0 0 1\n")})
+    changed = _UPSTREAM.replace("0 Test Part", "0 Test Part, revised")
+    assert ldraw._patched("s/tests01.dat", changed) == changed
+    assert ldraw._patched("s/tests01.dat", changed) == changed
+    err = capsys.readouterr().err
+    assert err.count("s/tests01.dat is not the text its patch") == 1
+    assert "unpatched" in err
+
+
+def test_a_patch_that_cannot_be_applied_leaves_the_file_as_it_is(monkeypatch, capsys):
+    _with_patches(monkeypatch, {"s/tests01.dat": (_UPSTREAM, "0 !PATCH REPLACE 99\nx\n")})
+    assert ldraw._patched("s/tests01.dat", _UPSTREAM) == _UPSTREAM
+    assert "could not be applied" in capsys.readouterr().err
+
+
+def test_a_file_s_hash_does_not_depend_on_how_its_lines_end():
+    # Straight off the network a file has CRLF line ends, and read back out of
+    # the cache it has LF ones; it is one file and one patch fits both.
+    assert ldraw._content_hash(_UPSTREAM) == ldraw._content_hash(_UPSTREAM.replace("\n", "\r\n"))
+    assert ldraw._content_hash(_UPSTREAM) != ldraw._content_hash(_UPSTREAM + "2 24 0 0 0 1 0 0\n")
+
+
+def test_a_patch_goes_on_as_the_file_is_read_and_the_cache_keeps_the_original(tmp_path, monkeypatch):
+    monkeypatch.setattr(ldraw, "_ldraw_fetch", _REAL_FETCH)
+    _with_patches(monkeypatch, {"s/tests01.dat": (_UPSTREAM, "0 !PATCH ADD\n3 16 1 0 0 0 1 0 0 0 1\n")})
+    (tmp_path / "s").mkdir()
+    (tmp_path / "s" / "tests01.dat").write_bytes(_UPSTREAM.replace("\n", "\r\n").encode("latin-1"))
+    assert ldraw._ldraw_fetch("s\\tests01.dat", str(tmp_path)).endswith("3 16 1 0 0 0 1 0 0 0 1\n")
+    assert (tmp_path / "s" / "tests01.dat").read_bytes() == _UPSTREAM.replace("\n", "\r\n").encode("latin-1")
+
+
+def _ldraw_lines(tris):
+    return "".join("3 16 %s\n" % " ".join("%g" % c for p in t for c in p) for t in tris)
+
+
+def test_a_patched_file_builds_the_solid_its_unpatched_text_does_not(monkeypatch):
+    # A box whose bottom LDraw leaves out, and whose opening is pulled far out
+    # of flat, so no general rule may close it: the unpatched file is refused.
+    # The patch adds the two triangles of the missing face, and it builds.
+    _kernel()
+    box = _box((0, 0, 0), (10, 10, 10))
+    pulled = [tuple((p[0], -6.0, p[2]) if p == (0.0, 0.0, 0.0) else p for p in t) for t in box]
+    bottom = [t for t in pulled if all(p[1] <= 0.0 for p in t)]
+    assert len(bottom) == 2
+    upstream = "0 Pulled box\n0 BFC CERTIFY CCW\n" + _ldraw_lines([t for t in pulled if t not in bottom])
+    patch = "0 // the bottom, two triangles\n0 !PATCH ADD\n" + _ldraw_lines(bottom)
+    parent = "0 Test Part\n0 BFC CERTIFY CCW\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 s\\tests01.dat\n"
+
+    def build(patches):
+        _with_patches(monkeypatch, patches)
+        fetch = lambda name, cache: ldraw._patched(name.replace("\\", "/").lower(), upstream)  # noqa: E731
+        return ldraw._build_shape(_mesh(parent, fetch))
+
+    with pytest.raises(ldraw.LDrawNotSolid):
+        build({})
+    with pytest.raises(ldraw.LDrawNotSolid):
+        build({"s/tests01.dat": (upstream + "0 // revised\n", patch)})  # a stale patch is not applied
+    solid = build({"s/tests01.dat": (upstream, patch)})
+    assert ldraw._solid_problems(solid) == []
+    assert _mm3(solid) == pytest.approx(
+        abs(_signed_volume([tuple(ldraw._scaled(p) for p in t) for t in pulled])), rel=1e-6
+    )
+
+
+def test_the_shipped_patch_list_is_well_formed(monkeypatch):
+    # Every patch says which file, against what text, why, and for which
+    # parts; names a patch file that is there and makes sense; and is read by
+    # the wrapper. Each one's evidence is in its reason.
+    with open(os.path.join(_here, "patches", "manifest.json"), encoding="utf-8") as f:
+        manifest = json.load(f)
+    assert manifest["format"] == ldraw._PATCH_FORMAT
+    seen = set()
+    for entry in manifest["patches"]:
+        assert set(entry) >= {"file", "sha256", "patch", "parts", "reason"}, entry
+        key = entry["file"]
+        assert key == key.lower() and "\\" not in key and key.endswith(".dat"), key
+        assert key not in seen, "two patches for %s" % key
+        seen.add(key)
+        assert re.fullmatch(r"[0-9a-f]{64}", entry["sha256"]), key
+        assert entry["reason"] and all(isinstance(line, str) and line.strip() for line in entry["reason"]), key
+        assert entry["parts"] and all(isinstance(p, str) for p in entry["parts"]), key
+        path = os.path.join(_here, "patches", *entry["patch"].split("/"))
+        assert os.path.isfile(path), "%s names %s, which is not there" % (key, entry["patch"])
+        with open(path, encoding="latin-1") as f:
+            patch = f.read()
+        numbers = [int(n) for n in re.findall(r"^0 !PATCH (?:AFTER|REPLACE|DELETE) (\d+)\s*$", patch, re.M)]
+        ldraw._apply_patch("".join("%d\n" % n for n in range(1, max(numbers + [1]) + 1)), patch)
+    names = {entry["patch"] for entry in manifest["patches"]}
+    on_disk = set()
+    for directory, _, files in os.walk(os.path.join(_here, "patches")):
+        for name in files:
+            if name.endswith(".patch"):
+                on_disk.add(
+                    os.path.relpath(os.path.join(directory, name), os.path.join(_here, "patches")).replace(os.sep, "/")
+                )
+    assert on_disk == names, "patch files the manifest does not list, or the reverse"
+    monkeypatch.setattr(ldraw, "_patches_loaded", None)
+    assert set(ldraw._patches()) == seen
+
+
+def test_each_shipped_patch_fits_the_library_it_was_written_against():
+    # Against a local copy of the library, where there is one (the directory
+    # holding 'parts' and 'p'): the pinned hash is that file's, and the patch
+    # goes on to it.
+    library = os.environ.get("LDRAW_LIBRARY")
+    if not library or not os.path.isdir(library):
+        pytest.skip("set LDRAW_LIBRARY to an unpacked LDraw library to check the patches against it")
+    with open(os.path.join(_here, "patches", "manifest.json"), encoding="utf-8") as f:
+        manifest = json.load(f)
+    for entry in manifest["patches"]:
+        for sub in ("parts", "p"):
+            path = os.path.join(library, sub, *entry["file"].split("/"))
+            if os.path.isfile(path):
+                break
+        else:
+            pytest.fail("%s is not in %s" % (entry["file"], library))
+        with open(path, encoding="latin-1") as f:
+            text = f.read()
+        assert ldraw._content_hash(text) == entry["sha256"], entry["file"]
+        with open(os.path.join(_here, "patches", *entry["patch"].split("/")), encoding="latin-1") as f:
+            assert ldraw._apply_patch(text, f.read()) != text

@@ -23,10 +23,13 @@
 # taken against either is meaningless. Closing it is _close_mesh(), and
 # building the solid the closed mesh describes is _solid_from_mesh().
 #
+import hashlib
+import json
 import math
 import os
 import re
 import struct
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -237,7 +240,10 @@ def _ldraw_fetch(name, cache):
     cached = os.path.join(cache, key)
     if os.path.exists(cached):
         with open(cached, "r", encoding="latin-1") as f:
-            return f.read()
+            # The cache holds the file as the library serves it, and the patch
+            # goes on as it is read: it is the upstream text that a patch is
+            # pinned to, so that is the text there has to be to check.
+            return _patched(key, f.read())
     if _negative_is_fresh(cache, key):
         return None
     data, reason = _ldraw_get(key)
@@ -251,7 +257,194 @@ def _ldraw_fetch(name, cache):
             f.write(data)
     except OSError:
         pass  # an unwritable cache is a slow run, not a broken one
-    return data
+    return _patched(key, data)
+
+
+# --- patches: known defects in LDraw files, mended as they are read ----------
+#
+# Most of what keeps an LDraw surface from closing is general - a stud on a face
+# it does not cut, a corner written twice - and is mended by a rule that holds
+# for every part (see _build_shape). What is left is particular: a face one
+# file's author forgot, a cylinder stopped a step short of the disc that was
+# meant to close it. No rule can tell that from a part that really is open
+# there, and a rule that guessed would guess wrong somewhere else. So those are
+# mended one file at a time, by a maintained list of patches, each written down
+# with the evidence for it: 'patches/manifest.json' says which file, what is
+# wrong with it and the hash of the exact text the patch was written against,
+# and 'patches/<file>.patch' holds the lines it adds, replaces or removes, in
+# LDraw's own line format. The README has the rules for writing one.
+#
+# A patch is applied only to the text it was written against. If the library
+# changes the file, the patch is not applied - it may no longer fit, or no
+# longer be needed - and the file is built as the library has it, with a
+# warning, which can mean the part is refused again. That is the safe failure:
+# a patch applied to text it was not written for would be a guess.
+_PATCH_DIR = "patches"
+_PATCH_MANIFEST = "manifest.json"
+_PATCH_FORMAT = 1
+_PATCH_DIRECTIVE = "0 !PATCH"
+# The patch list itself, when this file is served to the PartCAD sandbox by the
+# repository plugin. That copy is written into a directory of its own with
+# nothing beside it (see 'files/ldraw.py' in ldraw_repo.py), so the plugin, which
+# runs from the package's checkout, puts the list into the copy it serves, in
+# place of this None: {"manifest": <manifest.json, parsed>, "files": {name:
+# text}}. Run from a checkout, as the tests and a local package do, it stays
+# None and the 'patches' directory beside this file is read instead.
+_EMBEDDED_PATCHES = None
+
+_patches_loaded = None  # {key: (sha256, patch text, patch name)} once read
+_patch_warned = set()
+
+
+def _warn_patch(message):
+    """Say something about a patch once per process, on stderr; never raise."""
+    if message in _patch_warned:
+        return
+    _patch_warned.add(message)
+    print("ldraw: %s" % message, file=sys.stderr)
+
+
+def _content_hash(text):
+    """The hash a patch is pinned to: the file's lines, whatever ends them.
+
+    The cache is written in text mode and read back with universal newlines, so
+    the same file arrives with CRLF line ends straight off the network and with
+    LF ones out of the cache. Hashing the lines rather than the bytes is what makes the
+    two the same file, which they are.
+    """
+    return hashlib.sha256("\n".join(text.splitlines()).encode("latin-1", "replace")).hexdigest()
+
+
+def _read_patch_files():
+    """The manifest and the patch texts: embedded, or from the directory beside this file."""
+    if _EMBEDDED_PATCHES is not None:
+        return _EMBEDDED_PATCHES.get("manifest"), _EMBEDDED_PATCHES.get("files") or {}
+    here = os.path.dirname(os.path.abspath(globals().get("__file__") or "."))
+    root = os.path.join(here, _PATCH_DIR)
+    try:
+        with open(os.path.join(root, _PATCH_MANIFEST), "r", encoding="utf-8") as f:
+            manifest = json.load(f)
+    except FileNotFoundError:
+        return None, {}
+    files = {}
+    for entry in (manifest or {}).get("patches") or []:
+        name = entry.get("patch") if isinstance(entry, dict) else None
+        if not isinstance(name, str):
+            continue
+        try:
+            with open(os.path.join(root, *name.split("/")), "r", encoding="latin-1") as f:
+                files[name] = f.read()
+        except OSError:
+            pass  # reported below, as a patch that names no file
+    return manifest, files
+
+
+def _load_patches():
+    """{LDraw file key: (sha256, patch text, patch name)}; a broken entry is skipped with a warning."""
+    try:
+        manifest, files = _read_patch_files()
+    except (OSError, ValueError) as e:
+        _warn_patch("the patch list could not be read, so no patch is applied: %s" % e)
+        return {}
+    if manifest is None:
+        return {}
+    if not isinstance(manifest, dict) or manifest.get("format") != _PATCH_FORMAT:
+        _warn_patch("the patch list is not format %d, so no patch is applied" % _PATCH_FORMAT)
+        return {}
+    patches = {}
+    for entry in manifest.get("patches") or []:
+        try:
+            key = entry["file"].replace("\\", "/").lower()
+            sha, name = entry["sha256"], entry["patch"]
+        except (KeyError, TypeError, AttributeError):
+            _warn_patch("a patch list entry without a file, a hash and a patch was skipped: %r" % (entry,))
+            continue
+        if name not in files:
+            _warn_patch("the patch for %s names %s, which is not there; %s is built unpatched" % (key, name, key))
+            continue
+        patches[key] = (sha, files[name], name)
+    return patches
+
+
+def _patches():
+    global _patches_loaded
+    if _patches_loaded is None:
+        _patches_loaded = _load_patches()
+    return _patches_loaded
+
+
+def _apply_patch(text, patch):
+    """'text' with 'patch' applied; ValueError if the patch does not make sense for it.
+
+    A patch is LDraw lines grouped under directives, each naming a line of the
+    upstream file by its number, counted from 1 as an editor counts them:
+
+        0 !PATCH AFTER <n>     the lines that follow go in after line n
+        0 !PATCH REPLACE <n>   the lines that follow take the place of line n
+        0 !PATCH DELETE <n>    line n goes, and nothing follows
+        0 !PATCH ADD           the lines that follow go at the end of the file
+
+    Every number is a line of the file as it was written, not as an earlier
+    directive left it, so the order of the directives does not matter. The
+    lines before the first directive are the patch's own notes and go nowhere;
+    every line after one is copied as it is, comments and BFC statements
+    included, since an added reference may need its INVERTNEXT.
+    """
+    lines = text.splitlines()
+    after, replaced = {}, {}
+    current = None
+    for raw in patch.splitlines():
+        words = raw.split()
+        if " ".join(words[:2]).upper() == _PATCH_DIRECTIVE:
+            op = words[2].upper() if len(words) > 2 else ""
+            if op == "ADD" and len(words) == 3:
+                n = len(lines)
+            elif op in ("AFTER", "REPLACE", "DELETE") and len(words) == 4 and words[3].isdigit():
+                n = int(words[3])
+            else:
+                raise ValueError("not a patch directive: %r" % raw)
+            if not (0 <= n <= len(lines)) or (op in ("REPLACE", "DELETE") and n == 0):
+                raise ValueError("line %d is not in the file, which has %d" % (n, len(lines)))
+            if op in ("REPLACE", "DELETE"):
+                if n in replaced:
+                    raise ValueError("line %d is replaced or deleted twice" % n)
+                current = replaced[n] = []
+                if op == "DELETE":
+                    current = None
+            else:
+                current = after.setdefault(n, [])
+            continue
+        if current is not None:
+            current.append(raw)
+        elif after or replaced:
+            if raw.strip():
+                raise ValueError("a line after a DELETE belongs to no directive: %r" % raw)
+    if not after and not replaced:
+        raise ValueError("it changes nothing")
+    out = list(after.get(0, []))
+    for n, line in enumerate(lines, 1):
+        out.extend(replaced.get(n, [line]))
+        out.extend(after.get(n, []))
+    return "\n".join(out) + "\n"
+
+
+def _patched(key, text):
+    """The text of one LDraw file, with its patch applied if it has one that fits."""
+    entry = _patches().get(key)
+    if entry is None or text is None:
+        return text
+    sha, patch, name = entry
+    if _content_hash(text) != sha:
+        _warn_patch(
+            "%s is not the text its patch (%s) was written against - the library has changed it - so it is "
+            "built as the library has it, unpatched; the part may be refused" % (key, name)
+        )
+        return text
+    try:
+        return _apply_patch(text, patch)
+    except ValueError as e:
+        _warn_patch("the patch for %s (%s) could not be applied, so it is built unpatched: %s" % (key, name, e))
+        return text
 
 
 _IDENT = ((1, 0, 0), (0, 1, 0), (0, 0, 1))

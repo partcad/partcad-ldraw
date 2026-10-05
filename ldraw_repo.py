@@ -21,6 +21,7 @@ sub-package, e.g. ``Brick/objects/part`` or ``Brick/files/ldraw.py``.
 
 import base64
 import concurrent.futures
+import hashlib
 import json
 import math
 import os
@@ -1129,6 +1130,11 @@ def _part_config(pid, meta, category=None):
     # first would then be handed back for all the others. ldraw.py's
     # _resolve_dat() already reads parameters['dat'].
     config["parameters"] = {"dat": {"type": "string", "default": pid + ".dat"}}
+    # The same reason again for a part built from a patched LDraw file: the
+    # patch is part of what the part is, and the parameters are what is keyed.
+    digest = _patch_digest(pid)
+    if digest is not None:
+        config["parameters"][_PATCH_PARAMETER] = {"type": "string", "default": digest}
     if desc:
         config["desc"] = desc
     if author:
@@ -1170,15 +1176,94 @@ def _catalog(category):
     return {pid: _part_config(pid, meta) for pid, meta in zip(ids, metas)}
 
 
+# --- patches -----------------------------------------------------------------
+#
+# The maintained list of patches to LDraw files (see 'patches/manifest.json' and
+# the README). ldraw.py applies them; this side has two jobs. It ships them to
+# where ldraw.py runs, which is a copy of that one file with nothing beside it
+# (see _ldraw_py_b64). And it puts each part's patches into that part's cache
+# key: PartCAD keys a built shape on the part's config and nothing else, so a
+# part whose build reads a patched file has to say so in its config, or a patch
+# that changes would go on being answered with the shape the old one built.
+_PATCH_DIR = "patches"
+_PATCH_MANIFEST = "manifest.json"
+_PATCH_PARAMETER = "patches"
+_EMBED_RE = re.compile(r"^_EMBEDDED_PATCHES = None$", re.MULTILINE)
+_patch_list = None
+
+
+def _patches():
+    """(manifest, {patch name: text}) from the checkout, or (None, {}) when there is none."""
+    global _patch_list
+    if _patch_list is None:
+        root = os.path.join(os.path.dirname(os.path.abspath(__file__)), _PATCH_DIR)
+        try:
+            with open(os.path.join(root, _PATCH_MANIFEST), "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+        except (OSError, ValueError):
+            manifest = None
+        files = {}
+        for entry in (manifest or {}).get("patches") or []:
+            name = entry.get("patch") if isinstance(entry, dict) else None
+            if not isinstance(name, str):
+                continue
+            try:
+                with open(os.path.join(root, *name.split("/")), "r", encoding="latin-1") as f:
+                    files[name] = f.read()
+            except OSError:
+                pass  # ldraw.py says so, where the part is built
+        _patch_list = (manifest, files)
+    return _patch_list
+
+
+def _patch_digest(pid):
+    """A short hash of every patch a part's build reads, or None if it reads none.
+
+    A patch names the parts that read the file it patches (its 'parts', which
+    'build_parts_index.py --patch-users' works out from the library), and the
+    digest covers the patched file's pinned hash and the patch's own text, so
+    editing either changes the key of exactly those parts and of no others.
+    """
+    manifest, files = _patches()
+    digest = None
+    for entry in (manifest or {}).get("patches") or []:
+        if not isinstance(entry, dict) or pid not in (entry.get("parts") or []):
+            continue
+        if digest is None:
+            digest = hashlib.sha256()
+        for value in (entry.get("file"), entry.get("sha256"), files.get(entry.get("patch"))):
+            digest.update(str(value).encode("utf-8") + b"\0")
+    return digest.hexdigest()[:16] if digest is not None else None
+
+
 # --- partType wrapper file --------------------------------------------------
 
 _PART_TYPE = {"kind": "wrapper", "path": "ldraw.py"}
 
 
+def _ldraw_py_source():
+    """The 'ldraw.py' wrapper as it is served: with the patch list written into it.
+
+    PartCAD materializes the wrapper by itself into a directory of its own, so
+    the 'patches' directory beside it in this checkout does not go with it.
+    What goes instead is the list, as a literal in place of ldraw.py's
+    '_EMBEDDED_PATCHES = None', which is the one line of it that is changed.
+    """
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ldraw.py"), "r", encoding="utf-8") as f:
+        source = f.read()
+    manifest, files = _patches()
+    if manifest is None:
+        return source
+    literal = "_EMBEDDED_PATCHES = %r" % ({"manifest": manifest, "files": files},)
+    served, count = _EMBED_RE.subn(lambda _: literal, source, count=1)
+    if count != 1:
+        raise ValueError("ldraw.py has no '_EMBEDDED_PATCHES = None' line to carry the patch list")
+    return served
+
+
 def _ldraw_py_b64():
     """The 'ldraw.py' wrapper, base64-encoded, as the 'files/' key serves it."""
-    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ldraw.py"), "rb") as f:
-        return base64.b64encode(f.read()).decode()
+    return base64.b64encode(_ldraw_py_source().encode("utf-8")).decode()
 
 
 # --- the key/value protocol -------------------------------------------------
