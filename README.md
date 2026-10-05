@@ -195,7 +195,7 @@ whose configuration is unchanged.
 
 | File | Parts | What it mends |
 | --- | --- | --- |
-| (none yet) | | |
+| `64681.dat` | 64681, its three stickered versions, and 64393 (which mirrors it) | The top face of the lower body stops at x = 6 and the strip it turns up into stands at x = 6.075: a 0.075 LDU slit, 52 long. |
 
 ## Which way is up
 

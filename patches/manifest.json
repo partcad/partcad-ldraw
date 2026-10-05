@@ -1,4 +1,31 @@
 {
   "format": 1,
-  "patches": []
+  "patches": [
+    {
+      "file": "64681.dat",
+      "sha256": "5617382af41e35487fdb542e520df3c51c47ce3a9383ec21451413738c1c7bb1",
+      "patch": "64681.dat.patch",
+      "parts": [
+        "64393",
+        "64393d01",
+        "64393d02",
+        "64393d03",
+        "64681",
+        "64681d01",
+        "64681d02",
+        "64681d03"
+      ],
+      "reason": [
+        "Technic Panel Fairing Smooth #5 leaks along a slit 0.075 LDU wide and 52 long.",
+        "The top face of the lower body (y = -8) ends at x = 6 for z = 34..86: the quads of lines 18 and 20,",
+        "the 4-4ndis/3-4ndis of lines 44 and 46 (radius 6) and the 1-4ring2 of s\\64683s01.dat line 312.",
+        "The strip that face turns up into, line 14 (y = -8.558..-7), stands at x = 6.075, under the edge the",
+        "shell's inner surface starts from (lines 76, 82, 91 all use 6.075), and the quad of line 19 meets it",
+        "there for z = 86..89. So between z = 34 and 86 nothing spans x = 6..6.075.",
+        "The patch adds one quad on the plane y = -8 from x = 5 to 6.5, z = 34..86: it lies on the existing",
+        "top face, closes the slit and ends inside the body behind the strip. It adds no volume of its own;",
+        "a face exactly 0.075 wide would be narrower than the tolerance the mesh is mended with."
+      ]
+    }
+  ]
 }
