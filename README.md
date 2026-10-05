@@ -89,7 +89,17 @@ mended one file at a time, by a maintained list of patches applied as the file
 is read. The library's file itself, and the copy in the cache, are left as they
 are.
 
-A patch is justified when, and only when:
+A patch is one of two kinds, and says which in its manifest entry (`kind`):
+
+- A **correction** (`"kind": "correction"`) mends what the file draws: a corner
+  placed on the true circle where the primitive beside it ends on the polygon,
+  a face that stops a tenth of a unit short of the face it was meant to meet.
+  The file is the evidence for what was meant, and the patch invents nothing.
+- **Authored** geometry (`"kind": "authored"`) adds surface the file does not
+  draw at all. It is not a mend, and it is never presented as one: the part
+  that comes out is partly ours, and its manifest entry says so.
+
+A correction is justified when, and only when:
 
 - the part is refused (or wrong) because of a defect **in that LDraw file**,
   traced to its lines;
@@ -101,11 +111,37 @@ A patch is justified when, and only when:
 - the part then builds a solid whose volume agrees with an independent estimate
   of what its surface encloses, and whose extent is the LDraw geometry's.
 
-A file whose header says it is unfinished (`Needs Work: Inner side not
-modelled`) is not patched: there is nothing in it to say what the missing side
-is. Prefer patching the part's own file or its own subpart over a primitive or
-a subpart other parts share, and patch a shared one only if the change is right
-for every part that uses it.
+Authoring is acceptable only for a part whose LDraw file says the geometry is
+missing (`0 // Needs Work: Inner side not modelled`), or that leaves surfaces
+undrawn that no correction can recover. It is held to the same checks, and to
+these as well:
+
+- **Determined by the file, as far as it can be.** In order of preference: close
+  an opening with the surface its own rim defines, using a primitive where one
+  fits (a disc closing a cylinder, a cone, a flat cap); where the rim is not
+  flat, triangles spanning the drawn outline - the type `2` edge lines and the
+  open rims - fan-wise, or as a ruled surface between two drawn curves. Nothing
+  nobody drew: no internal ribs, no bosses, no wall that no opening shows.
+- **The filled envelope.** Where the inside of a part is unknown, the authored
+  surface closes it at the rim of each opening, so the solid is the part's
+  external shape, exact, filled solid: its volume is the envelope's, not the
+  plastic's. That is the conservative answer for an interference check, which
+  is what a solid is mostly for. A wall thickness is inferred instead only where
+  an opening shows the wall clearly, and the entry says which was done.
+- **Within the part.** Authored geometry never reaches outside the LDraw
+  geometry's bounding box.
+- **Said plainly.** The entry's `reason` quotes the file's own `Needs Work`
+  line where there is one; says what was modelled and on what evidence (the
+  rims and edge lines the file does draw, the wall an opening shows); and says
+  how the result differs from the real part ("the solid is the filled housing:
+  its volume is the envelope's, not the plastic's").
+
+If a part cannot be closed even by authoring without guessing at its external
+shape, it is not patched, and stays refused.
+
+Prefer patching the part's own file or its own subpart over a primitive or a
+subpart other parts share, and patch a shared one only if the change is right
+for every part that uses it - and list every one of them in `parts`.
 
 ### Format
 
@@ -116,6 +152,7 @@ for every part that uses it.
   "file": "s/919s01.dat",
   "sha256": "40fcc09f...",
   "patch": "s/919s01.dat.patch",
+  "kind": "correction",
   "parts": ["58119"],
   "reason": ["What LDraw gets wrong, with the lines and primitives that show it,", "and what the patch changes."]
 }
@@ -126,6 +163,7 @@ for every part that uses it.
 - `sha256` pins the exact upstream text the patch was written against (the
   hash of its lines, so CRLF and LF line ends are the same file).
 - `patch` is the patch file under `patches/`.
+- `kind` is `correction` or `authored` (see above).
 - `parts` are the library parts whose geometry reads the file, which are the
   parts whose cache key the patch goes into (see below).
 - `reason` is for the reviewer: the defect, the evidence for it, and the change.
@@ -165,7 +203,7 @@ that is not there - is skipped the same way. Neither ever fails a build.
 
 1. Trace the defect to its file and lines, and write the smallest patch that
    mends it.
-2. Add the manifest entry, with the hash (`ldraw._content_hash(text)` of the
+2. Add the manifest entry, with its `kind`, the hash (`ldraw._content_hash(text)` of the
    upstream file) and the reason.
 3. Fill in `parts`: `./build_parts_index.py --patch-users LIBRARY` reads every
    patch's file and writes the parts that reach it, from an unpacked library.
@@ -193,10 +231,10 @@ whose configuration is unchanged.
 
 ### The list
 
-| File | Parts | What it mends |
-| --- | --- | --- |
-| `64681.dat` | 64681, its three stickered versions, and 64393 (which mirrors it) | The top face of the lower body stops at x = 6 and the strip it turns up into stands at x = 6.075: a 0.075 LDU slit, 52 long. |
-| `s/919s01.dat` | 58119 and the other 9V battery boxes built from the same bracket (54734, 919, 919c01, 923) | The bracket's 16-sided outer wall ends at x = 3.444 and the flat face beyond it starts at x = 3.56, at the same corner on the true circle: eight strips 0.08-0.12 LDU wide. |
+| File | Kind | Parts | What it does |
+| --- | --- | --- | --- |
+| `64681.dat` | correction | 64681, its three stickered versions, and 64393 (which mirrors it) | The top face of the lower body stops at x = 6 and the strip it turns up into stands at x = 6.075: a 0.075 LDU slit, 52 long. |
+| `s/919s01.dat` | correction | 58119 and the other 9V battery boxes built from the same bracket (54734, 919, 919c01, 923) | The bracket's 16-sided outer wall ends at x = 3.444 and the flat face beyond it starts at x = 3.56, at the same corner on the true circle: eight strips 0.08-0.12 LDU wide. |
 
 ## Which way is up
 

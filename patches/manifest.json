@@ -5,6 +5,7 @@
       "file": "64681.dat",
       "sha256": "5617382af41e35487fdb542e520df3c51c47ce3a9383ec21451413738c1c7bb1",
       "patch": "64681.dat.patch",
+      "kind": "correction",
       "parts": [
         "64393",
         "64393d01",
@@ -31,6 +32,7 @@
       "file": "s/919s01.dat",
       "sha256": "40fcc09fa39ef6e8c2c9db76bd6eb8720d6f4e378fcde09a1e47a94834cf0b03",
       "patch": "s/919s01.dat.patch",
+      "kind": "correction",
       "parts": [
         "54734",
         "58119",

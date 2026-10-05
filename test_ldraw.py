@@ -1379,15 +1379,20 @@ def test_a_patched_file_builds_the_solid_its_unpatched_text_does_not(monkeypatch
 
 
 def test_the_shipped_patch_list_is_well_formed(monkeypatch):
-    # Every patch says which file, against what text, why, and for which
-    # parts; names a patch file that is there and makes sense; and is read by
-    # the wrapper. Each one's evidence is in its reason.
+    # Every patch says which file, against what text, what kind of change it
+    # is, why, and for which parts; names a patch file that is there and makes
+    # sense; and is read by the wrapper. Each one's evidence is in its reason.
+    # A patch either corrects what the file draws or adds geometry the file
+    # leaves out, and says which: the two are held to different standards of
+    # evidence (see the README), and a reader of the part has to be able to
+    # tell a mended surface from an authored one.
     with open(os.path.join(_here, "patches", "manifest.json"), encoding="utf-8") as f:
         manifest = json.load(f)
     assert manifest["format"] == ldraw._PATCH_FORMAT
     seen = set()
     for entry in manifest["patches"]:
-        assert set(entry) >= {"file", "sha256", "patch", "parts", "reason"}, entry
+        assert set(entry) >= {"file", "sha256", "patch", "kind", "parts", "reason"}, entry
+        assert entry["kind"] in ("correction", "authored"), entry["file"]
         key = entry["file"]
         assert key == key.lower() and "\\" not in key and key.endswith(".dat"), key
         assert key not in seen, "two patches for %s" % key
