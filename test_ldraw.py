@@ -797,6 +797,134 @@ def test_a_flat_hole_with_a_straight_side_through_several_vertices_is_capped():
     assert all(ear_edges.count(side) == 1 for side in sides)
 
 
+def _mirror(tris):
+    """The surface reflected in x = 0, wound back so that it still faces out - as _mesh() does a mirror."""
+    return [tuple((-p[0], p[1], p[2]) for p in (a, c, b)) for a, b, c in tris]
+
+
+def _reordered(tris):
+    """The same triangles listed in another order, each read from another corner."""
+    turned = [t[i % 3 :] + t[: i % 3] for i, t in enumerate(tris)]
+    return turned[1::2][::-1] + turned[0::2]
+
+
+def _cyclic(loop):
+    """A loop as a set member: the same whichever vertex it is handed over starting from."""
+    i = min(range(len(loop)), key=lambda k: loop[k])
+    return tuple(loop[i:] + loop[:i])
+
+
+def _loops(tris, mirrored=False):
+    tris = ldraw._weld(list(tris), ldraw._WELD_LDU)
+    ldraw._split_t_junctions(tris, ldraw._TJUNCTION_LDU)
+    loops = ldraw._boundary_loops(tris)
+    if mirrored:  # back into the original's hand: reflect, and walk the other way
+        loops = [[(-p[0], p[1], p[2]) for p in reversed(L)] for L in loops]
+    return sorted(_cyclic(L) for L in loops)
+
+
+def _two_holes_and_a_fin():
+    """A box whose top is a 2 x 2 grid with two diagonal squares missing, and a fin.
+
+    The two holes meet at the centre of the top, so which edge carries on round
+    either hole there is found by turning through the triangles - and the turn
+    crosses the diagonal of a square, where a fin drawn both ways round makes
+    four triangles share the edge. Another fin on a corner of the box stands on
+    an edge one of the holes runs past. This is what 64393 is made of where its
+    shell meets its boss, and what its mirror image 64681 is made of as well.
+    """
+    tris = _box((0, 0, 0), (10, 10, 10), omit=("y+",))
+    c = (5.0, 10.0, 5.0)
+    kept = [
+        [(5.0, 10.0, 0.0), (10.0, 10.0, 0.0), (10.0, 10.0, 5.0), c],
+        [(0.0, 10.0, 5.0), c, (5.0, 10.0, 10.0), (0.0, 10.0, 10.0)],
+    ]
+    for q in kept:
+        # Wound to face up and out of the box (+y), and split through c.
+        k = q.index(c)
+        q = q[k:] + q[:k]
+        tris += [(q[0], q[2], q[1]), (q[0], q[3], q[2])]
+    fin = (7.5, 15.0, 2.5)
+    tris += [(c, (10.0, 10.0, 0.0), fin), (c, fin, (10.0, 10.0, 0.0))]
+    corner = (-5.0, 15.0, -5.0)
+    tris += [((0.0, 10.0, 0.0), (0.0, 0.0, 0.0), corner), ((0.0, 10.0, 0.0), corner, (0.0, 0.0, 0.0))]
+    return tris
+
+
+def test_a_loop_that_runs_through_a_point_twice_splits_the_same_from_any_start():
+    figure_eight = [(0, 0), (1, 1), (2, 0), (1, -1), (0, 0), (-1, 1), (-2, 0), (-1, -1)]
+    expected = sorted(_cyclic(L) for L in ldraw._split_pinched(figure_eight))
+    assert len(expected) == 2
+    for start in range(len(figure_eight)):
+        turned = figure_eight[start:] + figure_eight[:start]
+        assert sorted(_cyclic(L) for L in ldraw._split_pinched(turned)) == expected
+
+
+def test_the_holes_found_do_not_depend_on_the_hand_or_the_order_of_the_surface():
+    # The fairing 64393 is 64681 mirrored and nothing else, and the walk round
+    # its holes used to cross an edge four triangles share into whichever was
+    # listed first. Reflected, a different one was, and the walk went round the
+    # fin and never came back: the holes went unfound and the part unbuilt.
+    tris = _two_holes_and_a_fin()
+    loops = _loops(tris)
+    assert len(loops) == 2
+    assert sorted(len(L) for L in loops) == [4, 4]
+    assert _loops(_mirror(tris), mirrored=True) == loops
+    assert _loops(_reordered(tris)) == loops
+    assert _loops(_mirror(_reordered(tris)), mirrored=True) == loops
+
+
+def test_a_surface_and_its_mirror_image_mend_to_mirror_images():
+    tris = _two_holes_and_a_fin()
+    for variant, mirrored in ((tris, False), (_mirror(tris), True), (_reordered(tris), False)):
+        closed = ldraw._close_mesh(list(variant))
+        assert closed is not None
+        assert ldraw._boundary_loops(closed) == []
+        assert _signed_volume(closed) == pytest.approx(1000.0)
+    # Every step that mends a surface the region builder is handed, one after
+    # another, gives exactly the mirror image of what it gives the original.
+    steps = [
+        lambda m: ldraw._split_t_junctions(m, ldraw._TJUNCTION_LDU),
+        lambda m: ldraw._drop_slivers(m, ldraw._WELD_LDU),
+        lambda m: ldraw._lay_onto_faces(m, ldraw._TJUNCTION_LDU),
+        lambda m: ldraw._split_at_loose_vertices(m, ldraw._LOOSE_LDU),
+    ]
+
+    def surface(m, mirrored):
+        if mirrored:
+            m = _mirror(m)
+        return sorted(_cyclic(list(t)) for t in m)
+
+    meshes = [ldraw._weld(list(v), ldraw._WELD_LDU) for v in (tris, _mirror(tris), _reordered(tris))]
+    for step in steps:
+        for m in meshes:
+            step(m)
+        assert surface(meshes[1], True) == surface(meshes[0], False)
+        assert surface(meshes[2], False) == surface(meshes[0], False)
+
+
+@pytest.mark.parametrize("variant", ["mirror", "reordered"])
+def test_a_mirrored_surface_builds_the_mirror_image_solid(variant):
+    _kernel()
+    from OCP.Bnd import Bnd_Box
+    from OCP.BRepBndLib import BRepBndLib
+
+    def box(shape):
+        b = Bnd_Box()
+        BRepBndLib.AddOptimal_s(shape, b, False, False)
+        return [round(v, 6) for v in b.Get()]
+
+    tris = _two_holes_and_a_fin()
+    solid = ldraw._build_shape(list(tris))
+    other = ldraw._build_shape(_mirror(tris) if variant == "mirror" else _reordered(tris))
+    assert ldraw._solid_problems(other) == []
+    assert _mm3(other) == pytest.approx(_mm3(solid))
+    assert _mm3(solid) == pytest.approx(_mm3_box(10))
+    x0, y0, z0, x1, y1, z1 = box(solid)
+    # _scaled() maps LDraw's x to PartCAD's x, so the mirror in x stays one.
+    assert box(other) == ([-x1, y0, z0, -x0, y1, z1] if variant == "mirror" else [x0, y0, z0, x1, y1, z1])
+
+
 def test_regions_kept_side_by_side_are_joined_into_one_solid():
     # Regions cut from one arrangement share their faces exactly; joined from
     # the faces only one of them uses they make one solid without a boolean,
@@ -817,6 +945,26 @@ def test_joining_regions_does_not_fill_a_cavity_none_of_them_is():
     solid = ldraw._single(ldraw._solid_from_regions(tris))
     assert ldraw._solid_problems(solid) == []
     assert _mm3(solid) == pytest.approx(2 * _mm3_box(10) - _mm3_box(6))
+
+
+def test_a_stitch_through_a_wall_closes_regions_but_does_not_vote_on_them():
+    # Two blocks drawn face to face, as LDraw draws a part from primitives,
+    # and a stitch that runs through the second block half a unit from the
+    # face they share: what a seam stitched across the steps of a wall makes.
+    # Its triangles face the shared face, so the slice between the two is a
+    # region they face into; voting, they would take it out of the part.
+    _kernel()
+    tris = _box((0, 0, 0), (10, 10, 10)) + _box((10, 0, 0), (20, 10, 10))
+    stitch = [
+        ((10.5, 0.0, 0.0), (10.5, 10.0, 10.0), (10.5, 10.0, 0.0)),
+        ((10.5, 0.0, 0.0), (10.5, 0.0, 10.0), (10.5, 10.0, 10.0)),
+    ]
+    assert ldraw._normal(*stitch[0])[0] < 0.0 and ldraw._normal(*stitch[1])[0] < 0.0
+    voted = ldraw._single(ldraw._solid_from_regions(tris + stitch))
+    assert _mm3(voted) == pytest.approx(2 * _mm3_box(10) - (0.5 * ldraw._LDU_MM) * (10 * ldraw._LDU_MM) ** 2)
+    solid = ldraw._single(ldraw._solid_from_regions(tris + stitch, silent=set(stitch)))
+    assert ldraw._solid_problems(solid) == []
+    assert _mm3(solid) == pytest.approx(2 * _mm3_box(10))
 
 
 def ldraw_topabs_solid():
