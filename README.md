@@ -196,6 +196,7 @@ whose configuration is unchanged.
 | File | Parts | What it mends |
 | --- | --- | --- |
 | `64681.dat` | 64681, its three stickered versions, and 64393 (which mirrors it) | The top face of the lower body stops at x = 6 and the strip it turns up into stands at x = 6.075: a 0.075 LDU slit, 52 long. |
+| `s/919s01.dat` | 58119 and the other 9V battery boxes built from the same bracket (54734, 919, 919c01, 923) | The bracket's 16-sided outer wall ends at x = 3.444 and the flat face beyond it starts at x = 3.56, at the same corner on the true circle: eight strips 0.08-0.12 LDU wide. |
 
 ## Which way is up
 

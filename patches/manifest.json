@@ -26,6 +26,28 @@
         "top face, closes the slit and ends inside the body behind the strip. It adds no volume of its own;",
         "a face exactly 0.075 wide would be narrower than the tolerance the mesh is mended with."
       ]
+    },
+    {
+      "file": "s/919s01.dat",
+      "sha256": "40fcc09fa39ef6e8c2c9db76bd6eb8720d6f4e378fcde09a1e47a94834cf0b03",
+      "patch": "s/919s01.dat.patch",
+      "parts": [
+        "54734",
+        "58119",
+        "919",
+        "919c01",
+        "923"
+      ],
+      "reason": [
+        "The Power Functions battery box's mounting brackets leak at eight strips 0.08-0.12 LDU wide.",
+        "The bracket's outer wall is a radius-9 cylinder drawn with 1-16cyli.dat (lines 120 and 178), which",
+        "ends at the 16-gon's vertex x = 3.44415, y = -/+48.31492. The flat face that continues it, lines 43",
+        "and 152 (edge lines 45 and 154), starts at x = 3.56, y = -/+48.314: the same corner placed on the true",
+        "circle (radius 9.044, 23.2 degrees) instead of on the 16-gon (22.5 degrees). That leaves a strip",
+        "0.116 LDU wide down the side and a sliver outside the 2-4ring8 end faces (lines 131 and 189).",
+        "The patch moves the two faces' outer corners onto the vertex the cylinder ends at; the subpart is",
+        "placed four times (s\\919s02.dat lines 11-12, each with both brackets), which is the eight strips."
+      ]
     }
   ]
 }

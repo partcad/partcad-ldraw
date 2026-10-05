@@ -1,0 +1,10 @@
+0 // s\919s01.dat: the bracket's outer wall is a cylinder of radius 9 that
+0 // 1-16cyli.dat (lines 120 and 178) draws as far as the 16-gon's vertex at
+0 // x = 3.44415, y = -/+48.31492. The flat face beyond it (lines 43 and 152,
+0 // with their edge lines 45 and 154) starts at x = 3.56, y = -/+48.314: the
+0 // same corner, placed on the true circle instead of the 16-gon. Each face is
+0 // moved onto the vertex the cylinder ends at.
+0 !PATCH REPLACE 43
+4 16 3.44415 -48.31492 20 3.56 -47.5 20 3.56 -47.5 8 3.44415 -48.31492 8
+0 !PATCH REPLACE 152
+4 16 3.44415 48.31492 8 3.56 47.5 8 3.56 47.5 20 3.44415 48.31492 20
