@@ -62,8 +62,11 @@ import zipfile
 # some it served gain the bodies they lost; v13 serves ldraw.py with the list
 # of patches to particular LDraw files written into it, and a 'patches'
 # parameter on every part that reads one, so the parts those patches mend
-# (64681, 58119 and the boxes sharing its bracket) are solids now.
-CACHE_VERSION = 13
+# (64681, 58119 and the boxes sharing its bracket) are solids now; v14 finds
+# the holes in a surface the same way whatever its hand or the order it is
+# written in, so a part that mirrors another (64393, the mirror of 64681) is a
+# solid where its original is, and the mirror image of it.
+CACHE_VERSION = 14
 
 _BASE = "https://library.ldraw.org"
 _CATEGORY_LIST_URL = _BASE + "/parts/category-list"

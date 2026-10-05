@@ -62,8 +62,10 @@ dependencies:
     # a solid or not at all; v12 closes seams v11 refused or leaked through, so
     # more parts are solids and some gain bodies their v11 solid had lost; v13
     # carries the patches to particular LDraw files (patches/), which make
-    # more parts solids, and keys each patched part on its patches.
-    cacheVersion: 13
+    # more parts solids, and keys each patched part on its patches; v14 mends a
+    # mirrored surface into the mirror image of what its original mends into,
+    # so 64393, which is 64681 mirrored, is a solid as 64681 is.
+    cacheVersion: 14
 
 repositories:
   ldraw_repo:
