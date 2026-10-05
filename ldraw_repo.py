@@ -54,8 +54,12 @@ import zipfile
 # every "Technic Bush" primitive, which is what the cross blocks and the bushes
 # are drawn with; v11 serves a part as a solid or not at all - repaired where
 # LDraw's surfaces overlap or stop short, and refused where they cannot be
-# closed without guessing - instead of handing back a shell.
-CACHE_VERSION = 11
+# closed without guessing - instead of handing back a shell; v12 closes the
+# seams v11 still refused or leaked through (an edge stopping a hair short of a
+# face, a vertex on an edge that is not open, a flat hole with a straight side)
+# and joins regions without a boolean, so parts it refused become solids and
+# some it served gain the bodies they lost.
+CACHE_VERSION = 12
 
 _BASE = "https://library.ldraw.org"
 _CATEGORY_LIST_URL = _BASE + "/parts/category-list"
