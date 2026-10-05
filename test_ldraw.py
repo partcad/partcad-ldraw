@@ -947,6 +947,29 @@ def test_joining_regions_does_not_fill_a_cavity_none_of_them_is():
     assert _mm3(solid) == pytest.approx(2 * _mm3_box(10) - _mm3_box(6))
 
 
+def test_a_triangle_with_a_corner_twice_is_no_face_to_turn_into():
+    # 58134 (inside 58122) reached the walk round its holes with triangles
+    # that had one corner twice, and turning across an edge one of them shared
+    # asked it for a third corner it does not have. It has no side, so it is
+    # passed over: the loops are those of the surface without it.
+    tris = ldraw._weld(_two_holes_and_a_fin(), ldraw._WELD_LDU)
+    ldraw._split_t_junctions(tris, ldraw._TJUNCTION_LDU)
+    corner = (10.0, 10.0, 0.0)
+    flat = (corner, (5.0, 10.0, 5.0), corner)
+    expected = sorted(_cyclic(L) for L in ldraw._boundary_loops(tris))
+    assert len(expected) == 2
+    assert sorted(_cyclic(L) for L in ldraw._boundary_loops(tris + [flat])) == expected
+
+
+def test_a_sliver_whose_apex_lies_on_its_own_edge_is_not_cut_into_nothing():
+    # Cutting an edge that is not open at every open vertex on it, the sliver's
+    # own apex among them, used to leave triangles with that apex twice.
+    a, b, m = (0.0, 0.0, 0.0), (10.0, 0.0, 0.0), (5.0, 0.01, 0.0)
+    tris = [(a, b, m), (b, a, (5.0, -5.0, 0.0)), (m, (5.0, 0.01, 5.0), (6.0, 0.01, 5.0))]
+    ldraw._split_at_loose_vertices(tris, ldraw._LOOSE_LDU)
+    assert all(len(set(t)) == 3 for t in tris)
+
+
 def test_a_stitch_through_a_wall_closes_regions_but_does_not_vote_on_them():
     # Two blocks drawn face to face, as LDraw draws a part from primitives,
     # and a stitch that runs through the second block half a unit from the

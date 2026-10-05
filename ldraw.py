@@ -920,24 +920,34 @@ def _boundary_loops(tris):
         d = (d[0] / length, d[1] / length, d[2] / length)
 
         def off(j):
-            r = next(v for v in tris[j] if v != p and v != q)
-            w = (r[0] - p[0], r[1] - p[1], r[2] - p[2])
+            """Where triangle j stands off the edge, square to it; None if it has no third corner."""
+            r = [v for v in tris[j] if v != p and v != q]
+            if not r:
+                return None
+            w = (r[0][0] - p[0], r[0][1] - p[1], r[0][2] - p[2])
             s = w[0] * d[0] + w[1] * d[1] + w[2] * d[2]
-            return (w[0] - s * d[0], w[1] - s * d[1], w[2] - s * d[2])
+            w = (w[0] - s * d[0], w[1] - s * d[1], w[2] - s * d[2])
+            return w if w[0] ** 2 + w[1] ** 2 + w[2] ** 2 >= 1e-36 else None
 
         e1 = off(i)
-        size = math.sqrt(e1[0] ** 2 + e1[1] ** 2 + e1[2] ** 2)
-        if size < 1e-18:
+        if e1 is None:
             return None
+        size = math.sqrt(e1[0] ** 2 + e1[1] ** 2 + e1[2] ** 2)
         e1 = (e1[0] / size, e1[1] / size, e1[2] / size)
         # Turning from triangle i into what it encloses: away from its normal.
         e2 = (-n[0], -n[1], -n[2])
         turns = []
         for j in owners:
+            # A triangle with no third corner off the edge has no side to
+            # turn into; it is no face round the edge and is passed over.
             w = off(j)
+            if w is None:
+                continue
             angle = math.atan2(sum(w[k] * e2[k] for k in range(3)), sum(w[k] * e1[k] for k in range(3)))
             turns.append((angle % (2.0 * math.pi), j))
         turns.sort()
+        if not turns:
+            return None
         if len(turns) > 1 and turns[1][0] - turns[0][0] <= 1e-12:
             return None  # two faces as tight as each other: nothing to choose between them
         return turns[0][1]
@@ -1865,17 +1875,21 @@ def _split_at_loose_vertices(tris, tol):
     n = 0
     for t in tris:
         pieces = [t]
-        for j in range(3):
+        # As in _split_t_junctions: the edge with the most vertices on it is
+        # cut, the longer of two, so the corner a triangle is written from
+        # (and the hand of the part) does not choose.
+        cut = [j for j in range(3) if cuts.get(frozenset((t[j], t[(j + 1) % 3])))]
+        if cut:
+            j = max(cut, key=lambda j: (len(cuts[frozenset((t[j], t[(j + 1) % 3]))]), math.dist(t[j], t[(j + 1) % 3])))
             a, b = t[j], t[(j + 1) % 3]
-            on = cuts.get(frozenset((a, b)))
-            if on:
-                chain = (
-                    [a] + [v for _, v in sorted(((_point_on_segment(v, a, b, 2 * tol) or 0.0), v) for v in on)] + [b]
-                )
-                apex = t[(j + 2) % 3]
-                pieces = [(chain[k], chain[k + 1], apex) for k in range(len(chain) - 1)]
-                n += 1
-                break
+            on = cuts[frozenset((a, b))]
+            chain = [a] + [v for _, v in sorted(((_point_on_segment(v, a, b, 2 * tol) or 0.0), v) for v in on)] + [b]
+            apex = t[(j + 2) % 3]
+            # A sliver's apex can lie on its own long edge and be one of the
+            # vertices cut in; the pieces that would have it twice have no
+            # surface, and the edges they walk cancel each other out.
+            pieces = [q for q in ((chain[k], chain[k + 1], apex) for k in range(len(chain) - 1)) if apex not in q[:2]]
+            n += 1
         out.extend(pieces)
     tris[:] = out
     return n
