@@ -59,8 +59,11 @@ import zipfile
 # seams v11 still refused or leaked through (an edge stopping a hair short of a
 # face, a vertex on an edge that is not open, a flat hole with a straight side)
 # and joins regions without a boolean, so parts it refused become solids and
-# some it served gain the bodies they lost.
-CACHE_VERSION = 12
+# some it served gain the bodies they lost; v13 serves ldraw.py with the list
+# of patches to particular LDraw files written into it, and a 'patches'
+# parameter on every part that reads one, so the parts those patches mend
+# (64681, 58119 and the boxes sharing its bracket) are solids now.
+CACHE_VERSION = 13
 
 _BASE = "https://library.ldraw.org"
 _CATEGORY_LIST_URL = _BASE + "/parts/category-list"

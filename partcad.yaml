@@ -60,8 +60,10 @@ dependencies:
     # v10 serves the axle hole inside every "Technic Bush" primitive, which is
     # what the cross blocks and the bushes are drawn with; v11 serves a part as
     # a solid or not at all; v12 closes seams v11 refused or leaked through, so
-    # more parts are solids and some gain bodies their v11 solid had lost.
-    cacheVersion: 12
+    # more parts are solids and some gain bodies their v11 solid had lost; v13
+    # carries the patches to particular LDraw files (patches/), which make
+    # more parts solids, and keys each patched part on its patches.
+    cacheVersion: 13
 
 repositories:
   ldraw_repo:
