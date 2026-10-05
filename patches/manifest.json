@@ -50,6 +50,59 @@
         "The patch moves the two faces' outer corners onto the vertex the cylinder ends at; the subpart is",
         "placed four times (s\\919s02.dat lines 11-12, each with both brackets), which is the eight strips."
       ]
+    },
+    {
+      "file": "59155.dat",
+      "sha256": "7410ec620fc94c3e3812caedd349f93a2fa99322cd6722f0ded077c32c3b308f",
+      "patch": "59155.dat.patch",
+      "kind": "correction",
+      "parts": [
+        "58121",
+        "58121c01",
+        "59154c01",
+        "59155"
+      ],
+      "reason": [
+        "Power Functions XL motor, front shell. The file says \"Needs Work: Inner side not modelled\" (line 11), and the inside",
+        "is indeed not drawn, but nothing has to be authored for it: the outer surface of the motor (this shell, 59154.dat and",
+        "47157.dat) encloses the inside on its own once the places where its faces miss each other are mended, and the region",
+        "builder fills it - the solid is the filled housing, its volume the envelope's, not the plastic's. The surfaces the",
+        "missing inner side would have joined (the 1-4disc pocket floors at z = 10, the bosses behind the front holes) stay",
+        "where they are, inside the solid. Two of the misses are in this file:",
+        "1. The front ring and inner cone around the peg holes at (0, -/+40) share the corner (-/+8.45, -/+37.05, 0)",
+        "(lines 290-303, 399-412), a point of the true circle of radius 9 that stands 0.03 LDU outside the 16-gon of the",
+        "boss it meets (2-4cyli, lines 81, 83, 103, 105), leaving a hole at each corner. The corner is moved onto that",
+        "16-gon's edge, (-/+8.415, -/+37.057, 0), in every face and edge line that uses it.",
+        "2. The side holes' sloped channels (1-4cyls2, lines 131-133 and 171-173) end at (-/+24, -/+8, 10), but the boss",
+        "they run into (2-4cyli of radius 9 about (-/+20, 0), lines 24 and 52) is at x = -/+23.916 there, as the edge lines",
+        "143, 151, 183 and 191 draw it: a sliver 0.08 wide is open. A quad continues each channel's last facet 0.5 LDU along",
+        "its own plane, into the boss."
+      ]
+    },
+    {
+      "file": "59154.dat",
+      "sha256": "567db2ada736382f9ba38312d2a96f733400ab31a0b7cf688abfdbd893c2cb32",
+      "patch": "59154.dat.patch",
+      "kind": "correction",
+      "parts": [
+        "58121",
+        "58121c01",
+        "59154",
+        "59154c01"
+      ],
+      "reason": [
+        "Power Functions XL motor, back shell; \"Needs Work: Inner side not modelled\" (line 11), as for 59155.dat, whose",
+        "entry says why nothing has to be authored for that. Two places where this shell's faces miss:",
+        "1. It meets 59155.dat at z = -89 (z = 21 in 58121), where 59155's wall ends in a ring on the 48-gon of radius 48",
+        "(48\\1-8rin39, its lines 202, 214, 226, 238). This shell's side ridges peak on the true circle instead: their",
+        "vertices (40.49, 25.79), (37.04, 30.53) and their six mirror images (lines 241, 268, 279, 303, 336, 361, 372, 397)",
+        "are at r = 48.0, up to 0.1 LDU outside the 48-gon, so each ridge's foot overhangs the ring with nothing under it.",
+        "Quads at z = -89 run from each ridge's bottom edges (the peak and the faces either side, r = 47-48) in to",
+        "r = 46.9: on the ring where the ring is, closing the overhang where it is not.",
+        "2. The side windows' quads 41 and 132 end at z = -8.2, where their corner (-/+49.36, -/+3.7) is just outside the",
+        "16-gon of the boss (4-4cyli of radius 9, lines 23 and 32); the quads beside them (38, 47, 129, 138) end at",
+        "z = -8, inside it. They are made to end at z = -8 too."
+      ]
     }
   ]
 }

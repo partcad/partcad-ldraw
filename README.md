@@ -235,6 +235,8 @@ whose configuration is unchanged.
 | --- | --- | --- | --- |
 | `64681.dat` | correction | 64681, its three stickered versions, and 64393 (which mirrors it) | The top face of the lower body stops at x = 6 and the strip it turns up into stands at x = 6.075: a 0.075 LDU slit, 52 long. |
 | `s/919s01.dat` | correction | 58119 and the other 9V battery boxes built from the same bracket (54734, 919, 919c01, 923) | The bracket's 16-sided outer wall ends at x = 3.444 and the flat face beyond it starts at x = 3.56, at the same corner on the true circle: eight strips 0.08-0.12 LDU wide. |
+| `59155.dat` | correction | 58121 (PF XL motor) and the motor body 59154c01, with 59155 itself and the cabled 58121c01 | The front shell's corners at the top and bottom peg holes stand 0.03 LDU outside the boss they meet, and the side holes' channels stop 0.08 LDU short of their boss. The shell's inside is "not modelled"; nothing is authored for it, and the motor builds as its filled housing. |
+| `59154.dat` | correction | the same motor parts, with 59154 itself | The back shell's side ridges peak on the true circle, up to 0.1 LDU outside the front shell's 48-gon where the two meet, and two of its side-window faces run 0.2 LDU past their neighbours, to a corner just outside the boss they meet. |
 
 ## Which way is up
 

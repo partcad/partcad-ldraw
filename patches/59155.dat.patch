@@ -1,0 +1,68 @@
+0 // 59155.dat, the XL motor's front shell. Two places where faces that are
+0 // meant to meet miss by less than a tenth of an LDU.
+0 // 1. The peg holes at (0, -/+40): the corner (-/+8.45, -/+37.05, 0) shared
+0 //    by the front ring and the inner cone (lines 290-303 and 399-412) is the
+0 //    true circle's point, 0.03 LDU outside the 16-gon of the boss around
+0 //    the hole (2-4cyli of radius 9, lines 81, 83, 103, 105), which leaves a hole
+0 //    at the corner. It is moved onto that 16-gon's edge, (8.415, 37.057),
+0 //    in every face and edge line that uses it.
+0 // 2. The side holes' channels: the sloped half-cylinders 1-4cyls2.dat
+0 //    (lines 131-133, 171-173) end at (-/+24, -/+8, 10), but the boss they
+0 //    run into (2-4cyli of radius 9 about (-/+20, 0), lines 24 and 52) is at
+0 //    x = -/+23.916 there - the intersection edge lines 143, 151, 183 and 191 draw -
+0 //    so a sliver 0.08 wide is open. A quad continues each channel's last
+0 //    facet 0.5 LDU on along its own plane, into the boss.
+0 !PATCH REPLACE 290
+4 16 16.62 -42.36 0 13.88 -35.37 0 8.415 -37.057 0 10.12 -44.36 0
+0 !PATCH REPLACE 291
+3 16 10.12 -44.36 0 8.415 -37.057 0 7.43 -44.76 0
+0 !PATCH REPLACE 292
+3 16 -7.43 -44.76 0 -8.415 -37.057 0 -10.12 -44.36 0
+0 !PATCH REPLACE 293
+4 16 -10.12 -44.36 0 -8.415 -37.057 0 -13.88 -35.37 0 -16.62 -42.36 0
+0 !PATCH REPLACE 295
+2 24 13.88 -35.37 0 8.415 -37.057 0
+0 !PATCH REPLACE 296
+2 24 -8.415 -37.057 0 -13.88 -35.37 0
+0 !PATCH REPLACE 298
+4 16 13.88 -35.37 0 12.42 -31.65 10 7.57 -33.15 10 8.415 -37.057 0
+0 !PATCH REPLACE 299
+5 24 7.57 -33.15 10 8.415 -37.057 0 13.88 -35.37 0 2.54 -33.9 10
+0 !PATCH REPLACE 300
+3 16 8.415 -37.057 0 7.57 -33.15 10 2.54 -33.9 10
+0 !PATCH REPLACE 301
+3 16 -2.54 -33.9 10 -7.57 -33.15 10 -8.415 -37.057 0
+0 !PATCH REPLACE 302
+5 24 -7.57 -33.15 10 -8.415 -37.057 0 -2.84 -37.89 0 -12.42 -31.65 10
+0 !PATCH REPLACE 303
+4 16 -8.415 -37.057 0 -7.57 -33.15 10 -12.42 -31.65 10 -13.88 -35.37 0
+0 !PATCH REPLACE 399
+4 16 -16.62 42.36 0 -13.88 35.37 0 -8.415 37.057 0 -10.12 44.36 0
+0 !PATCH REPLACE 400
+3 16 -10.12 44.36 0 -8.415 37.057 0 -7.43 44.76 0
+0 !PATCH REPLACE 401
+3 16 7.43 44.76 0 8.415 37.057 0 10.12 44.36 0
+0 !PATCH REPLACE 402
+4 16 10.12 44.36 0 8.415 37.057 0 13.88 35.37 0 16.62 42.36 0
+0 !PATCH REPLACE 404
+2 24 -13.88 35.37 0 -8.415 37.057 0
+0 !PATCH REPLACE 405
+2 24 8.415 37.057 0 13.88 35.37 0
+0 !PATCH REPLACE 407
+4 16 -13.88 35.37 0 -12.42 31.65 10 -7.57 33.15 10 -8.415 37.057 0
+0 !PATCH REPLACE 408
+5 24 -7.57 33.15 10 -8.415 37.057 0 -13.88 35.37 0 -2.54 33.9 10
+0 !PATCH REPLACE 409
+3 16 -8.415 37.057 0 -7.57 33.15 10 -2.54 33.9 10
+0 !PATCH REPLACE 410
+3 16 2.54 33.9 10 7.57 33.15 10 8.415 37.057 0
+0 !PATCH REPLACE 411
+5 24 7.57 33.15 10 8.415 37.057 0 2.84 37.89 0 12.42 31.65 10
+0 !PATCH REPLACE 412
+4 16 8.415 37.057 0 7.57 33.15 10 12.42 31.65 10 13.88 35.37 0
+0 !PATCH AFTER 157
+4 16 -24.38 7.391 13.062 -23.88 7.391 13.062 -23.5 8 10 -24 8 10
+4 16 -24 -8 10 -23.5 -8 10 -23.88 -7.391 13.062 -24.38 -7.391 13.062
+0 !PATCH AFTER 197
+4 16 24 8 10 23.5 8 10 23.88 7.391 13.062 24.38 7.391 13.062
+4 16 24.38 -7.391 13.062 23.88 -7.391 13.062 23.5 -8 10 24 -8 10
