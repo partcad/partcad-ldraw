@@ -129,6 +129,58 @@
       ]
     },
     {
+      "file": "58132.dat",
+      "sha256": "f71e0fec047bf8c157693c78d5d2c99e320119ee94b564f805a17030c313b0a1",
+      "patch": "58132.dat.patch",
+      "kind": "authored",
+      "parts": [
+        "58122",
+        "58132",
+        "58135c01"
+      ],
+      "reason": [
+        "Power Functions IR remote, top half. LDraw leaves out its inside: the header says \"Needs Work: Inside not modelled\"",
+        "(line 11), and the file draws the outer skin only, so the half is open underneath along a 67-vertex rim that runs",
+        "from y = -47 along the sides up to y = -24 at the ends, round the window for the front glass, and round the channel",
+        "selector's slot, whose floor is not drawn either.",
+        "Authored, to the filled-envelope convention - the skin closed across its own open rim and nothing else:",
+        "- the underside: a ruled surface across the rim, a flat strip between each pair of matching rim vertices left and",
+        "  right (the rim is symmetric in x), so it is flat at y = -47 along the sides and rises with the rim to y = -38,",
+        "  -32 and -24 at the ends; every vertex is a vertex of the drawn rim;",
+        "- the glass window: closed by the plane through its two straight top edges (x = -/+19, from (y, z) = (-56, -99) to",
+        "  (-58.32, -53.25)) and by the plane z = -99 between its two straight front edges;",
+        "- the selector slot: its floor, a quad between the bottom edges of its drawn walls (s\\58132s01.dat line 354) and a",
+        "  1-4chrd on the bottom edge of each rounded end (the matrices of that subpart's 1-4edge lines 350 and 353).",
+        "Deviation from the real part: the top half is a thin shell; here it is solid down to its rim (58132 alone:",
+        "17,532 mm^3, against 17,442 +- 53 sampled), and its slot is a pocket with a flat floor where the real one opens into",
+        "the remote. Nothing reaches beyond the rim, so the bounding box is the LDraw geometry's. In 58122 the underside",
+        "lies on 58134's top along the sides and above 58134 elsewhere; the space between it, 58134's plate and inner walls",
+        "and the battery lid is a closed cavity, which the solid keeps (those walls are drawn facing into it)."
+      ]
+    },
+    {
+      "file": "s/58132s01.dat",
+      "sha256": "c531ecc67b6d2da7bc21533fc21e8dc9923264f92802499554b752cd4490b968",
+      "patch": "s/58132s01.dat.patch",
+      "kind": "correction",
+      "parts": [
+        "58122",
+        "58132",
+        "58135c01"
+      ],
+      "reason": [
+        "Power Functions IR remote, top half, the subpart 58132.dat places twice (the second mirrored in x). Two places where",
+        "the same surface is drawn twice a hair apart, which leave no closed body once the half's inside is closed:",
+        "1. Quad 417, the top in front of the selector's slot, has a straight edge from (0, 27.81) to (8, 31) in the part,",
+        "running across the 1-4ring6 of 58132.dat line 24, whose plane is 0.002-0.003 LDU off its own. It becomes three",
+        "triangles that stop on the ring's outer edge - its vertices (0, 27.8) and (5.05, 28.808), and its next edge's point",
+        "at x = 8, (8, 30.78).",
+        "2. The slot's rounded ends, the 1-4cyli of lines 349 and 352, each span the whole slot (x = -8 to 8), so the two",
+        "placements draw them twice, triangulated differently; in 58122 the channel selector's matching rounded end lies on",
+        "them too. Each becomes a 1-8cyli with the same matrix: one half of the end per placement."
+      ]
+    },
+    {
       "file": "s/62531s01.dat",
       "sha256": "e070505606a175a450a4b1ff32cca97b2cc37c45e1f61e198b24b085c59b9ffd",
       "patch": "s/62531s01.dat.patch",
