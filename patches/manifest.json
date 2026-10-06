@@ -127,6 +127,30 @@
         "while crossing the outer wall still raises it by 0.7-1.0. The sampled estimate's 0.5 threshold drops those walls;",
         "the solid keeps them."
       ]
+    },
+    {
+      "file": "s/62531s01.dat",
+      "sha256": "e070505606a175a450a4b1ff32cca97b2cc37c45e1f61e198b24b085c59b9ffd",
+      "patch": "s/62531s01.dat.patch",
+      "kind": "correction",
+      "parts": [
+        "62531"
+      ],
+      "reason": [
+        "Technic Panel Smooth 11 x 2 x 3, one half (62531.dat places it twice, mirrored in z). Its slot ends, stepped",
+        "cylinders against a curve drawn only by edge lines, turned out not to leak: closed between two planes every 2 LDU,",
+        "every section through them closes. The leaks were at the end of the beam, z = -/+69..73 and -/+87..89, by the",
+        "horizontal pin hole at z = -/+80, where surfaces are drawn twice a hair apart:",
+        "1. Line 203 (a 2-4cyli of radius 9, x = -20..-12) draws half the pin hole's boss again over the 7-8cyli of line 206",
+        "(x = -30..-12), to fill the eighth the 7-8cyli leaves out. It becomes a 1-8cyli covering only that eighth.",
+        "2. Line 211, the curved roof over the hole, is a 1-4cyli of scale 8.001, so its edges end at y = -27.999 and",
+        "z = -88.001 / -71.999, 0.001 off the faces at z = -88 and -72 they meet (lines 51 and 70, which end at y = -28).",
+        "The scale is made 8, there and in its edge line 210.",
+        "3. Quad 448 lies within 0.0003 of the plane of quad 411 and overlaps it. Its corners are put on that plane and its",
+        "top edge on 411's bottom edge, so the two meet instead.",
+        "62531 then builds 6,041.9 mm^3 against 6,018 +- 28 sampled, with the LDraw geometry's bounding box. Nothing is",
+        "authored."
+      ]
     }
   ]
 }

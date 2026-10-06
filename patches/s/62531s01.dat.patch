@@ -1,0 +1,27 @@
+0 // s\62531s01.dat, one half of Technic Panel Smooth 11 x 2 x 3 (62531.dat
+0 // places it twice, the second mirrored in z). Three places where the end of
+0 // the beam, by the horizontal pin hole at z = -80, draws two surfaces on top
+0 // of each other a hair apart, which leaves the part with no closed body:
+0 // 1. Line 206 is the pin hole's boss, a 7-8cyli of radius 9 from x = -30 to
+0 //    -12; line 203 draws half of the same cylinder again, as a 2-4cyli from
+0 //    x = -20 to -12, to fill in the eighth the 7-8cyli leaves out. The rest
+0 //    of that half lies on the 7-8cyli. It is replaced by a 1-8cyli covering
+0 //    only the missing eighth (from (y, z) = (-46.364, -73.636) round to
+0 //    (-49, -80)), over the same length.
+0 // 2. Line 211 is the curved roof over the hole, a 1-4cyli about (y, z) =
+0 //    (-36, -80) whose scale is 8.001, so its edges end at y = -27.999,
+0 //    z = -88.001 and -71.999, 0.001 off the faces at z = -88 and -72 they
+0 //    meet (lines 51 and 70, which end at y = -28). The scale is made 8, in
+0 //    line 211 and in its edge line 210.
+0 // 3. Quad 448, the wall below the panel's edge at x = -12..-16, lies in the
+0 //    plane of quad 411 (through (-9, -39) and (-16, -45)) to within 0.0003
+0 //    and overlaps it. Its corners are put on that plane (y = -41.5714 at
+0 //    x = -12) and its top edge on 411's bottom edge, so the two meet instead.
+0 !PATCH REPLACE 203
+1 16 -20 -40 -80 0 8 0 -6.364 0 -6.364 6.364 0 -6.364 1-8cyli.dat
+0 !PATCH REPLACE 210
+1 16 -9 -36 -80 0 18 0 8 0 8 -8 0 8 1-4edge.dat
+0 !PATCH REPLACE 211
+1 16 -9 -36 -80 0 9 0 8 0 8 -8 0 8 1-4cyli.dat
+0 !PATCH REPLACE 448
+4 16 -12 -41.5714 -71.524 -16 -45 -73.524 -16 -45 -73 -12 -41.5714 -70.7143
