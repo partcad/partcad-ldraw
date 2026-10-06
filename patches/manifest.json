@@ -103,6 +103,30 @@
         "16-gon of the boss (4-4cyli of radius 9, lines 23 and 32); the quads beside them (38, 47, 129, 138) end at",
         "z = -8, inside it. They are made to end at z = -8 too."
       ]
+    },
+    {
+      "file": "s/58134s01.dat",
+      "sha256": "1cbb5cd9fcf11189576255a4dc884384f7b6d4083df372e256727d3d76692e86",
+      "patch": "s/58134s01.dat.patch",
+      "kind": "correction",
+      "parts": [
+        "58122",
+        "58134",
+        "58135c01"
+      ],
+      "reason": [
+        "Power Functions IR remote, bottom half. Quad 99, the inner wall that slopes down to the boss of the hole in 58134.dat",
+        "(lines 84-102, a 4-4cyli of radius 9 about x = 0, z = 74), has its top corner at (4, 0, 82) in the part: a point of the",
+        "true circle of radius 9, but the boss is a 16-gon, at z = 81.94 for x = 4, so the corner stands 0.05 LDU outside it",
+        "and leaves the wall, the boss and the strip on top (58134.dat line 25) a gap to the outside. The corner is moved to",
+        "x = 3.5, inside the boss's wall, where the wall ends. The subpart is placed twice, mirrored, so both sides are mended.",
+        "The file also says \"Needs Work: Internal surface not exact\"; nothing is authored for that.",
+        "58134 builds 10,656 mm^3 against 10,148 +- 58 sampled. Every sample on which the two disagree is inside the solid",
+        "and has a winding number of 0.32-0.5 - all of them in the side walls that carry the Technic beam (32524) at",
+        "x = -/+41..49: the surface's winding there sits up to 0.3 below its whole value, where the beam overlaps the walls,",
+        "while crossing the outer wall still raises it by 0.7-1.0. The sampled estimate's 0.5 threshold drops those walls;",
+        "the solid keeps them."
+      ]
     }
   ]
 }
