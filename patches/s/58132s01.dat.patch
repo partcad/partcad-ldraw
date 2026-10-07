@@ -1,0 +1,22 @@
+0 // s\58132s01.dat, one half of the IR remote's top (58132.dat places it
+0 // twice, the second mirrored in x). Two places where the two halves, or
+0 // two files, draw the same surface twice a hair apart, which leaves no
+0 // closed body once 58132's inside is closed:
+0 // 1. Quad 417, the top just in front of the channel selector's slot, runs
+0 //    as a straight edge from (0, 27.81) to (8, 31) [in the part], across
+0 //    the 1-4ring6 of 58132.dat line 24, whose plane is 0.002-0.003 LDU off
+0 //    its own. It is replaced by three triangles that stop on the ring's
+0 //    outer edge: (0, 27.8), (5.05, 28.808), (8, 30.78) - its vertices, and
+0 //    the point of its next edge at x = 8.
+0 // 2. The slot's rounded ends, the 1-4cyli of lines 349 and 352, each span
+0 //    the whole slot width (x = -8 to 8), so the two placements draw them
+0 //    twice over, triangulated differently. Each becomes a 1-8cyli with the
+0 //    same matrix: one half of the end per placement.
+0 !PATCH REPLACE 417
+3 16 26 -58.5 0 25 -58.53 -8 28.808 -58.402 -5.05
+3 16 25 -58.53 -8 30.78 -58.337 -8 28.808 -58.402 -5.05
+3 16 26 -58.5 0 28.808 -58.402 -5.05 27.8 -58.436 0
+0 !PATCH REPLACE 349
+1 16 41 -58 0 -7.997 0 -7.997 -0.267 6 -0.267 7.997 0 -7.997 1-8cyli.dat
+0 !PATCH REPLACE 352
+1 16 57 -57.47 0 7.997 0 7.997 0.267 6 0.267 -7.997 0 7.997 1-8cyli.dat

@@ -1,0 +1,208 @@
+{
+  "format": 1,
+  "patches": [
+    {
+      "file": "64681.dat",
+      "sha256": "5617382af41e35487fdb542e520df3c51c47ce3a9383ec21451413738c1c7bb1",
+      "patch": "64681.dat.patch",
+      "kind": "correction",
+      "parts": [
+        "64393",
+        "64393d01",
+        "64393d02",
+        "64393d03",
+        "64681",
+        "64681d01",
+        "64681d02",
+        "64681d03"
+      ],
+      "reason": [
+        "Technic Panel Fairing Smooth #5 leaks along a slit 0.075 LDU wide and 52 long.",
+        "The top face of the lower body (y = -8) ends at x = 6 for z = 34..86: the quads of lines 18 and 20,",
+        "the 4-4ndis/3-4ndis of lines 44 and 46 (radius 6) and the 1-4ring2 of s\\64683s01.dat line 312.",
+        "The strip that face turns up into, line 14 (y = -8.558..-7), stands at x = 6.075, under the edge the",
+        "shell's inner surface starts from (lines 76, 82, 91 all use 6.075), and the quad of line 19 meets it",
+        "there for z = 86..89. So between z = 34 and 86 nothing spans x = 6..6.075.",
+        "The patch adds one quad on the plane y = -8 from x = 5 to 6.5, z = 34..86: it lies on the existing",
+        "top face, closes the slit and ends inside the body behind the strip. It adds no volume of its own;",
+        "a face exactly 0.075 wide would be narrower than the tolerance the mesh is mended with."
+      ]
+    },
+    {
+      "file": "s/919s01.dat",
+      "sha256": "40fcc09fa39ef6e8c2c9db76bd6eb8720d6f4e378fcde09a1e47a94834cf0b03",
+      "patch": "s/919s01.dat.patch",
+      "kind": "correction",
+      "parts": [
+        "54734",
+        "58119",
+        "919",
+        "919c01",
+        "923"
+      ],
+      "reason": [
+        "The Power Functions battery box's mounting brackets leak at eight strips 0.08-0.12 LDU wide.",
+        "The bracket's outer wall is a radius-9 cylinder drawn with 1-16cyli.dat (lines 120 and 178), which",
+        "ends at the 16-gon's vertex x = 3.44415, y = -/+48.31492. The flat face that continues it, lines 43",
+        "and 152 (edge lines 45 and 154), starts at x = 3.56, y = -/+48.314: the same corner placed on the true",
+        "circle (radius 9.044, 23.2 degrees) instead of on the 16-gon (22.5 degrees). That leaves a strip",
+        "0.116 LDU wide down the side and a sliver outside the 2-4ring8 end faces (lines 131 and 189).",
+        "The patch moves the two faces' outer corners onto the vertex the cylinder ends at; the subpart is",
+        "placed four times (s\\919s02.dat lines 11-12, each with both brackets), which is the eight strips."
+      ]
+    },
+    {
+      "file": "59155.dat",
+      "sha256": "7410ec620fc94c3e3812caedd349f93a2fa99322cd6722f0ded077c32c3b308f",
+      "patch": "59155.dat.patch",
+      "kind": "correction",
+      "parts": [
+        "58121",
+        "58121c01",
+        "59154c01",
+        "59155"
+      ],
+      "reason": [
+        "Power Functions XL motor, front shell. The file says \"Needs Work: Inner side not modelled\" (line 11), and the inside",
+        "is indeed not drawn, but nothing has to be authored for it: the outer surface of the motor (this shell, 59154.dat and",
+        "47157.dat) encloses the inside on its own once the places where its faces miss each other are mended, and the region",
+        "builder fills it - the solid is the filled housing, its volume the envelope's, not the plastic's. The surfaces the",
+        "missing inner side would have joined (the 1-4disc pocket floors at z = 10, the bosses behind the front holes) stay",
+        "where they are, inside the solid. Two of the misses are in this file:",
+        "1. The front ring and inner cone around the peg holes at (0, -/+40) share the corner (-/+8.45, -/+37.05, 0)",
+        "(lines 290-303, 399-412), a point of the true circle of radius 9 that stands 0.03 LDU outside the 16-gon of the",
+        "boss it meets (2-4cyli, lines 81, 83, 103, 105), leaving a hole at each corner. The corner is moved onto that",
+        "16-gon's edge, (-/+8.415, -/+37.057, 0), in every face and edge line that uses it.",
+        "2. The side holes' sloped channels (1-4cyls2, lines 131-133 and 171-173) end at (-/+24, -/+8, 10), but the boss",
+        "they run into (2-4cyli of radius 9 about (-/+20, 0), lines 24 and 52) is at x = -/+23.916 there, as the edge lines",
+        "143, 151, 183 and 191 draw it: a sliver 0.08 wide is open. A quad continues each channel's last facet 0.5 LDU along",
+        "its own plane, into the boss."
+      ]
+    },
+    {
+      "file": "59154.dat",
+      "sha256": "567db2ada736382f9ba38312d2a96f733400ab31a0b7cf688abfdbd893c2cb32",
+      "patch": "59154.dat.patch",
+      "kind": "correction",
+      "parts": [
+        "58121",
+        "58121c01",
+        "59154",
+        "59154c01"
+      ],
+      "reason": [
+        "Power Functions XL motor, back shell; \"Needs Work: Inner side not modelled\" (line 11), as for 59155.dat, whose",
+        "entry says why nothing has to be authored for that. Two places where this shell's faces miss:",
+        "1. It meets 59155.dat at z = -89 (z = 21 in 58121), where 59155's wall ends in a ring on the 48-gon of radius 48",
+        "(48\\1-8rin39, its lines 202, 214, 226, 238). This shell's side ridges peak on the true circle instead: their",
+        "vertices (40.49, 25.79), (37.04, 30.53) and their six mirror images (lines 241, 268, 279, 303, 336, 361, 372, 397)",
+        "are at r = 48.0, up to 0.1 LDU outside the 48-gon, so each ridge's foot overhangs the ring with nothing under it.",
+        "Quads at z = -89 run from each ridge's bottom edges (the peak and the faces either side, r = 47-48) in to",
+        "r = 46.9: on the ring where the ring is, closing the overhang where it is not.",
+        "2. The side windows' quads 41 and 132 end at z = -8.2, where their corner (-/+49.36, -/+3.7) is just outside the",
+        "16-gon of the boss (4-4cyli of radius 9, lines 23 and 32); the quads beside them (38, 47, 129, 138) end at",
+        "z = -8, inside it. They are made to end at z = -8 too."
+      ]
+    },
+    {
+      "file": "s/58134s01.dat",
+      "sha256": "1cbb5cd9fcf11189576255a4dc884384f7b6d4083df372e256727d3d76692e86",
+      "patch": "s/58134s01.dat.patch",
+      "kind": "correction",
+      "parts": [
+        "58122",
+        "58134",
+        "58135c01"
+      ],
+      "reason": [
+        "Power Functions IR remote, bottom half. Quad 99, the inner wall that slopes down to the boss of the hole in 58134.dat",
+        "(lines 84-102, a 4-4cyli of radius 9 about x = 0, z = 74), has its top corner at (4, 0, 82) in the part: a point of the",
+        "true circle of radius 9, but the boss is a 16-gon, at z = 81.94 for x = 4, so the corner stands 0.05 LDU outside it",
+        "and leaves the wall, the boss and the strip on top (58134.dat line 25) a gap to the outside. The corner is moved to",
+        "x = 3.5, inside the boss's wall, where the wall ends. The subpart is placed twice, mirrored, so both sides are mended.",
+        "The file also says \"Needs Work: Internal surface not exact\"; nothing is authored for that.",
+        "58134 builds 10,656 mm^3 against 10,148 +- 58 sampled. Every sample on which the two disagree is inside the solid",
+        "and has a winding number of 0.32-0.5 - all of them in the side walls that carry the Technic beam (32524) at",
+        "x = -/+41..49: the surface's winding there sits up to 0.3 below its whole value, where the beam overlaps the walls,",
+        "while crossing the outer wall still raises it by 0.7-1.0. The sampled estimate's 0.5 threshold drops those walls;",
+        "the solid keeps them."
+      ]
+    },
+    {
+      "file": "58132.dat",
+      "sha256": "f71e0fec047bf8c157693c78d5d2c99e320119ee94b564f805a17030c313b0a1",
+      "patch": "58132.dat.patch",
+      "kind": "authored",
+      "parts": [
+        "58122",
+        "58132",
+        "58135c01"
+      ],
+      "reason": [
+        "Power Functions IR remote, top half. LDraw leaves out its inside: the header says \"Needs Work: Inside not modelled\"",
+        "(line 11), and the file draws the outer skin only, so the half is open underneath along a 67-vertex rim that runs",
+        "from y = -47 along the sides up to y = -24 at the ends, round the window for the front glass, and round the channel",
+        "selector's slot, whose floor is not drawn either.",
+        "Authored, to the filled-envelope convention - the skin closed across its own open rim and nothing else:",
+        "- the underside: a ruled surface across the rim, a flat strip between each pair of matching rim vertices left and",
+        "  right (the rim is symmetric in x), so it is flat at y = -47 along the sides and rises with the rim to y = -38,",
+        "  -32 and -24 at the ends; every vertex is a vertex of the drawn rim;",
+        "- the glass window: closed by the plane through its two straight top edges (x = -/+19, from (y, z) = (-56, -99) to",
+        "  (-58.32, -53.25)) and by the plane z = -99 between its two straight front edges;",
+        "- the selector slot: its floor, a quad between the bottom edges of its drawn walls (s\\58132s01.dat line 354) and a",
+        "  1-4chrd on the bottom edge of each rounded end (the matrices of that subpart's 1-4edge lines 350 and 353).",
+        "Deviation from the real part: the top half is a thin shell; here it is solid down to its rim (58132 alone:",
+        "17,532 mm^3, against 17,442 +- 53 sampled), and its slot is a pocket with a flat floor where the real one opens into",
+        "the remote. Nothing reaches beyond the rim, so the bounding box is the LDraw geometry's. In 58122 the underside",
+        "lies on 58134's top along the sides and above 58134 elsewhere; the space between it, 58134's plate and inner walls",
+        "and the battery lid is a closed cavity, which the solid keeps (those walls are drawn facing into it)."
+      ]
+    },
+    {
+      "file": "s/58132s01.dat",
+      "sha256": "c531ecc67b6d2da7bc21533fc21e8dc9923264f92802499554b752cd4490b968",
+      "patch": "s/58132s01.dat.patch",
+      "kind": "correction",
+      "parts": [
+        "58122",
+        "58132",
+        "58135c01"
+      ],
+      "reason": [
+        "Power Functions IR remote, top half, the subpart 58132.dat places twice (the second mirrored in x). Two places where",
+        "the same surface is drawn twice a hair apart, which leave no closed body once the half's inside is closed:",
+        "1. Quad 417, the top in front of the selector's slot, has a straight edge from (0, 27.81) to (8, 31) in the part,",
+        "running across the 1-4ring6 of 58132.dat line 24, whose plane is 0.002-0.003 LDU off its own. It becomes three",
+        "triangles that stop on the ring's outer edge - its vertices (0, 27.8) and (5.05, 28.808), and its next edge's point",
+        "at x = 8, (8, 30.78).",
+        "2. The slot's rounded ends, the 1-4cyli of lines 349 and 352, each span the whole slot (x = -8 to 8), so the two",
+        "placements draw them twice, triangulated differently; in 58122 the channel selector's matching rounded end lies on",
+        "them too. Each becomes a 1-8cyli with the same matrix: one half of the end per placement."
+      ]
+    },
+    {
+      "file": "s/62531s01.dat",
+      "sha256": "e070505606a175a450a4b1ff32cca97b2cc37c45e1f61e198b24b085c59b9ffd",
+      "patch": "s/62531s01.dat.patch",
+      "kind": "correction",
+      "parts": [
+        "62531"
+      ],
+      "reason": [
+        "Technic Panel Smooth 11 x 2 x 3, one half (62531.dat places it twice, mirrored in z). Its slot ends, stepped",
+        "cylinders against a curve drawn only by edge lines, turned out not to leak: closed between two planes every 2 LDU,",
+        "every section through them closes. The leaks were at the end of the beam, z = -/+69..73 and -/+87..89, by the",
+        "horizontal pin hole at z = -/+80, where surfaces are drawn twice a hair apart:",
+        "1. Line 203 (a 2-4cyli of radius 9, x = -20..-12) draws half the pin hole's boss again over the 7-8cyli of line 206",
+        "(x = -30..-12), to fill the eighth the 7-8cyli leaves out. It becomes a 1-8cyli covering only that eighth.",
+        "2. Line 211, the curved roof over the hole, is a 1-4cyli of scale 8.001, so its edges end at y = -27.999 and",
+        "z = -88.001 / -71.999, 0.001 off the faces at z = -88 and -72 they meet (lines 51 and 70, which end at y = -28).",
+        "The scale is made 8, there and in its edge line 210.",
+        "3. Quad 448 lies within 0.0003 of the plane of quad 411 and overlaps it. Its corners are put on that plane and its",
+        "top edge on 411's bottom edge, so the two meet instead.",
+        "62531 then builds 6,041.9 mm^3 against 6,018 +- 28 sampled, with the LDraw geometry's bounding box. Nothing is",
+        "authored."
+      ]
+    }
+  ]
+}

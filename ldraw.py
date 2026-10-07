@@ -23,11 +23,13 @@
 # taken against either is meaningless. Closing it is _close_mesh(), and
 # building the solid the closed mesh describes is _solid_from_mesh().
 #
+import hashlib
+import json
 import math
 import os
 import re
 import struct
-import tempfile
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -76,6 +78,16 @@ _NEGATIVE_TTL = {_MISSING: 7 * 24 * 3600, _UNAVAILABLE: 300}
 # still tried either way, so a wrong guess costs one request and never an
 # answer.
 _PRIMITIVE_RE = re.compile(r"^(?:\d+-\d+|(?:48|8)/)")
+
+
+class LDrawNotSolid(Exception):
+    """A part whose surface could not be turned into a solid.
+
+    Raised rather than handing back the surface: a shell measures, renders and
+    exports like the part, and every boolean taken against it - interference,
+    mass, a cut - answers with a number that means nothing. A part that fails
+    says so; one that is wrong says nothing.
+    """
 
 
 class LDrawSubfileMissing(Exception):
@@ -228,7 +240,10 @@ def _ldraw_fetch(name, cache):
     cached = os.path.join(cache, key)
     if os.path.exists(cached):
         with open(cached, "r", encoding="latin-1") as f:
-            return f.read()
+            # The cache holds the file as the library serves it, and the patch
+            # goes on as it is read: it is the upstream text that a patch is
+            # pinned to, so that is the text there has to be to check.
+            return _patched(key, f.read())
     if _negative_is_fresh(cache, key):
         return None
     data, reason = _ldraw_get(key)
@@ -242,7 +257,194 @@ def _ldraw_fetch(name, cache):
             f.write(data)
     except OSError:
         pass  # an unwritable cache is a slow run, not a broken one
-    return data
+    return _patched(key, data)
+
+
+# --- patches: known defects in LDraw files, mended as they are read ----------
+#
+# Most of what keeps an LDraw surface from closing is general - a stud on a face
+# it does not cut, a corner written twice - and is mended by a rule that holds
+# for every part (see _build_shape). What is left is particular: a face one
+# file's author forgot, a cylinder stopped a step short of the disc that was
+# meant to close it. No rule can tell that from a part that really is open
+# there, and a rule that guessed would guess wrong somewhere else. So those are
+# mended one file at a time, by a maintained list of patches, each written down
+# with the evidence for it: 'patches/manifest.json' says which file, what is
+# wrong with it and the hash of the exact text the patch was written against,
+# and 'patches/<file>.patch' holds the lines it adds, replaces or removes, in
+# LDraw's own line format. The README has the rules for writing one.
+#
+# A patch is applied only to the text it was written against. If the library
+# changes the file, the patch is not applied - it may no longer fit, or no
+# longer be needed - and the file is built as the library has it, with a
+# warning, which can mean the part is refused again. That is the safe failure:
+# a patch applied to text it was not written for would be a guess.
+_PATCH_DIR = "patches"
+_PATCH_MANIFEST = "manifest.json"
+_PATCH_FORMAT = 1
+_PATCH_DIRECTIVE = "0 !PATCH"
+# The patch list itself, when this file is served to the PartCAD sandbox by the
+# repository plugin. That copy is written into a directory of its own with
+# nothing beside it (see 'files/ldraw.py' in ldraw_repo.py), so the plugin, which
+# runs from the package's checkout, puts the list into the copy it serves, in
+# place of this None: {"manifest": <manifest.json, parsed>, "files": {name:
+# text}}. Run from a checkout, as the tests and a local package do, it stays
+# None and the 'patches' directory beside this file is read instead.
+_EMBEDDED_PATCHES = None
+
+_patches_loaded = None  # {key: (sha256, patch text, patch name)} once read
+_patch_warned = set()
+
+
+def _warn_patch(message):
+    """Say something about a patch once per process, on stderr; never raise."""
+    if message in _patch_warned:
+        return
+    _patch_warned.add(message)
+    print("ldraw: %s" % message, file=sys.stderr)
+
+
+def _content_hash(text):
+    """The hash a patch is pinned to: the file's lines, whatever ends them.
+
+    The cache is written in text mode and read back with universal newlines, so
+    the same file arrives with CRLF line ends straight off the network and with
+    LF ones out of the cache. Hashing the lines rather than the bytes is what makes the
+    two the same file, which they are.
+    """
+    return hashlib.sha256("\n".join(text.splitlines()).encode("latin-1", "replace")).hexdigest()
+
+
+def _read_patch_files():
+    """The manifest and the patch texts: embedded, or from the directory beside this file."""
+    if _EMBEDDED_PATCHES is not None:
+        return _EMBEDDED_PATCHES.get("manifest"), _EMBEDDED_PATCHES.get("files") or {}
+    here = os.path.dirname(os.path.abspath(globals().get("__file__") or "."))
+    root = os.path.join(here, _PATCH_DIR)
+    try:
+        with open(os.path.join(root, _PATCH_MANIFEST), "r", encoding="utf-8") as f:
+            manifest = json.load(f)
+    except FileNotFoundError:
+        return None, {}
+    files = {}
+    for entry in (manifest or {}).get("patches") or []:
+        name = entry.get("patch") if isinstance(entry, dict) else None
+        if not isinstance(name, str):
+            continue
+        try:
+            with open(os.path.join(root, *name.split("/")), "r", encoding="latin-1") as f:
+                files[name] = f.read()
+        except OSError:
+            pass  # reported below, as a patch that names no file
+    return manifest, files
+
+
+def _load_patches():
+    """{LDraw file key: (sha256, patch text, patch name)}; a broken entry is skipped with a warning."""
+    try:
+        manifest, files = _read_patch_files()
+    except (OSError, ValueError) as e:
+        _warn_patch("the patch list could not be read, so no patch is applied: %s" % e)
+        return {}
+    if manifest is None:
+        return {}
+    if not isinstance(manifest, dict) or manifest.get("format") != _PATCH_FORMAT:
+        _warn_patch("the patch list is not format %d, so no patch is applied" % _PATCH_FORMAT)
+        return {}
+    patches = {}
+    for entry in manifest.get("patches") or []:
+        try:
+            key = entry["file"].replace("\\", "/").lower()
+            sha, name = entry["sha256"], entry["patch"]
+        except (KeyError, TypeError, AttributeError):
+            _warn_patch("a patch list entry without a file, a hash and a patch was skipped: %r" % (entry,))
+            continue
+        if name not in files:
+            _warn_patch("the patch for %s names %s, which is not there; %s is built unpatched" % (key, name, key))
+            continue
+        patches[key] = (sha, files[name], name)
+    return patches
+
+
+def _patches():
+    global _patches_loaded
+    if _patches_loaded is None:
+        _patches_loaded = _load_patches()
+    return _patches_loaded
+
+
+def _apply_patch(text, patch):
+    """'text' with 'patch' applied; ValueError if the patch does not make sense for it.
+
+    A patch is LDraw lines grouped under directives, each naming a line of the
+    upstream file by its number, counted from 1 as an editor counts them:
+
+        0 !PATCH AFTER <n>     the lines that follow go in after line n
+        0 !PATCH REPLACE <n>   the lines that follow take the place of line n
+        0 !PATCH DELETE <n>    line n goes, and nothing follows
+        0 !PATCH ADD           the lines that follow go at the end of the file
+
+    Every number is a line of the file as it was written, not as an earlier
+    directive left it, so the order of the directives does not matter. The
+    lines before the first directive are the patch's own notes and go nowhere;
+    every line after one is copied as it is, comments and BFC statements
+    included, since an added reference may need its INVERTNEXT.
+    """
+    lines = text.splitlines()
+    after, replaced = {}, {}
+    current = None
+    for raw in patch.splitlines():
+        words = raw.split()
+        if " ".join(words[:2]).upper() == _PATCH_DIRECTIVE:
+            op = words[2].upper() if len(words) > 2 else ""
+            if op == "ADD" and len(words) == 3:
+                n = len(lines)
+            elif op in ("AFTER", "REPLACE", "DELETE") and len(words) == 4 and words[3].isdigit():
+                n = int(words[3])
+            else:
+                raise ValueError("not a patch directive: %r" % raw)
+            if not (0 <= n <= len(lines)) or (op in ("REPLACE", "DELETE") and n == 0):
+                raise ValueError("line %d is not in the file, which has %d" % (n, len(lines)))
+            if op in ("REPLACE", "DELETE"):
+                if n in replaced:
+                    raise ValueError("line %d is replaced or deleted twice" % n)
+                current = replaced[n] = []
+                if op == "DELETE":
+                    current = None
+            else:
+                current = after.setdefault(n, [])
+            continue
+        if current is not None:
+            current.append(raw)
+        elif after or replaced:
+            if raw.strip():
+                raise ValueError("a line after a DELETE belongs to no directive: %r" % raw)
+    if not after and not replaced:
+        raise ValueError("it changes nothing")
+    out = list(after.get(0, []))
+    for n, line in enumerate(lines, 1):
+        out.extend(replaced.get(n, [line]))
+        out.extend(after.get(n, []))
+    return "\n".join(out) + "\n"
+
+
+def _patched(key, text):
+    """The text of one LDraw file, with its patch applied if it has one that fits."""
+    entry = _patches().get(key)
+    if entry is None or text is None:
+        return text
+    sha, patch, name = entry
+    if _content_hash(text) != sha:
+        _warn_patch(
+            "%s is not the text its patch (%s) was written against - the library has changed it - so it is "
+            "built as the library has it, unpatched; the part may be refused" % (key, name)
+        )
+        return text
+    try:
+        return _apply_patch(text, patch)
+    except ValueError as e:
+        _warn_patch("the patch for %s (%s) could not be applied, so it is built unpatched: %s" % (key, name, e))
+        return text
 
 
 _IDENT = ((1, 0, 0), (0, 1, 0), (0, 0, 1))
@@ -472,21 +674,80 @@ _PLANAR_LDU = 0.05
 # By the time the mesh is sewn its triangles share vertices exactly, so the
 # kernel is given only enough room for the conversion to millimetres.
 _SEW_TOL_MM = 1e-4
+# The most shells _solid_from_mesh() hands OCCT in one boolean. A 32 x 32
+# baseplate (3811) is one slab and 1024 studs standing on it, and fusing all
+# 1024 at once peaks at 4.9 GB resident and 6.6 GB of address space; where
+# that is more than the process may have, OCCT does not raise, it segfaults
+# inside BOPAlgo_PaveFiller::PerformEF and takes the build with it. Fused 128
+# at a time the same baseplate peaks at 1.7 GB, comes out the same solid to
+# the face, and is faster as well. Smaller batches cost more than they save:
+# every batch cuts against the growing result, and 32 at a time takes twice as
+# long as 128. A part with fewer shells than this is built exactly as before.
+_BOOLEAN_BATCH = 128
+# How far from flat a hole the plain capping left may be and still be capped
+# on the way to a solid, by a fan from its centre. A Technic friction pin
+# leaves its ridges' footprints open, 0.26 LDU off flat; the side holes of the
+# Power Functions servo leave loops 9.7 LDU off flat, which are the walls of a
+# pin hole's counterbore and nothing a fan describes - capping those would
+# seal the hole a pin goes into. 0.5 LDU is 0.2 mm.
+_SHALLOW_LDU = 0.5
+# How wide a hole may be and still be stitched shut, however far from flat it
+# runs. Most of what is left open is not a missing face but a seam: two of
+# LDraw's surfaces that meet a fraction of a millimetre apart rather than on
+# shared vertices, typically where a 16-sided circle meets a 48-sided one and
+# the chord stands off the arc by more than _TJUNCTION_LDU. Measured on the
+# parts of the LEGO F1 car, those seams are 0.56 to 0.98 LDU across and
+# anything wider (1.2 LDU up) is a face that is missing. Stitching moves no
+# surface; the triangles it adds span the gap and are no further from either
+# side than the gap is wide. 1 LDU is 0.4 mm.
+_SEAM_LDU = 1.0
+# How steeply an open edge may run against the face it is laid onto: half the
+# turn between two sides of a 16-sided circle, the coarsest LDraw draws. An
+# edge within that of a face belongs to that face and not to the next facet
+# round; anything steeper is a different surface meeting it.
+_SEAM_SLOPE = math.sin(math.pi / 16)
+# How close a vertex of an open edge must be to an edge that is not open to be
+# taken to end on it, and cut into it. That edge belongs to a surface already
+# closed, so this is no seam between two resolutions: it is how far a face that
+# ends on a line misses it once both are written to LDraw's few decimals and
+# moved into place. The servo's housing ends 0.016 LDU off the straight side
+# its 16-sided rim runs into; the nearest thing that is not such an end, on the
+# parts of the LEGO F1 car, is the friction pin 2780's 16-sided ring standing
+# 0.029 to 0.048 LDU off the chords of the ring drawn beside it - a different
+# polygon round the same circle, which cutting would bend by that much. 0.02
+# LDU is 8 micrometres.
+_LOOSE_LDU = 0.02
+# How far a solid built from regions may stray from the volume the surface
+# itself encloses before it is taken to have lost (or gained) part of the
+# part: the larger of this fraction and three standard errors of the sample.
+_VOLUME_SLACK = 0.1
+_VOLUME_SAMPLES = 2000
 
 
 def _weld(tris, tol):
     """Merge vertices that differ only in LDraw's last written digit."""
     cell = tol * 2.0
     grid = {}
+    order = {}
 
     def rep(p):
+        # Where more than one vertex already kept is within reach, the nearest
+        # is taken, and the first kept of two as near: not the first the search
+        # happens to look at, which is decided by the direction it searches in
+        # and so by the hand of the part.
         k = (int(math.floor(p[0] / cell)), int(math.floor(p[1] / cell)), int(math.floor(p[2] / cell)))
+        best = None
         for dx in (-1, 0, 1):
             for dy in (-1, 0, 1):
                 for dz in (-1, 0, 1):
                     for r in grid.get((k[0] + dx, k[1] + dy, k[2] + dz), ()):
                         if abs(r[0] - p[0]) <= tol and abs(r[1] - p[1]) <= tol and abs(r[2] - p[2]) <= tol:
-                            return r
+                            near = ((r[0] - p[0]) ** 2 + (r[1] - p[1]) ** 2 + (r[2] - p[2]) ** 2, order[r])
+                            if best is None or near < best[0]:
+                                best = (near, r)
+        if best is not None:
+            return best[1]
+        order[p] = len(order)
         grid.setdefault(k, []).append(p)
         return p
 
@@ -577,92 +838,190 @@ def _split_t_junctions(tris, tol, passes=3):
         out = []
         for t in tris:
             pieces = None
-            for j in range(3):
+            # A triangle with vertices on more than one of its edges is cut
+            # across one of them a pass, and which one decides the triangles
+            # that result. Taking the first in the order its corners happen to
+            # be written made that depend on the corner it starts from - and on
+            # the hand, since a mirror writes them the other way round. So the
+            # edge with the most vertices on it goes first, the longer of two.
+            cut = [j for j in range(3) if (t[j], t[(j + 1) % 3]) in cuts]
+            if cut:
+                j = max(cut, key=lambda j: (len(cuts[(t[j], t[(j + 1) % 3])]), math.dist(t[j], t[(j + 1) % 3])))
                 e = (t[j], t[(j + 1) % 3])
-                if e in cuts:
-                    chain = [e[0]] + cuts[e] + [e[1]]
-                    apex = t[(j + 2) % 3]
-                    pieces = [(chain[k], chain[k + 1], apex) for k in range(len(chain) - 1)]
-                    split += len(pieces) - 1
-                    break
-            out.extend(pieces if pieces else [t])
+                chain = [e[0]] + cuts[e] + [e[1]]
+                apex = t[(j + 2) % 3]
+                pieces = [(chain[k], chain[k + 1], apex) for k in range(len(chain) - 1)]
+                split += len(pieces) - 1
+                # The apex itself can be one of the vertices on the edge, when
+                # the triangle is a sliver; the piece that has it twice has no
+                # surface, and the two edges it walks cancel each other out.
+                pieces = [q for q in pieces if q[0] != apex and q[1] != apex]
+            out.extend([t] if pieces is None else pieces)
         tris[:] = out
     return split
 
 
 def _split_pinched(loop):
-    """Split a loop that runs through the same point twice into simple ones."""
+    """Split a closed loop that runs through the same point twice into simple ones.
+
+    The loop is closed, so which of its vertices it is handed over starting
+    from is no part of it, and the answer does not depend on that: the shortest
+    run that leaves a point and comes back to it is a simple loop, so it is
+    taken out first and what is left is searched again. A run of fewer than
+    three vertices goes out and comes back the same way, encloses nothing, and
+    is dropped.
+    """
+    ring = list(loop)
     out = []
-    stack = []
-    at = {}
-    for v in loop:
-        if v in at:
-            i = at[v]
-            sub = stack[i:]
-            for w in sub[1:]:
-                at.pop(w, None)
-            del stack[i:]
-            if len(sub) >= 3:
-                out.append(sub)
-        at[v] = len(stack)
-        stack.append(v)
-    if len(stack) >= 3:
-        out.append(stack)
+    while True:
+        n = len(ring)
+        best = None
+        last = {}
+        for i in range(2 * n):  # twice round, so that a run across the start is seen whole
+            v = ring[i % n]
+            if v in last and 0 < i - last[v] < n and (best is None or i - last[v] < best[1] - best[0]):
+                best = (last[v], i)
+            last[v] = i
+        if best is None:
+            break
+        s, e = best
+        sub = [ring[k % n] for k in range(s + 1, e + 1)]
+        if len(sub) >= 3:
+            out.append(sub)
+        gone = {k % n for k in range(s + 1, e + 1)}
+        ring = [ring[k] for k in range(n) if k not in gone]
+    if len(ring) >= 3:
+        out.append(ring)
     return out
 
 
 def _boundary_loops(tris):
     """Chain the unmatched half-edges into loops around each hole.
 
-    Which edge continues the boundary is a question about the surface and not
-    about the list: at a vertex where several holes meet, the one that follows
-    is found by turning around that vertex through the triangles that do exist
-    until the next edge that has nothing on its far side.
+    The answer is a property of the surface and not of how it is listed: the
+    same triangles in another order, each starting from another corner, or the
+    whole surface reflected, give the same loops (reflected). So no step here
+    takes the first of anything.
+
+    Where one open edge leaves the vertex an open edge arrives at, that is the
+    edge that follows, and nothing else is asked. Where several holes meet at a
+    vertex, which one follows is found by turning around the vertex through the
+    triangles that do exist until the next open edge. An edge more than two
+    triangles share is crossed into the one that encloses the least with the
+    triangle the turn comes from - the next face round the edge on its inside -
+    which is the same answer from either side and in either hand. The turn is
+    made from both ends, the edge arriving and the edge leaving, and a pair is
+    taken only when the two agree; anything left unpaired is not a loop.
     """
     he = _half_edges(tris)
     free = _unmatched(he)
-    remaining = dict(free)
 
-    def following(a, b):
-        cur = (a, b)
-        for _ in range(256):
-            owners = he.get(cur)
-            if not owners:
+    def across(i, p, q):
+        """The triangle on the far side of edge p->q of triangle i, walking it q->p."""
+        owners = he.get((q, p), ())
+        if len(owners) == 1:
+            return owners[0]
+        t = tris[i]
+        n = _normal(*t)
+        d = (q[0] - p[0], q[1] - p[1], q[2] - p[2])
+        length = math.sqrt(d[0] ** 2 + d[1] ** 2 + d[2] ** 2)
+        if not owners or n is None or length < 1e-18:
+            return None
+        d = (d[0] / length, d[1] / length, d[2] / length)
+
+        def off(j):
+            """Where triangle j stands off the edge, square to it; None if it has no third corner."""
+            r = [v for v in tris[j] if v != p and v != q]
+            if not r:
                 return None
-            t = tris[owners[0]]
-            third = t[(t.index(cur[0]) + 2) % 3]
-            if (b, third) in free:
-                return (b, third)
-            cur = (third, b)
+            w = (r[0][0] - p[0], r[0][1] - p[1], r[0][2] - p[2])
+            s = w[0] * d[0] + w[1] * d[1] + w[2] * d[2]
+            w = (w[0] - s * d[0], w[1] - s * d[1], w[2] - s * d[2])
+            return w if w[0] ** 2 + w[1] ** 2 + w[2] ** 2 >= 1e-36 else None
+
+        e1 = off(i)
+        if e1 is None:
+            return None
+        size = math.sqrt(e1[0] ** 2 + e1[1] ** 2 + e1[2] ** 2)
+        e1 = (e1[0] / size, e1[1] / size, e1[2] / size)
+        # Turning from triangle i into what it encloses: away from its normal.
+        e2 = (-n[0], -n[1], -n[2])
+        turns = []
+        for j in owners:
+            # A triangle with no third corner off the edge has no side to
+            # turn into; it is no face round the edge and is passed over.
+            w = off(j)
+            if w is None:
+                continue
+            angle = math.atan2(sum(w[k] * e2[k] for k in range(3)), sum(w[k] * e1[k] for k in range(3)))
+            turns.append((angle % (2.0 * math.pi), j))
+        turns.sort()
+        if not turns:
+            return None
+        if len(turns) > 1 and turns[1][0] - turns[0][0] <= 1e-12:
+            return None  # two faces as tight as each other: nothing to choose between them
+        return turns[0][1]
+
+    def turn(e, forward):
+        """The open edge reached from open edge e by turning around its end (or its start)."""
+        a, b = e
+        owners = he.get(e, ())
+        if len(owners) != 1:
+            return None
+        i = owners[0]
+        seen = set()
+        while i is not None and i not in seen:
+            seen.add(i)
+            t = tris[i]
+            k = t.index(b if forward else a)
+            if forward:
+                nxt = (t[k], t[(k + 1) % 3])  # the edge leaving b in triangle i
+                if nxt in free:
+                    return nxt
+                i = across(i, *nxt)
+            else:
+                nxt = (t[(k - 1) % 3], t[k])  # the edge arriving at a in triangle i
+                if nxt in free:
+                    return nxt
+                i = across(i, *nxt)
         return None
 
+    leaving, arriving = {}, {}
+    for (a, b), n in free.items():
+        leaving.setdefault(a, []).append((a, b))
+        arriving.setdefault(b, []).append((a, b))
+    after = {}
+    for e in free:
+        b = e[1]
+        if len(leaving.get(b, ())) == 1 and len(arriving[b]) == 1:
+            after[e] = leaving[b][0]
+        else:
+            f = turn(e, True)
+            if f is not None and turn(f, False) == e:
+                after[e] = f
+    # Two edges that both claim the one after them leave neither claim good.
+    claims = {}
+    for e, f in after.items():
+        claims.setdefault(f, []).append(e)
+    for f, es in claims.items():
+        if len(es) > 1 or free[es[0]] != free[f]:
+            for e in es:
+                del after[e]
+
     loops = []
-    while True:
-        start = None
-        for e, n in remaining.items():
-            if n:
-                start = e
-                break
-        if start is None:
-            break
+    done = set()
+    for e in free:
+        if e in done:
+            continue
         loop = []
-        cur = start
-        closed = True
-        while True:
-            if not remaining.get(cur):
-                closed = False
-                break
-            remaining[cur] -= 1
+        cur = e
+        while cur is not None and cur not in done:
+            done.add(cur)
             loop.append(cur[0])
-            nxt = following(cur[0], cur[1])
-            if nxt is None:
-                closed = False
-                break
-            if nxt == start:
-                break
-            cur = nxt
-        if closed:
-            loops.extend(L for L in _split_pinched(loop) if len(L) >= 3)
+            cur = after.get(cur)
+        if cur == e:
+            for _ in range(free[e]):
+                loops.extend(L for L in _split_pinched(loop) if len(L) >= 3)
     return loops
 
 
@@ -818,9 +1177,36 @@ def _ear_clip(poly, eps):
                     cut = True
                     break
         if not cut:
-            return None
-    if len(idx) == 3:
+            break
+    if len(idx) == 3 and abs(_turn(poly[idx[0]], poly[idx[1]], poly[idx[2]])) > eps:
         out.append(tuple(idx))
+        return out
+    if len(idx) < 3:
+        return out
+    # What is left has no area: vertices on one line. A hole whose side runs
+    # straight through several vertices ends this way whenever the clipping
+    # starts at the far corner - the Power Functions battery box's end recesses
+    # do, 8 vertices with four of them on one edge - and the ears already taken
+    # cover the whole hole. Refusing there left the box open. Instead each
+    # leftover vertex is put into the ear edge it lies on, the way a T-junction
+    # is split, so the cap meets the surface around it vertex for vertex.
+    if abs(_area2([poly[i] for i in idx])) > eps * len(idx):
+        return None
+    for j in idx:
+        for k, (i0, i1, i2) in enumerate(out):
+            if j in (i0, i1, i2):
+                continue
+            for a, b, c in ((i0, i1, i2), (i1, i2, i0), (i2, i0, i1)):
+                pa, pb, pj = poly[a], poly[b], poly[j]
+                along = (pj[0] - pa[0]) * (pb[0] - pa[0]) + (pj[1] - pa[1]) * (pb[1] - pa[1])
+                span = (pb[0] - pa[0]) ** 2 + (pb[1] - pa[1]) ** 2
+                if abs(_turn(pa, pb, pj)) <= eps and 0.0 < along < span:
+                    out[k] = (a, j, c)
+                    out.append((j, b, c))
+                    break
+            else:
+                continue
+            break
     return out
 
 
@@ -1089,9 +1475,13 @@ def _solid_from_mesh(tris):
     result = steps[0][1]
     i = 1
     while i < len(steps):
+        # A run of bodies is fused and a run of holes cut, at most
+        # _BOOLEAN_BATCH of them per boolean: fusing (or cutting) a run in
+        # pieces is the same solid as fusing it whole, and is what keeps a part
+        # made of a thousand shells inside the memory a build is given.
         cut = steps[i][2]
         tools = TopTools_ListOfShape()
-        while i < len(steps) and steps[i][2] == cut:
+        while i < len(steps) and steps[i][2] == cut and tools.Size() < _BOOLEAN_BATCH:
             tools.Append(steps[i][1])
             i += 1
         args = TopTools_ListOfShape()
@@ -1156,36 +1546,705 @@ def _resolve_dat(request):
     return dat
 
 
-def _build_shape(tris, uncertified=False):
-    # Pin pyexpat before importing build123d/OCP (see wrapper_import_mesh.py).
-    import pyexpat  # noqa: F401
-    import build123d as b3d
+def _drop_slivers(tris, tol, passes=8):
+    """Take out triangles too thin to have a side, and mend the edge they leave.
 
-    # Close the surface first and build the solid it describes. A part this
-    # cannot close - 6233, Cone 3 x 3 x 2, is one, where hand-written eighth
-    # segments meet 48-sided primitives several LDU away - falls through to
-    # the mesh import below and comes back exactly as it did before.
+    Splitting a T-junction makes them: where the vertex split at sits on the
+    edge of the triangle beside it, that triangle's three corners are on one
+    line. It has no area, so nothing built from the mesh keeps it, and the
+    surface opens along it. Its middle corner lies on its longest edge;
+    splitting the triangle across that edge at the same corner hands the two
+    short edges to a triangle that can carry them, and the sliver can go.
+    """
+    removed = 0
+    for _ in range(passes):
+        walks = {}
+        for i, t in enumerate(tris):
+            for j in range(3):
+                walks[(t[j], t[(j + 1) % 3])] = i
+        drop, replace = set(), {}
+        for i, t in enumerate(tris):
+            if i in drop or i in replace:
+                continue
+            longest, j = max((math.dist(t[(j + 1) % 3], t[j]), j) for j in range(3))
+            p, q, m = t[j], t[(j + 1) % 3], t[(j + 2) % 3]
+            ux, uy, uz = q[0] - p[0], q[1] - p[1], q[2] - p[2]
+            vx, vy, vz = m[0] - p[0], m[1] - p[1], m[2] - p[2]
+            area2 = math.sqrt((uy * vz - uz * vy) ** 2 + (uz * vx - ux * vz) ** 2 + (ux * vy - uy * vx) ** 2)
+            if longest == 0.0 or area2 / longest > tol:
+                continue
+            k = walks.get((q, p))
+            if k is None or k == i or k in drop or k in replace:
+                continue
+            o = tris[k]
+            a = o.index(q)
+            if o[(a + 1) % 3] != p:
+                continue
+            r = o[(a + 2) % 3]
+            replace[k] = [(q, m, r), (m, p, r)]
+            drop.add(i)
+        if not drop:
+            break
+        out = []
+        for i, t in enumerate(tris):
+            if i not in drop:
+                out.extend(replace.get(i, [t]))
+        tris[:] = out
+        removed += len(drop)
+    return removed
+
+
+def _stitch(cap):
+    """Triangles closing a long, thin loop: always across the shortest gap left.
+
+    A seam is two runs of vertices lying side by side, and taking the ear whose
+    new edge is shortest walks down it pairing each vertex with its neighbour
+    across the gap - a zip - rather than reaching from one end to the other.
+    """
+    ring = list(cap)
+    made = []
+    while len(ring) > 3:
+        n = len(ring)
+        i = min(range(n), key=lambda k: math.dist(ring[k - 1], ring[(k + 1) % n]))
+        made.append((ring[i - 1], ring[i], ring[(i + 1) % n]))
+        del ring[i]
+    made.append((ring[0], ring[1], ring[2]))
+    return made
+
+
+def _cap_shallow_loops(tris, tol, seam=0.0, guessed=None):
+    """Close every hole still open that is all but flat, or no wider than 'seam'.
+
+    Returns the holes left open. A fan from the centre of a loop within 'tol'
+    of flat is the surface it is missing; a loop no wider than 'seam' (twice
+    its area over its length) is a seam and is stitched. Anything else would
+    be a guess, and is left for the caller to refuse. The triangles a stitch
+    makes are added to 'guessed', when it is given, for _solid_from_regions()
+    to leave out of its vote.
+    """
+    left = 0
+    for loop in _boundary_loops(tris):
+        cap = list(reversed(loop))
+        k = len(cap)
+        centre = tuple(math.fsum(p[i] for p in cap) / k for i in range(3))  # exact: any start, either hand
+        nx, ny, nz = _newell(cap)
+        size = math.sqrt(nx * nx + ny * ny + nz * nz)
+        if size < 1e-12:
+            left += 1
+            continue
+        off = max(abs((p[0] - centre[0]) * nx + (p[1] - centre[1]) * ny + (p[2] - centre[2]) * nz) for p in cap) / size
+        if off <= tol:
+            tris.extend((cap[i], cap[(i + 1) % k], centre) for i in range(k))
+            continue
+        perimeter = sum(math.dist(cap[i], cap[(i + 1) % k]) for i in range(k))
+        if perimeter > 0.0 and size / perimeter <= seam:  # size is twice the area
+            made = _stitch(cap)
+            tris.extend(made)
+            if guessed is not None:
+                guessed.update(made)
+            continue
+        left += 1
+    return left
+
+
+def _closest_on_triangle(p, a, b, c):
+    """The point of triangle a-b-c nearest p (Ericson, Real-Time Collision Detection, 5.1.5)."""
+
+    def dot(u, v):
+        return u[0] * v[0] + u[1] * v[1] + u[2] * v[2]
+
+    def along(o, u, s, v=(0.0, 0.0, 0.0), t=0.0):
+        return (o[0] + s * u[0] + t * v[0], o[1] + s * u[1] + t * v[1], o[2] + s * u[2] + t * v[2])
+
+    ab = (b[0] - a[0], b[1] - a[1], b[2] - a[2])
+    ac = (c[0] - a[0], c[1] - a[1], c[2] - a[2])
+    ap = (p[0] - a[0], p[1] - a[1], p[2] - a[2])
+    d1, d2 = dot(ab, ap), dot(ac, ap)
+    if d1 <= 0.0 and d2 <= 0.0:
+        return a
+    bp = (p[0] - b[0], p[1] - b[1], p[2] - b[2])
+    d3, d4 = dot(ab, bp), dot(ac, bp)
+    if d3 >= 0.0 and d4 <= d3:
+        return b
+    vc = d1 * d4 - d3 * d2
+    if vc <= 0.0 and d1 >= 0.0 and d3 <= 0.0:
+        return along(a, ab, d1 / (d1 - d3))
+    cp = (p[0] - c[0], p[1] - c[1], p[2] - c[2])
+    d5, d6 = dot(ab, cp), dot(ac, cp)
+    if d6 >= 0.0 and d5 <= d6:
+        return c
+    vb = d5 * d2 - d1 * d6
+    if vb <= 0.0 and d2 >= 0.0 and d6 <= 0.0:
+        return along(a, ac, d2 / (d2 - d6))
+    va = d3 * d6 - d5 * d4
+    if va <= 0.0 and (d4 - d3) >= 0.0 and (d5 - d6) >= 0.0:
+        return along(b, (c[0] - b[0], c[1] - b[1], c[2] - b[2]), (d4 - d3) / ((d4 - d3) + (d5 - d6)))
+    denom = 1.0 / (va + vb + vc)
+    return along(a, ab, vb * denom, ac, vc * denom)
+
+
+def _facing(t):
+    """The unit normal of triangle t, the same whichever corner it is read from.
+
+    _normal() crosses two edges from the first corner, and which corner is first
+    changes its last digit. Newell's sum runs over all three edges, and summed
+    exactly it is the same for every rotation of the triangle and exactly the
+    mirror image for a triangle mirrored across a coordinate plane (and wound
+    back, as _mesh() winds it).
+    """
+    k = ((t[0], t[1]), (t[1], t[2]), (t[2], t[0]))
+    nx = math.fsum((a[1] - b[1]) * (a[2] + b[2]) for a, b in k)
+    ny = math.fsum((a[2] - b[2]) * (a[0] + b[0]) for a, b in k)
+    nz = math.fsum((a[0] - b[0]) * (a[1] + b[1]) for a, b in k)
+    length = math.sqrt(nx * nx + ny * ny + nz * nz)
+    if length < 1e-9:
+        return None
+    return (nx / length, ny / length, nz / length)
+
+
+def _pinv_gram(gram):
+    """The pseudo-inverse of a Gram matrix, by its eigenvalues.
+
+    rows.T @ _pinv_gram(rows @ rows.T) is the pseudo-inverse of 'rows', and
+    taken that way it has the same symmetry the surface has: a Gram matrix holds
+    only dot products, which a reflection leaves exactly as they were, so a
+    vertex moved on a mirrored surface lands exactly on the mirror of where it
+    lands on the original. A singular value decomposition of 'rows' itself does
+    not, by a last digit, which is enough to make the two meshes differ.
+    """
+    import numpy as np
+
+    values, vectors = np.linalg.eigh(gram)
+    top = float(values.max()) if len(values) else 0.0
+    keep = values > 1e-14 * top
+    return (vectors[:, keep] / values[keep]) @ vectors[:, keep].T
+
+
+def _lay_onto_faces(tris, tol):
+    """Move each open edge that stops just short of a face onto that face.
+
+    Returns the number of vertices moved. This is the seam a T-junction split
+    cannot reach: an edge that ends not at another edge but somewhere in the
+    middle of another face. The Technic cross block 32557 draws the bridge
+    between its two pin bosses 1.38 LDU either side of centre, where the
+    boss's 16-sided cylinder is at 1.396, so the bridge stops 0.017 LDU short
+    of the boss along 20 LDU; and the web under its axle holes stops 0.027
+    short of the half cylinder above it. The region builder cuts faces where
+    they meet and nowhere else, so a gap that narrow is a leak like any other
+    and the whole body of the part went with it. The Power Functions servo's
+    two housings draw the same wall twice, 0.001 LDU apart, and the rim of the
+    top housing ends 0.001 off the bottom housing's wall; a wheel rim's drive
+    keys stand 0.0001 off the rim. Every one of those is rounding.
+
+    An open edge is laid onto a face when its middle stands over the face (the
+    foot of the perpendicular is inside it) within 'tol', both its ends are
+    within 'tol' of the face's plane, and it runs within _SEAM_SLOPE of that
+    plane - along the face rather than into it. Its two ends are moved onto
+    the plane by the least distance that does it. What this will not do:
+
+    - Move an edge whose face already runs through the other face by more than
+      _WELD_LDU. That face is cut there by the region builder as it is; the
+      48-sided disc of a wheel hub reaching 0.15 LDU past the 16-sided wall it
+      stands on is one, and pulling it back changes nothing but the part.
+    - Tilt a face out of the plane of a face it overlaps. A vertex on a face
+      that lies in exactly the plane of another face nearby (a quad laid over
+      a disc primitive, as 32557's web is) keeps to that plane while it moves;
+      tilting it opens a sliver between the two that leaks in its turn.
+    - Move a vertex further than 'tol', or where the faces it is asked onto
+      cannot all be met at once.
+
+    'tol' is _TJUNCTION_LDU: an edge this close to a face is on it, as a
+    vertex that close to an edge is on that.
+    """
+    import numpy as np
+
+    he = _half_edges(tris)
+    free = _unmatched(he)
+    if not free:
+        return 0
+    T = np.array(tris, dtype=float)
+    lo = T.min(axis=1) - tol
+    hi = T.max(axis=1) + tol
+
+    def plane_of(t):
+        n = _facing(t)
+        return None if n is None else (n, math.fsum(n[0] * p[0] + n[1] * p[1] + n[2] * p[2] for p in t) / 3.0)
+
+    def height(p, plane):
+        n, d = plane
+        return p[0] * n[0] + p[1] * n[1] + p[2] * n[2] - d
+
+    onto = {}
+    for a, b in free:
+        mid = ((a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0, (a[2] + b[2]) / 2.0)
+        near = np.nonzero(np.all((lo <= mid) & (mid <= hi), axis=1))[0]
+        own = set(he[(a, b)])
+        best = None
+        for i in near:
+            t = tris[i]
+            if i in own or (a in t and b in t):
+                continue
+            plane = plane_of(t)
+            if plane is None:
+                continue
+            gap = math.dist(_closest_on_triangle(mid, *t), mid)
+            # Only a face the edge stands over: the nearest point is the foot
+            # of the perpendicular, not a point on the face's rim.
+            if gap > tol or abs(gap - abs(height(mid, plane))) > 1e-9 * max(1.0, gap):
+                continue
+            if best is None or gap < best[0]:
+                best = (gap, plane)
+        if best is None or best[0] <= 1e-9:
+            continue
+        plane = best[1]
+        ha, hb = height(a, plane), height(b, plane)
+        if abs(ha) > tol or abs(hb) > tol or abs(ha - hb) > _SEAM_SLOPE * math.dist(a, b):
+            continue
+        t = tris[he[(a, b)][0]]
+        mine = _facing(t)
+        parallel = mine is not None and abs(sum(mine[k] * plane[0][k] for k in range(3))) >= math.cos(math.pi / 16)
+        hc = height(t[(t.index(a) + 2) % 3], plane)
+        if not parallel and hc * (ha + hb) < 0.0 and max(abs(ha), abs(hb)) > _WELD_LDU:
+            continue
+        onto.setdefault(a, []).append(plane)
+        onto.setdefault(b, []).append(plane)
+
+    fan = {}
+    for i, t in enumerate(tris):
+        for v in t:
+            if v in onto:
+                fan.setdefault(v, []).append(i)
+    move = {}
+    for v, planes in onto.items():
+        mine = fan.get(v, [])
+        edges = {frozenset((tris[i][j], tris[i][(j + 1) % 3])) for i in mine for j in range(3)}
+        held = []
+        for i in mine:
+            plane = plane_of(tris[i])
+            if plane is None:
+                continue
+            box_lo, box_hi = T[i].min(axis=0) - 1e-6, T[i].max(axis=0) + 1e-6
+            for j in np.nonzero(np.all((lo + tol <= box_hi) & (hi - tol >= box_lo), axis=1))[0]:
+                o = tris[j]
+                if v in o or any(frozenset((o[k], o[(k + 1) % 3])) in edges for k in range(3)):
+                    continue
+                if all(abs(height(q, plane)) <= 1e-9 for q in o):
+                    held.append(plane[0])
+                    break
+        # The least move that puts v on every face asked of it while keeping
+        # it in every plane it is held to: minimum norm, by pseudo-inverse.
+        rows = np.array([p[0] for p in planes] + held)
+        want = np.array([-height(v, p) for p in planes] + [0.0] * len(held))
+        delta = rows.T @ (_pinv_gram(rows @ rows.T) @ want)
+        if not np.allclose(rows @ delta, want, atol=1e-9):
+            continue
+        if 1e-9 < float(np.linalg.norm(delta)) <= tol:
+            move[v] = (v[0] + float(delta[0]), v[1] + float(delta[1]), v[2] + float(delta[2]))
+    if not move:
+        return 0
+    out = []
+    for t in tris:
+        t = (move.get(t[0], t[0]), move.get(t[1], t[1]), move.get(t[2], t[2]))
+        if t[0] != t[1] and t[1] != t[2] and t[0] != t[2]:
+            out.append(t)
+    tris[:] = out
+    return len(move)
+
+
+def _split_at_loose_vertices(tris, tol):
+    """Cut any edge, open or not, where a vertex of an open edge lies on it.
+
+    Returns the number of triangles cut. _split_t_junctions joins an open
+    vertex to an open edge; this is the case where the edge is not open,
+    because the surface it belongs to is whole and something else ends on it.
+    The fairing 64681 stands its fill faces on the line where two facets of a
+    connector boss meet, in the middle of that line; the servo's top housing
+    ends 0.0005 LDU from the corner between two facets of the bottom housing's
+    wall. Unsplit, the edge has no vertex there and the faces that end on it
+    miss it by that much, which is a leak.
+
+    The reach is _LOOSE_LDU, well inside _TJUNCTION_LDU and _WELD_LDU: the edge
+    being cut belongs to a surface that is already closed, and a vertex further
+    from it than that is not on it - it is something standing beside it.
+    """
+    import numpy as np
+
+    he = _half_edges(tris)
+    loose = {v for e in _unmatched(he) for v in e}
+    if not loose:
+        return 0
+    keys = list({frozenset(e): e for e in he}.values())
+    E = np.array(keys, dtype=float)
+    lo = np.minimum(E[:, 0], E[:, 1]) - tol
+    hi = np.maximum(E[:, 0], E[:, 1]) + tol
+    cuts = {}
+    for v in loose:
+        for k in np.nonzero(np.all((lo <= v) & (v <= hi), axis=1))[0]:
+            a, b = keys[k]
+            if v != a and v != b and _point_on_segment(v, a, b, tol) is not None:
+                cuts.setdefault(frozenset((a, b)), set()).add(v)
+    if not cuts:
+        return 0
+    out = []
+    n = 0
+    for t in tris:
+        pieces = [t]
+        # As in _split_t_junctions: the edge with the most vertices on it is
+        # cut, the longer of two, so the corner a triangle is written from
+        # (and the hand of the part) does not choose.
+        cut = [j for j in range(3) if cuts.get(frozenset((t[j], t[(j + 1) % 3])))]
+        if cut:
+            j = max(cut, key=lambda j: (len(cuts[frozenset((t[j], t[(j + 1) % 3]))]), math.dist(t[j], t[(j + 1) % 3])))
+            a, b = t[j], t[(j + 1) % 3]
+            on = cuts[frozenset((a, b))]
+            chain = [a] + [v for _, v in sorted(((_point_on_segment(v, a, b, 2 * tol) or 0.0), v) for v in on)] + [b]
+            apex = t[(j + 2) % 3]
+            # A sliver's apex can lie on its own long edge and be one of the
+            # vertices cut in; the pieces that would have it twice have no
+            # surface, and the edges they walk cancel each other out.
+            pieces = [q for q in ((chain[k], chain[k + 1], apex) for k in range(len(chain) - 1)) if apex not in q[:2]]
+            n += 1
+        out.extend(pieces)
+    tris[:] = out
+    return n
+
+
+def _solid_problems(shape):
+    """What keeps 'shape' from being a part. Empty when it is closed, valid solids and nothing else."""
+    from OCP.BRep import BRep_Tool
+    from OCP.BRepCheck import BRepCheck_Analyzer
+    from OCP.BRepGProp import BRepGProp
+    from OCP.GProp import GProp_GProps
+    from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_FORWARD, TopAbs_REVERSED, TopAbs_SOLID
+    from OCP.TopExp import TopExp, TopExp_Explorer
+    from OCP.TopoDS import TopoDS
+    from OCP.TopTools import TopTools_IndexedDataMapOfShapeListOfShape
+
+    if shape is None or shape.IsNull():
+        return ["nothing was built"]
+    found = []
+    solids = []
+    explorer = TopExp_Explorer(shape, TopAbs_SOLID)
+    while explorer.More():
+        solids.append(explorer.Current())
+        explorer.Next()
+    if not solids:
+        found.append("no solid")
+    if TopExp_Explorer(shape, TopAbs_FACE, TopAbs_SOLID).More():
+        found.append("faces outside any solid")
+    if not BRepCheck_Analyzer(shape).IsValid():
+        found.append("not valid")
+    for solid in solids:
+        # An edge with one face on it is a hole in the surface - unless it is
+        # one a face carries inside itself, which is what INTERNAL says.
+        edges = TopTools_IndexedDataMapOfShapeListOfShape()
+        TopExp.MapShapesAndAncestors_s(solid, TopAbs_EDGE, TopAbs_FACE, edges)
+        for i in range(1, edges.Extent() + 1):
+            edge = TopoDS.Edge_s(edges.FindKey(i))
+            if (
+                edges.FindFromIndex(i).Extent() == 1
+                and not BRep_Tool.Degenerated_s(edge)
+                and edge.Orientation() in (TopAbs_FORWARD, TopAbs_REVERSED)
+            ):
+                found.append("a solid that is open")
+                break
+        props = GProp_GProps()
+        BRepGProp.VolumeProperties_s(solid, props)
+        if props.Mass() <= 0.0:
+            found.append("a solid with no volume inside it")
+    return found
+
+
+def _enclosed_volume(tris_mm):
+    """The volume the surface encloses, by sampling, as (estimate, standard error).
+
+    Asked independently of how the solid was built: a point is inside when the
+    triangles wind around it, which a surface with gaps in it still answers
+    for nearly every point. It is what a solid assembled from regions is held
+    to, so that one that lost the body of the part - a servo reduced to its
+    bosses - is refused instead of returned. The sample is seeded, so a part
+    gets the same answer every time it is built.
+    """
+    import numpy as np
+
+    T = np.array(tris_mm, dtype=float)
+    lo, hi = T.reshape(-1, 3).min(axis=0), T.reshape(-1, 3).max(axis=0)
+    box = float(np.prod(hi - lo))
+    if box <= 0.0:
+        return 0.0, 0.0
+    points = lo + np.random.default_rng(0).random((_VOLUME_SAMPLES, 3)) * (hi - lo)
+    winding = np.zeros(len(points))
+    for start in range(0, len(points), 64):
+        P = points[start : start + 64, None, :]
+        A, B, C = T[None, :, 0] - P, T[None, :, 1] - P, T[None, :, 2] - P
+        la, lb, lc = (np.linalg.norm(X, axis=2) for X in (A, B, C))
+        det = np.einsum("pij,pij->pi", A, np.cross(B, C))
+        dot = (
+            la * lb * lc
+            + np.einsum("pij,pij->pi", A, B) * lc
+            + np.einsum("pij,pij->pi", B, C) * la
+            + np.einsum("pij,pij->pi", C, A) * lb
+        )
+        winding[start : start + 64] = np.sum(2.0 * np.arctan2(det, dot), axis=1) / (4.0 * math.pi)
+    inside = float(np.mean(winding > 0.5))
+    return inside * box, box * math.sqrt(inside * (1.0 - inside) / len(points))
+
+
+def _solid_from_regions(tris, silent=()):
+    """The solid an LDraw surface encloses, where sewing it into shells cannot.
+
+    LDraw draws a part's surfaces, not its body, and freely lays one surface
+    over another: a bush's end face on the face of the block it sits in, a
+    primitive closing a face another one closes too. Sewn edge to edge, such a
+    mesh has edges with three and four faces on them and no shell to take a
+    solid from. So the faces are handed to OCCT whole instead: it cuts them
+    against each other where they cross or coincide and returns every closed
+    region they bound. Which regions are the part is read off the triangles
+    themselves - each knows which of its sides is out - by asking, for each
+    region, whether the faces around it face out the way the triangles they
+    were cut from do. Area-weighted, so that a membrane drawn both ways round
+    counts for nothing and one stray face cannot outvote a wall.
+
+    Every face of the result lies on a triangle LDraw drew; nothing is moved,
+    rounded or approximated.
+
+    The triangles in 'silent' bound regions like any other but have no vote.
+    They are the ones stitched across a seam, which say only that the gap is
+    closed and nothing about which side of them is the part: a stitch that runs
+    through the material of a wall beside the seam, as one does where the seam
+    climbs the steps of the differential 62821, would otherwise vote the slice
+    of wall on its far side out of the part.
+    """
+    from OCP.BOPAlgo import BOPAlgo_MakerVolume
+    from OCP.BRep import BRep_Builder
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace, BRepBuilderAPI_MakePolygon
+    from OCP.BRepGProp import BRepGProp
+    from OCP.BRepLProp import BRepLProp_SLProps
+    from OCP.BRepTools import BRepTools
+    from OCP.GProp import GProp_GProps
+    from OCP.gp import gp_Pnt
+    from OCP.TopAbs import TopAbs_FACE, TopAbs_REVERSED, TopAbs_SOLID
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopoDS import TopoDS, TopoDS_Compound
+    from OCP.TopTools import TopTools_IndexedMapOfShape, TopTools_ListOfShape
+
+    faces, made, normals, mm, voice = TopTools_ListOfShape(), [], [], [], []
+    for t in tris:
+        a, b, c = _scaled(t[0]), _scaled(t[2]), _scaled(t[1])  # the reflection swap, as in _solid_from_mesh
+        n = _normal(a, b, c)
+        if n is None:
+            # No area, so no surface to lose: stitching a seam whose vertices
+            # run in a straight line makes these. Were one ever the only thing
+            # closing a gap, the region behind it would leak and the volume
+            # check below would say so.
+            continue
+        face = BRepBuilderAPI_MakeFace(BRepBuilderAPI_MakePolygon(gp_Pnt(*a), gp_Pnt(*b), gp_Pnt(*c), True).Wire())
+        if not face.IsDone():
+            raise LDrawNotSolid("a triangle could not be made into a face")
+        faces.Append(face.Face())
+        made.append(face.Face())
+        normals.append(n)
+        voice.append(t not in silent)
+        mm.append((a, b, c))
+
+    maker = BOPAlgo_MakerVolume()
+    maker.SetArguments(faces)
+    maker.Perform()
+    if maker.HasErrors():
+        raise LDrawNotSolid("its faces could not be split into regions")
+
+    images, owners = TopTools_IndexedMapOfShape(), {}
+    for i, face in enumerate(made):
+        modified = list(maker.Modified(face))
+        for image in modified if modified else ([] if maker.IsDeleted(face) else [face]):
+            owners.setdefault(images.Add(image), []).append(i)
+
+    def inside(shape):
+        """The regions of 'shape' whose faces face out the way their triangles do."""
+        kept = []
+        regions = TopExp_Explorer(shape, TopAbs_SOLID)
+        while regions.More():
+            region = regions.Current()
+            regions.Next()
+            vote = 0.0
+            around = TopExp_Explorer(region, TopAbs_FACE)
+            while around.More():
+                face = TopoDS.Face_s(around.Current())
+                around.Next()
+                index = images.FindIndex(face)
+                if not index:
+                    continue
+                u1, u2, v1, v2 = BRepTools.UVBounds_s(face)
+                local = BRepLProp_SLProps(BRepAdaptor_Surface(face), (u1 + u2) / 2, (v1 + v2) / 2, 1, 1e-6)
+                if not local.IsNormalDefined():
+                    continue
+                out = local.Normal()
+                if face.Orientation() == TopAbs_REVERSED:
+                    out.Reverse()
+                props = GProp_GProps()
+                BRepGProp.SurfaceProperties_s(face, props)
+                for i in owners[index]:
+                    if not voice[i]:
+                        continue
+                    agrees = out.X() * normals[i][0] + out.Y() * normals[i][1] + out.Z() * normals[i][2] > 0.0
+                    vote += props.Mass() if agrees else -props.Mass()
+            if vote > 0.0:
+                kept.append(region)
+        return kept
+
+    kept = inside(maker.Shape())
+    if not kept:
+        raise LDrawNotSolid("no region its faces bound is inside it")
+
+    # The regions kept are cut from one arrangement of faces, so where two of
+    # them meet they share the face between them exactly, and their union is
+    # the solid bounded by the faces only one of them uses. That union is built
+    # from those faces by the same maker with intersection turned off, which
+    # has nothing to compute: every face is already split against every other.
+    # A boolean fuse of the regions was used before, and it is not to be
+    # trusted with them - on the Cone 4 x 4 x 2's 21 regions it came back
+    # empty, or with a solid of no volume, varying from run to run. The joined
+    # regions are put to the vote again, because faces that bound only kept
+    # regions can also enclose a cavity that was never kept.
+    if len(kept) > 1:
+        uses, seen = {}, TopTools_IndexedMapOfShape()
+        for region in kept:
+            around = TopExp_Explorer(region, TopAbs_FACE)
+            while around.More():
+                index = seen.Add(around.Current())
+                uses[index] = uses.get(index, 0) + 1
+                around.Next()
+        boundary = TopTools_ListOfShape()
+        for index, n in uses.items():
+            if n == 1:
+                boundary.Append(seen.FindKey(index))
+        joiner = BOPAlgo_MakerVolume()
+        joiner.SetArguments(boundary)
+        joiner.SetIntersect(False)
+        joiner.Perform()
+        kept = [] if joiner.HasErrors() else inside(joiner.Shape())
+        if not kept:
+            raise LDrawNotSolid("the regions inside it could not be joined")
+    result = kept[0]
+    if len(kept) > 1:
+        result = TopoDS_Compound()
+        builder = BRep_Builder()
+        builder.MakeCompound(result)
+        for region in kept:
+            builder.Add(result, region)
+
+    props = GProp_GProps()
+    BRepGProp.VolumeProperties_s(result, props)
+    expected, error = _enclosed_volume(mm)
+    if abs(props.Mass() - expected) > max(3.0 * error, _VOLUME_SLACK * expected):
+        raise LDrawNotSolid(
+            "the solid built is %.0f mm^3 but its surface encloses about %.0f mm^3" % (props.Mass(), expected)
+        )
+    return result
+
+
+def _single(shape):
+    """A compound holding one solid is that solid; anything else is as it is."""
+    from OCP.TopAbs import TopAbs_COMPOUND, TopAbs_SOLID
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopoDS import TopoDS
+
+    if shape.ShapeType() != TopAbs_COMPOUND:
+        return shape
+    explorer = TopExp_Explorer(shape, TopAbs_SOLID)
+    solids = []
+    while explorer.More():
+        solids.append(explorer.Current())
+        explorer.Next()
+    return TopoDS.Solid_s(solids[0]) if len(solids) == 1 else shape
+
+
+def _manifold(tris):
+    """Whether every edge of the surface has exactly two triangles on it."""
+    count = {}
+    for t in tris:
+        for j in range(3):
+            e = frozenset((t[j], t[(j + 1) % 3]))
+            count[e] = count.get(e, 0) + 1
+    return all(n == 2 for n in count.values())
+
+
+def _build_shape(tris, uncertified=False):
+    """The part's solid, or LDrawNotSolid saying why there is none. Never a shell.
+
+    Two ways to it, the cheaper first. A mesh that closes edge to edge is sewn
+    into shells and those into the solid they bound (_solid_from_mesh). One
+    that does not - surfaces laid over each other, slivers, small holes left
+    open - is mended as far as it can be without guessing and then handed to
+    the region builder (_solid_from_regions). Whatever either returns is
+    checked before it leaves: closed, valid solids and nothing else.
+
+    There used to be a third way, an STL import of the raw mesh, and it is
+    gone on purpose. What it returned was a shell, which renders like the part
+    and makes every boolean taken against it meaningless.
+    """
+    # Pin pyexpat before importing OCP (see wrapper_import_mesh.py).
+    import pyexpat  # noqa: F401
+
+    if not tris:
+        raise LDrawNotSolid("it has no surface")
+
     closed = _close_mesh(list(tris), orient=uncertified)
+    # A closed surface with an edge more than two triangles share - a fin drawn
+    # both ways round, a face laid over another - is not sewn: which faces the
+    # sewer joins along such an edge depends on the order they reach it, so a
+    # mirror image could sew the fin into its shell where the original did
+    # not. The region builder below answers the same in either hand.
+    if closed and not _manifold(closed):
+        closed = None
     if closed:
         try:
             solid = _solid_from_mesh(closed)
         except Exception:
             solid = None
-        if solid is not None:
+        if solid is not None and not _solid_problems(solid):
             return solid
 
-    stl_path = tempfile.mktemp(".stl")
+    mended = _weld(list(tris), _WELD_LDU)
+    if uncertified:
+        mended = _orient_consistently(mended)
+    _split_t_junctions(mended, _TJUNCTION_LDU)
+    if uncertified:
+        mended = _orient_consistently(mended)
+    _drop_slivers(mended, _WELD_LDU)
+    # The seams a T-junction split leaves: an edge that stops short of a face
+    # rather than of an edge, and a vertex on an edge that is not open. Laying
+    # an edge onto a face can put a vertex on an open edge, so the split runs
+    # again after it.
+    _lay_onto_faces(mended, _TJUNCTION_LDU)
+    _split_t_junctions(mended, _TJUNCTION_LDU)
+    for _ in range(3):
+        if not _split_at_loose_vertices(mended, _LOOSE_LDU):
+            break
+    _drop_slivers(mended, _WELD_LDU)
+    _cap_planar_loops(mended, _PLANAR_LDU)
+    # What is still open is not capped: anything put there would be a guess.
+    # It is not refused here either. An open edge is not always a leak - the
+    # missing face is often drawn, by a primitive that does not share its
+    # edges - and the region builder cuts faces against each other wherever
+    # they meet. A hole that does leak leaves the part's body without a closed
+    # region, which the volume check below refuses.
+    guessed = set()
+    left = _cap_shallow_loops(mended, _SHALLOW_LDU, _SEAM_LDU, guessed)
+    _drop_slivers(mended, _WELD_LDU)
     try:
-        n = _write_binary_stl(tris, stl_path)
-        if n == 0:
-            return None
-        try:
-            return b3d.Mesher().read(stl_path)[0].wrapped
-        except Exception:
-            return b3d.import_stl(stl_path).wrapped
-    finally:
-        if os.path.exists(stl_path):
-            os.unlink(stl_path)
+        solid = _single(_solid_from_regions(mended, guessed))
+    except LDrawNotSolid as e:
+        if left:
+            raise LDrawNotSolid("%s; %d holes in its surface were left open rather than guessed at" % (e, left))
+        raise
+    except Exception as e:
+        raise LDrawNotSolid("building it failed: %s" % e)
+    found = _solid_problems(solid)
+    if found:
+        raise LDrawNotSolid("what was built is %s" % ", ".join(found))
+    return solid
 
 
 if __name__ == "__partcad_part__":
@@ -1211,11 +2270,8 @@ if __name__ == "__partcad_part__":
             except LDrawSubfileMissing as e:
                 tris = None
                 output = {"exception": "%s (needed by %s)" % (e, dat)}
-            shape = _build_shape(tris, bool(uncertified)) if tris else None
-            if shape is None:
-                # 'output' is already set when a subfile went missing; only a
-                # part that meshed to nothing needs the generic message.
-                if tris is not None:
-                    output = {"exception": "LDraw part produced no geometry: %s" % dat}
-            else:
-                output = {"shape": shape}
+            if tris is not None:
+                try:
+                    output = {"shape": _build_shape(tris, bool(uncertified))}
+                except LDrawNotSolid as e:
+                    output = {"exception": "LDraw part is not a solid: %s (%s)" % (dat, e)}

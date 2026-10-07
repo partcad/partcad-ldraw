@@ -56,8 +56,20 @@ dependencies:
     # the 80 names the rules happened to cover; v9 turned every part upright,
     # which moves every port and re-meshes every part - and, because the key
     # also names the directory the plugin's own files are materialized into, is
-    # what makes a cached 'ldraw.py' from before the turn stop being served.
-    cacheVersion: 9
+    # what makes a cached 'ldraw.py' from before the turn stop being served;
+    # v10 serves the axle hole inside every "Technic Bush" primitive, which is
+    # what the cross blocks and the bushes are drawn with; v11 serves a part as
+    # a solid or not at all; v12 closes seams v11 refused or leaked through, so
+    # more parts are solids and some gain bodies their v11 solid had lost; v13
+    # carries the patches to particular LDraw files (patches/), which make
+    # more parts solids, and keys each patched part on its patches; v14 mends a
+    # mirrored surface into the mirror image of what its original mends into,
+    # so 64393, which is 64681 mirrored, is a solid as 64681 is; v15 fuses a
+    # part's shells a batch at a time, so the 32 x 32 baseplate (3811) is
+    # built where fusing its 1024 studs at once ran out of memory and crashed,
+    # and carries the patches written since v14, which make the XL motor
+    # (58121), the IR remote (58122) and the 11 x 2 x 3 panel (62531) solids.
+    cacheVersion: 15
 
 repositories:
   ldraw_repo:
@@ -259,7 +271,18 @@ interfaces:
         dir: [0, 0, 1]
     # The collar seats against the face, so the depth is not free: a pin either
     # is in the hole or is not.
-    mates: technic-pin-hole
+    mates:
+      technic-pin-hole:
+        # A Technic pin is slotted and ridged at each end, and it goes in by
+        # squeezing the slot shut past the lip of the hole, which it then springs
+        # open behind. A model holds no springs, so it holds the ridge inside the
+        # lip, and PartCAD's interference test is told that this overlap is the
+        # joint rather than a fault. Nothing else about a pin excuses one: a pin
+        # that also reaches into a part it is not joined to still shows.
+        #
+        # Said of the pairing and not of either interface: an axle goes into the
+        # same round hole and snaps past nothing.
+        snapIn: true
     # The same freedom the hole states from its side.
     motion:
       type: continuous
@@ -308,6 +331,11 @@ interfaces:
     # The cross hole is what drives an axle; the round hole it also fits is
     # declared by 'technic-pin-hole' above.
     mates: technic-axle-hole
+    # An axle carries whatever is threaded onto it - the beams it runs through,
+    # bushes, gears and a wheel on the same end - and each of them is joined to
+    # that end at its own 'moveZ'. One end taking several parts is what an axle
+    # is for, so PartCAD's connectivity test is told not to report it.
+    multiConnect: true
 
   # --- Duplo ------------------------------------------------------------------
   #

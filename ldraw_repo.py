@@ -21,6 +21,7 @@ sub-package, e.g. ``Brick/objects/part`` or ``Brick/files/ldraw.py``.
 
 import base64
 import concurrent.futures
+import hashlib
 import json
 import math
 import os
@@ -50,8 +51,28 @@ import zipfile
 # v7 serves the axle holes the Mindstorms parts were always known to have; v8
 # reads every part's Technic connectors from its geometry rather than from the
 # 80 names the rules happened to cover; v9 turned every part upright, which
-# moves every port and re-meshes every part.
-CACHE_VERSION = 9
+# moves every port and re-meshes every part; v10 serves the axle hole inside
+# every "Technic Bush" primitive, which is what the cross blocks and the bushes
+# are drawn with; v11 serves a part as a solid or not at all - repaired where
+# LDraw's surfaces overlap or stop short, and refused where they cannot be
+# closed without guessing - instead of handing back a shell; v12 closes the
+# seams v11 still refused or leaked through (an edge stopping a hair short of a
+# face, a vertex on an edge that is not open, a flat hole with a straight side)
+# and joins regions without a boolean, so parts it refused become solids and
+# some it served gain the bodies they lost; v13 serves ldraw.py with the list
+# of patches to particular LDraw files written into it, and a 'patches'
+# parameter on every part that reads one, so the parts those patches mend
+# (64681, 58119 and the boxes sharing its bracket) are solids now; v14 finds
+# the holes in a surface the same way whatever its hand or the order it is
+# written in, so a part that mirrors another (64393, the mirror of 64681) is a
+# solid where its original is, and the mirror image of it; v15 fuses a part's
+# shells and cuts its holes a batch at a time, so a part made of a thousand of
+# them (the 32 x 32 baseplate, 3811) is built where one boolean over all of
+# them ran out of memory and took the build down, and carries the patches
+# written since v14 (59154, 59155, 58132, s/58132s01, s/58134s01 and
+# s/62531s01), which make the XL motor (58121), the IR remote (58122) and the
+# 11 x 2 x 3 panel (62531) solids.
+CACHE_VERSION = 15
 
 _BASE = "https://library.ldraw.org"
 _CATEGORY_LIST_URL = _BASE + "/parts/category-list"
@@ -1121,6 +1142,11 @@ def _part_config(pid, meta, category=None):
     # first would then be handed back for all the others. ldraw.py's
     # _resolve_dat() already reads parameters['dat'].
     config["parameters"] = {"dat": {"type": "string", "default": pid + ".dat"}}
+    # The same reason again for a part built from a patched LDraw file: the
+    # patch is part of what the part is, and the parameters are what is keyed.
+    digest = _patch_digest(pid)
+    if digest is not None:
+        config["parameters"][_PATCH_PARAMETER] = {"type": "string", "default": digest}
     if desc:
         config["desc"] = desc
     if author:
@@ -1162,15 +1188,94 @@ def _catalog(category):
     return {pid: _part_config(pid, meta) for pid, meta in zip(ids, metas)}
 
 
+# --- patches -----------------------------------------------------------------
+#
+# The maintained list of patches to LDraw files (see 'patches/manifest.json' and
+# the README). ldraw.py applies them; this side has two jobs. It ships them to
+# where ldraw.py runs, which is a copy of that one file with nothing beside it
+# (see _ldraw_py_b64). And it puts each part's patches into that part's cache
+# key: PartCAD keys a built shape on the part's config and nothing else, so a
+# part whose build reads a patched file has to say so in its config, or a patch
+# that changes would go on being answered with the shape the old one built.
+_PATCH_DIR = "patches"
+_PATCH_MANIFEST = "manifest.json"
+_PATCH_PARAMETER = "patches"
+_EMBED_RE = re.compile(r"^_EMBEDDED_PATCHES = None$", re.MULTILINE)
+_patch_list = None
+
+
+def _patches():
+    """(manifest, {patch name: text}) from the checkout, or (None, {}) when there is none."""
+    global _patch_list
+    if _patch_list is None:
+        root = os.path.join(os.path.dirname(os.path.abspath(__file__)), _PATCH_DIR)
+        try:
+            with open(os.path.join(root, _PATCH_MANIFEST), "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+        except (OSError, ValueError):
+            manifest = None
+        files = {}
+        for entry in (manifest or {}).get("patches") or []:
+            name = entry.get("patch") if isinstance(entry, dict) else None
+            if not isinstance(name, str):
+                continue
+            try:
+                with open(os.path.join(root, *name.split("/")), "r", encoding="latin-1") as f:
+                    files[name] = f.read()
+            except OSError:
+                pass  # ldraw.py says so, where the part is built
+        _patch_list = (manifest, files)
+    return _patch_list
+
+
+def _patch_digest(pid):
+    """A short hash of every patch a part's build reads, or None if it reads none.
+
+    A patch names the parts that read the file it patches (its 'parts', which
+    'build_parts_index.py --patch-users' works out from the library), and the
+    digest covers the patched file's pinned hash and the patch's own text, so
+    editing either changes the key of exactly those parts and of no others.
+    """
+    manifest, files = _patches()
+    digest = None
+    for entry in (manifest or {}).get("patches") or []:
+        if not isinstance(entry, dict) or pid not in (entry.get("parts") or []):
+            continue
+        if digest is None:
+            digest = hashlib.sha256()
+        for value in (entry.get("file"), entry.get("sha256"), files.get(entry.get("patch"))):
+            digest.update(str(value).encode("utf-8") + b"\0")
+    return digest.hexdigest()[:16] if digest is not None else None
+
+
 # --- partType wrapper file --------------------------------------------------
 
 _PART_TYPE = {"kind": "wrapper", "path": "ldraw.py"}
 
 
+def _ldraw_py_source():
+    """The 'ldraw.py' wrapper as it is served: with the patch list written into it.
+
+    PartCAD materializes the wrapper by itself into a directory of its own, so
+    the 'patches' directory beside it in this checkout does not go with it.
+    What goes instead is the list, as a literal in place of ldraw.py's
+    '_EMBEDDED_PATCHES = None', which is the one line of it that is changed.
+    """
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ldraw.py"), "r", encoding="utf-8") as f:
+        source = f.read()
+    manifest, files = _patches()
+    if manifest is None:
+        return source
+    literal = "_EMBEDDED_PATCHES = %r" % ({"manifest": manifest, "files": files},)
+    served, count = _EMBED_RE.subn(lambda _: literal, source, count=1)
+    if count != 1:
+        raise ValueError("ldraw.py has no '_EMBEDDED_PATCHES = None' line to carry the patch list")
+    return served
+
+
 def _ldraw_py_b64():
     """The 'ldraw.py' wrapper, base64-encoded, as the 'files/' key serves it."""
-    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ldraw.py"), "rb") as f:
-        return base64.b64encode(f.read()).decode()
+    return base64.b64encode(_ldraw_py_source().encode("utf-8")).decode()
 
 
 # --- the key/value protocol -------------------------------------------------
@@ -1561,6 +1666,21 @@ for _axle_hole in (
 ):
     _GEOMETRY_CONNECTORS[_axle_hole + ".dat"] = list(_AXLE_HOLE_MOUTHS)
 del _axle_hole
+
+# The same hole, drawn inside a primitive rather than by the part. "Technic Bush
+# without Collars" places an 'axlehol5' stretched from z = -10 to z = 10 in its
+# own frame, and "Technic Bush without Base Collar" is that bush plus its
+# collars, the hole unchanged; the walk never looks inside a primitive, so both
+# are named here with the hole spelled out. Between them they are the axle hole
+# of every cross block (6536, 32184, 32291, ...) and of the bushes themselves,
+# which the walk otherwise reads as parts with a pin hole beside nothing: 6536,
+# "Cross Block 1 x 2 (Axle/Pin)", had the pin and not the axle.
+_BUSH_AXLE_HOLE = [
+    (_AXLE_HOLE_IFACE, (0, 0, -10), (0, 0, -1)),
+    (_AXLE_HOLE_IFACE, (0, 0, 10), (0, 0, 1)),
+]
+_GEOMETRY_CONNECTORS["bush0.dat"] = list(_BUSH_AXLE_HOLE)
+_GEOMETRY_CONNECTORS["bush.dat"] = list(_BUSH_AXLE_HOLE)
 
 # The rest of the Technic vocabulary, on the same footing. Every entry below was
 # checked by reading it back against the parts whose ports were derived from

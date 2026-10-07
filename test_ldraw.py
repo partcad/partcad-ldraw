@@ -15,7 +15,9 @@ end, which say so and skip.
 """
 
 import importlib.util
+import json
 import os
+import re
 import struct
 import tempfile
 import urllib.error
@@ -284,8 +286,7 @@ def test_nocertify_stops_the_file_s_later_bfc_statements_being_read():
 
 def test_invertnext_turns_over_the_subfile_it_precedes():
     tris = _bfc(
-        "0 BFC CERTIFY CCW\n0 BFC INVERTNEXT\n"
-        "1 16 0 0 0 1 0 0 0 1 0 0 0 1 s\\one.dat\n",
+        "0 BFC CERTIFY CCW\n0 BFC INVERTNEXT\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 s\\one.dat\n",
         {"s/one.dat": "0 BFC CERTIFY CCW\n" + _TRI},
     )
     assert tris == [(_A, _C, _B)]
@@ -305,8 +306,7 @@ def test_an_inversion_carries_on_down_the_reference_branch():
     # itself inverted. Stopping at the first level leaves everything a stud
     # or a tube is made of wound against the part it belongs to.
     tris = _bfc(
-        "0 BFC CERTIFY CCW\n0 BFC INVERTNEXT\n"
-        "1 16 0 0 0 1 0 0 0 1 0 0 0 1 s\\mid.dat\n",
+        "0 BFC CERTIFY CCW\n0 BFC INVERTNEXT\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 s\\mid.dat\n",
         {
             "s/mid.dat": "0 BFC CERTIFY CCW\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 s\\leaf.dat\n",
             "s/leaf.dat": "0 BFC CERTIFY CCW\n" + _TRI,
@@ -330,8 +330,7 @@ def test_a_mirror_and_an_invertnext_cancel_each_other_out():
     # They compound rather than override, so what matters is their parity.
     # Applying whichever is noticed first and stopping gets this one wrong.
     tris = _bfc(
-        "0 BFC CERTIFY CCW\n0 BFC INVERTNEXT\n"
-        "1 16 0 0 0 -1 0 0 0 1 0 0 0 1 s\\one.dat\n",
+        "0 BFC CERTIFY CCW\n0 BFC INVERTNEXT\n1 16 0 0 0 -1 0 0 0 1 0 0 0 1 s\\one.dat\n",
         {"s/one.dat": "0 BFC CERTIFY CCW\n" + _TRI},
     )
     assert tris == [((-1.0, 0.0, 0.0), _B, _C)]
@@ -461,9 +460,7 @@ def _signed_volume(tris):
     total = 0.0
     for a, b, c in tris:
         total += (
-            a[0] * (b[1] * c[2] - b[2] * c[1])
-            - a[1] * (b[0] * c[2] - b[2] * c[0])
-            + a[2] * (b[0] * c[1] - b[1] * c[0])
+            a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0])
         ) / 6.0
     return total
 
@@ -545,6 +542,479 @@ def test_a_hole_that_is_not_flat_is_left_open_rather_than_guessed_at():
     for t in tris:
         moved.append(tuple((p[0], p[1], p[2]) if p != (0.0, 0.0, 0.0) else (0.0, -6.0, -6.0) for p in t))
     assert ldraw._close_mesh(moved) is None
+
+
+def _kernel():
+    pytest.importorskip("build123d")
+    try:
+        from OCP.BRepGProp import BRepGProp  # noqa: F401
+    except ImportError as e:
+        pytest.skip("no CAD kernel: %s" % e)
+
+
+def _mm3(shape):
+    from OCP.BRepGProp import BRepGProp
+    from OCP.GProp import GProp_GProps
+
+    props = GProp_GProps()
+    BRepGProp.VolumeProperties_s(shape, props)
+    return props.Mass()
+
+
+def test_a_sliver_left_by_a_split_is_taken_out_and_its_edge_mended():
+    # A triangle whose corners are on one line, and the triangle on the other
+    # side of its long edge. Dropping the sliver alone would open the surface
+    # along that edge; splitting its neighbour at the middle corner does not.
+    tris = [
+        ((0.0, 0.0, 0.0), (10.0, 0.0, 0.0), (5.0, 0.0, 0.0)),
+        ((10.0, 0.0, 0.0), (0.0, 0.0, 0.0), (5.0, 5.0, 0.0)),
+    ]
+    assert ldraw._drop_slivers(tris, ldraw._WELD_LDU) == 1
+    assert len(tris) == 2
+    edges = ldraw._half_edges(tris)
+    assert ((10.0, 0.0, 0.0), (5.0, 0.0, 0.0)) in edges
+    assert ((5.0, 0.0, 0.0), (0.0, 0.0, 0.0)) in edges
+
+
+def test_a_hole_all_but_flat_is_capped_and_one_far_from_flat_is_not():
+    tris = _box((0, 0, 0), (10, 10, 10), omit=("y-",))
+    nudged = [tuple((p[0], 0.2, p[2]) if p == (0.0, 0.0, 0.0) else p for p in t) for t in tris]
+    assert ldraw._cap_shallow_loops(nudged, ldraw._SHALLOW_LDU) == 0
+    assert ldraw._boundary_loops(nudged) == []
+    pulled = [tuple((p[0], -6.0, p[2]) if p == (0.0, 0.0, 0.0) else p for p in t) for t in tris]
+    assert ldraw._cap_shallow_loops(pulled, ldraw._SHALLOW_LDU) == 1
+
+
+def test_a_face_laid_over_a_face_of_the_part_still_makes_a_solid():
+    # What LDraw does at every bush in a cross block: one primitive's end face
+    # lies on the face of the block it sits in, cut into different triangles.
+    # Sewn edge to edge that is an edge with three or four faces on it and no
+    # shell; built from regions it is the box it is.
+    _kernel()
+    tris = _box((0, 0, 0), (10, 10, 10))
+    patch = [
+        ((2.0, 10.0, 2.0), (6.0, 10.0, 2.0), (6.0, 10.0, 6.0)),
+        ((2.0, 10.0, 2.0), (6.0, 10.0, 6.0), (2.0, 10.0, 6.0)),
+    ]
+    patch = [(a, c, b) for a, b, c in patch]  # facing out of the box, as its top does
+    solid = ldraw._build_shape(tris + patch)
+    assert ldraw._solid_problems(solid) == []
+    assert _mm3(solid) == pytest.approx((10 * ldraw._LDU_MM) ** 3)
+
+
+def test_a_part_of_many_shells_is_the_same_solid_whatever_the_batch(monkeypatch):
+    # A baseplate is a slab and a thousand studs, which OCCT cannot fuse in one
+    # boolean inside the memory a build has, so the bodies are fused and the
+    # holes cut a batch at a time. Here a slab with five studs on it and three
+    # pockets in it, two shells to a boolean, has to come out the same solid as
+    # all of them in one.
+    _kernel()
+    slab = _box((0, 0, 0), (40, 4, 10))
+    studs = [t for k in range(5) for t in _box((2 + 8 * k, 4, 3), (6 + 8 * k, 8, 7))]
+    pockets = [t for k in range(3) for t in _box((3 + 12 * k, 1, 2), (9 + 12 * k, 3, 8), outward=False)]
+    tris = slab + studs + pockets
+    whole = ldraw._solid_from_mesh(tris)
+    monkeypatch.setattr(ldraw, "_BOOLEAN_BATCH", 2)
+    batched = ldraw._solid_from_mesh(tris)
+    assert whole is not None and batched is not None
+    assert ldraw._solid_problems(batched) == []
+    expected = (40 * 4 * 10 + 5 * 4 * 4 * 4 - 3 * 6 * 2 * 6) * ldraw._LDU_MM**3
+    assert _mm3(whole) == pytest.approx(expected)
+    assert _mm3(batched) == pytest.approx(expected)
+
+
+def test_a_surface_that_cannot_be_closed_is_refused_rather_than_returned():
+    # The STL import used to take this and hand back a shell: something that
+    # renders as the part and makes every boolean against it meaningless.
+    _kernel()
+    tris = _box((0, 0, 0), (10, 10, 10), omit=("y-",))
+    pulled = [tuple((p[0], -6.0, p[2]) if p == (0.0, 0.0, 0.0) else p for p in t) for t in tris]
+    with pytest.raises(ldraw.LDrawNotSolid, match="left open rather than guessed at"):
+        ldraw._build_shape(pulled)
+
+
+def test_nothing_but_a_closed_valid_solid_leaves_the_builder(monkeypatch):
+    # However it was built: a shell from the sewing path is not passed on
+    # because the sewing path produced it.
+    _kernel()
+    from OCP.TopAbs import TopAbs_SHELL
+    from OCP.TopExp import TopExp_Explorer
+
+    real = ldraw._solid_from_mesh(_box((0, 0, 0), (10, 10, 10)))
+    shell = TopExp_Explorer(real, TopAbs_SHELL).Current()
+    monkeypatch.setattr(ldraw, "_solid_from_mesh", lambda tris: shell)
+    assert ldraw._solid_problems(shell) != []
+    solid = ldraw._build_shape(_box((0, 0, 0), (10, 10, 10)))
+    assert solid.ShapeType() != shell.ShapeType()
+    assert ldraw._solid_problems(solid) == []
+
+
+def test_a_solid_that_lost_the_body_of_the_part_is_refused(monkeypatch):
+    # The region builder keeps the regions the faces vote for. Were it to keep
+    # too few - a servo reduced to its bosses - the result would be a valid
+    # solid and still not the part, so it is held to the volume the surface
+    # itself encloses.
+    _kernel()
+    monkeypatch.setattr(ldraw, "_enclosed_volume", lambda tris: (10 * _mm3_box(10), 1.0))
+    tris = _box((0, 0, 0), (10, 10, 10))
+    with pytest.raises(ldraw.LDrawNotSolid, match="encloses about"):
+        ldraw._solid_from_regions(tris)
+
+
+def _mm3_box(side_ldu):
+    return (side_ldu * ldraw._LDU_MM) ** 3
+
+
+def test_the_enclosed_volume_is_what_the_surface_encloses():
+    pytest.importorskip("numpy")
+    tris = [(ldraw._scaled(a), ldraw._scaled(c), ldraw._scaled(b)) for a, b, c in _box((0, 0, 0), (10, 10, 10))]
+    estimate, error = ldraw._enclosed_volume(tris)
+    assert estimate == pytest.approx(_mm3_box(10), abs=1e-9)
+    assert error == 0.0
+
+
+# --- seams the T-junction split does not reach --------------------------------
+#
+# Each of these is a gap LDraw leaves between two of its own surfaces by
+# rounding, small enough to be one and too irregular for the weld or the
+# T-junction split to close. Each repair is bounded, and each test also says
+# where it stops.
+
+
+def _wall():
+    """A square face in the plane x = 0, facing +x, as two triangles."""
+    return [
+        ((0.0, -10.0, -10.0), (0.0, 10.0, -10.0), (0.0, 10.0, 10.0)),
+        ((0.0, -10.0, -10.0), (0.0, 10.0, 10.0), (0.0, -10.0, 10.0)),
+    ]
+
+
+def _web(x_near, x_far=5.0):
+    """A face in the plane y = 0 running from x_near to x_far: its edge at x_near is open."""
+    return [
+        ((x_near, 0.0, -3.0), (x_far, 0.0, -3.0), (x_far, 0.0, 3.0)),
+        ((x_near, 0.0, -3.0), (x_far, 0.0, 3.0), (x_near, 0.0, 3.0)),
+    ]
+
+
+def _xs(tris, z_ok=lambda z: True):
+    return sorted({p[0] for t in tris for p in t if p[1] == 0.0 and z_ok(p[2])})
+
+
+def test_an_edge_that_stops_just_short_of_a_face_is_laid_onto_it():
+    # The bridge between Technic cross block 32557's pin bosses: drawn to 1.38
+    # LDU where the boss's cylinder is at 1.396, it stops 0.017 short along
+    # 20 LDU, and the body of the part leaked away through the slit.
+    pytest.importorskip("numpy")
+    tris = _wall() + _web(0.02)
+    assert ldraw._lay_onto_faces(tris, ldraw._TJUNCTION_LDU) == 2
+    assert _xs(tris) == [0.0, 5.0]
+
+
+def test_an_edge_further_from_a_face_than_a_seam_is_left_where_it_is():
+    pytest.importorskip("numpy")
+    tris = _wall() + _web(0.5)
+    assert ldraw._lay_onto_faces(tris, ldraw._TJUNCTION_LDU) == 0
+    assert _xs(tris) == [0.5, 5.0]
+
+
+def test_an_edge_that_already_runs_through_a_face_is_not_pulled_back():
+    # A wheel hub's 48-sided disc reaches 0.15 LDU past the 16-sided wall it
+    # stands on. The region builder cuts it at the wall as it is; moving it
+    # would change the part and close nothing.
+    pytest.importorskip("numpy")
+    tris = _wall() + _web(-0.15)
+    assert ldraw._lay_onto_faces(tris, ldraw._TJUNCTION_LDU) == 0
+
+
+def test_an_edge_that_runs_into_a_face_rather_than_along_it_is_left_alone():
+    # Within reach at one end and not at the other: steeper than half a step of
+    # a 16-sided circle, so another surface meeting this one, not a seam.
+    pytest.importorskip("numpy")
+    steep = [
+        ((0.02, 0.0, -0.3), (5.0, 0.0, -0.3), (5.0, 0.0, 0.3)),
+        ((0.02, 0.0, -0.3), (5.0, 0.0, 0.3), (0.19, 0.0, 0.3)),
+    ]
+    tris = _wall() + steep
+    assert ldraw._lay_onto_faces(tris, ldraw._TJUNCTION_LDU) == 0
+
+
+def test_laying_an_edge_down_keeps_it_in_the_plane_of_a_face_it_overlaps():
+    # Cross block 32557 lays a quad over a disc primitive in one plane. Moving
+    # one of the quad's corners out of that plane, even by 0.002 LDU, opens a
+    # sliver between the two faces that leaks in its turn. Here the face the
+    # web stops short of leans, so the shortest way onto it would also move
+    # the web's open corners out of y = 0; with a face lying in y = 0 under
+    # the web they keep to y = 0 and move further along x instead.
+    pytest.importorskip("numpy")
+    lean = [
+        ((0.0, -10.0, -10.0), (6.0, 10.0, -10.0), (6.0, 10.0, 10.0)),
+        ((0.0, -10.0, -10.0), (6.0, 10.0, 10.0), (0.0, -10.0, 10.0)),
+    ]
+    alone = lean + _web(3.05)
+    ldraw._lay_onto_faces(alone, ldraw._TJUNCTION_LDU)
+    assert any(abs(p[1]) > 1e-6 for t in alone[2:] for p in t)
+    under = [((2.0, 0.0, -1.0), (4.0, 0.0, 1.0), (2.0, 0.0, 1.0))]  # in y = 0, sharing no edge with the web
+    held = lean + _web(3.05) + under
+    assert ldraw._lay_onto_faces(held, ldraw._TJUNCTION_LDU) == 2
+    moved = {p for t in held[2:4] for p in t if p[0] < 4.0}
+    assert all(abs(p[1]) < 1e-12 for p in moved)
+    assert all(abs(p[0] - 3.0) < 1e-9 for p in moved)
+
+
+def test_a_vertex_on_an_edge_that_is_not_open_still_splits_it():
+    # Something ending on a surface that is whole: its edge is shared by two
+    # faces and is no T-junction, but a vertex of the open face standing 0.001
+    # LDU from its middle misses it by that much unless the edge is cut there.
+    pytest.importorskip("numpy")
+    a, b = (0.0, 0.0, 0.0), (10.0, 0.0, 0.0)
+    v = (5.0, 0.001, 0.0)
+    tris = [(a, b, (5.0, 5.0, 0.0)), (b, a, (5.0, -5.0, 0.0)), (v, (5.0, 0.0, 5.0), (6.0, 0.0, 5.0))]
+    assert ldraw._split_at_loose_vertices(tris, ldraw._LOOSE_LDU) == 2
+    edges = ldraw._half_edges(tris)
+    assert (a, b) not in edges and (b, a) not in edges
+    assert (a, v) in edges and (v, a) in edges and (v, b) in edges and (b, v) in edges
+
+
+def test_a_vertex_further_from_an_edge_than_rounding_does_not_split_it():
+    pytest.importorskip("numpy")
+    a, b = (0.0, 0.0, 0.0), (10.0, 0.0, 0.0)
+    tris = [(a, b, (5.0, 5.0, 0.0)), (b, a, (5.0, -5.0, 0.0)), ((5.0, 0.1, 0.0), (5.0, 0.0, 5.0), (6.0, 0.0, 5.0))]
+    assert ldraw._split_at_loose_vertices(tris, ldraw._LOOSE_LDU) == 0
+
+
+def test_a_vertex_of_another_polygon_round_the_same_circle_does_not_split_an_edge():
+    # The friction pin's 16-sided ring stands 0.03 LDU off a chord of the ring
+    # drawn beside it: near the edge, but not ending on it.
+    pytest.importorskip("numpy")
+    a, b = (0.0, 0.0, 0.0), (10.0, 0.0, 0.0)
+    tris = [(a, b, (5.0, 5.0, 0.0)), (b, a, (5.0, -5.0, 0.0)), ((5.0, 0.03, 0.0), (5.0, 0.0, 5.0), (6.0, 0.0, 5.0))]
+    assert ldraw._split_at_loose_vertices(tris, ldraw._LOOSE_LDU) == 0
+    tris[2] = ((5.0, 0.016, 0.0), (5.0, 0.0, 5.0), (6.0, 0.0, 5.0))
+    assert ldraw._split_at_loose_vertices(tris, ldraw._LOOSE_LDU) == 2
+
+
+def test_a_flat_hole_with_a_straight_side_through_several_vertices_is_capped():
+    # The battery box's end recess: clipped from its far corner, the polygon
+    # comes down to four vertices on one line, an ear with no area, and the
+    # capper used to give up on a hole its ears had already covered.
+    poly = [
+        (-26.5, -107.0),
+        (-26.364, -106.364),
+        (-26.364, -93.636),
+        (-26.5, -93.0),
+        (-32.0, -93.0),
+        (-32.0, -93.64),
+        (-32.0, -106.36),
+        (-32.0, -107.0),
+    ]
+    ears = ldraw._ear_clip(poly, 1e-12 * 107 * 107)
+    assert ears is not None
+    assert sum(ldraw._area2([poly[i] for i in ear]) for ear in ears) == pytest.approx(ldraw._area2(poly))
+    # Every side of the hole is a side of exactly one ear, so the cap meets
+    # the surface around it vertex for vertex.
+    sides = {(i, (i + 1) % len(poly)) for i in range(len(poly))}
+    ear_edges = [(e[k], e[(k + 1) % 3]) for e in ears for k in range(3)]
+    assert all(ear_edges.count(side) == 1 for side in sides)
+
+
+def _mirror(tris):
+    """The surface reflected in x = 0, wound back so that it still faces out - as _mesh() does a mirror."""
+    return [tuple((-p[0], p[1], p[2]) for p in (a, c, b)) for a, b, c in tris]
+
+
+def _reordered(tris):
+    """The same triangles listed in another order, each read from another corner."""
+    turned = [t[i % 3 :] + t[: i % 3] for i, t in enumerate(tris)]
+    return turned[1::2][::-1] + turned[0::2]
+
+
+def _cyclic(loop):
+    """A loop as a set member: the same whichever vertex it is handed over starting from."""
+    i = min(range(len(loop)), key=lambda k: loop[k])
+    return tuple(loop[i:] + loop[:i])
+
+
+def _loops(tris, mirrored=False):
+    tris = ldraw._weld(list(tris), ldraw._WELD_LDU)
+    ldraw._split_t_junctions(tris, ldraw._TJUNCTION_LDU)
+    loops = ldraw._boundary_loops(tris)
+    if mirrored:  # back into the original's hand: reflect, and walk the other way
+        loops = [[(-p[0], p[1], p[2]) for p in reversed(L)] for L in loops]
+    return sorted(_cyclic(L) for L in loops)
+
+
+def _two_holes_and_a_fin():
+    """A box whose top is a 2 x 2 grid with two diagonal squares missing, and a fin.
+
+    The two holes meet at the centre of the top, so which edge carries on round
+    either hole there is found by turning through the triangles - and the turn
+    crosses the diagonal of a square, where a fin drawn both ways round makes
+    four triangles share the edge. Another fin on a corner of the box stands on
+    an edge one of the holes runs past. This is what 64393 is made of where its
+    shell meets its boss, and what its mirror image 64681 is made of as well.
+    """
+    tris = _box((0, 0, 0), (10, 10, 10), omit=("y+",))
+    c = (5.0, 10.0, 5.0)
+    kept = [
+        [(5.0, 10.0, 0.0), (10.0, 10.0, 0.0), (10.0, 10.0, 5.0), c],
+        [(0.0, 10.0, 5.0), c, (5.0, 10.0, 10.0), (0.0, 10.0, 10.0)],
+    ]
+    for q in kept:
+        # Wound to face up and out of the box (+y), and split through c.
+        k = q.index(c)
+        q = q[k:] + q[:k]
+        tris += [(q[0], q[2], q[1]), (q[0], q[3], q[2])]
+    fin = (7.5, 15.0, 2.5)
+    tris += [(c, (10.0, 10.0, 0.0), fin), (c, fin, (10.0, 10.0, 0.0))]
+    corner = (-5.0, 15.0, -5.0)
+    tris += [((0.0, 10.0, 0.0), (0.0, 0.0, 0.0), corner), ((0.0, 10.0, 0.0), corner, (0.0, 0.0, 0.0))]
+    return tris
+
+
+def test_a_loop_that_runs_through_a_point_twice_splits_the_same_from_any_start():
+    figure_eight = [(0, 0), (1, 1), (2, 0), (1, -1), (0, 0), (-1, 1), (-2, 0), (-1, -1)]
+    expected = sorted(_cyclic(L) for L in ldraw._split_pinched(figure_eight))
+    assert len(expected) == 2
+    for start in range(len(figure_eight)):
+        turned = figure_eight[start:] + figure_eight[:start]
+        assert sorted(_cyclic(L) for L in ldraw._split_pinched(turned)) == expected
+
+
+def test_the_holes_found_do_not_depend_on_the_hand_or_the_order_of_the_surface():
+    # The fairing 64393 is 64681 mirrored and nothing else, and the walk round
+    # its holes used to cross an edge four triangles share into whichever was
+    # listed first. Reflected, a different one was, and the walk went round the
+    # fin and never came back: the holes went unfound and the part unbuilt.
+    tris = _two_holes_and_a_fin()
+    loops = _loops(tris)
+    assert len(loops) == 2
+    assert sorted(len(L) for L in loops) == [4, 4]
+    assert _loops(_mirror(tris), mirrored=True) == loops
+    assert _loops(_reordered(tris)) == loops
+    assert _loops(_mirror(_reordered(tris)), mirrored=True) == loops
+
+
+def test_a_surface_and_its_mirror_image_mend_to_mirror_images():
+    tris = _two_holes_and_a_fin()
+    for variant, mirrored in ((tris, False), (_mirror(tris), True), (_reordered(tris), False)):
+        closed = ldraw._close_mesh(list(variant))
+        assert closed is not None
+        assert ldraw._boundary_loops(closed) == []
+        assert _signed_volume(closed) == pytest.approx(1000.0)
+    # Every step that mends a surface the region builder is handed, one after
+    # another, gives exactly the mirror image of what it gives the original.
+    steps = [
+        lambda m: ldraw._split_t_junctions(m, ldraw._TJUNCTION_LDU),
+        lambda m: ldraw._drop_slivers(m, ldraw._WELD_LDU),
+        lambda m: ldraw._lay_onto_faces(m, ldraw._TJUNCTION_LDU),
+        lambda m: ldraw._split_at_loose_vertices(m, ldraw._LOOSE_LDU),
+    ]
+
+    def surface(m, mirrored):
+        if mirrored:
+            m = _mirror(m)
+        return sorted(_cyclic(list(t)) for t in m)
+
+    meshes = [ldraw._weld(list(v), ldraw._WELD_LDU) for v in (tris, _mirror(tris), _reordered(tris))]
+    for step in steps:
+        for m in meshes:
+            step(m)
+        assert surface(meshes[1], True) == surface(meshes[0], False)
+        assert surface(meshes[2], False) == surface(meshes[0], False)
+
+
+@pytest.mark.parametrize("variant", ["mirror", "reordered"])
+def test_a_mirrored_surface_builds_the_mirror_image_solid(variant):
+    _kernel()
+    from OCP.Bnd import Bnd_Box
+    from OCP.BRepBndLib import BRepBndLib
+
+    def box(shape):
+        b = Bnd_Box()
+        BRepBndLib.AddOptimal_s(shape, b, False, False)
+        return [round(v, 6) for v in b.Get()]
+
+    tris = _two_holes_and_a_fin()
+    solid = ldraw._build_shape(list(tris))
+    other = ldraw._build_shape(_mirror(tris) if variant == "mirror" else _reordered(tris))
+    assert ldraw._solid_problems(other) == []
+    assert _mm3(other) == pytest.approx(_mm3(solid))
+    assert _mm3(solid) == pytest.approx(_mm3_box(10))
+    x0, y0, z0, x1, y1, z1 = box(solid)
+    # _scaled() maps LDraw's x to PartCAD's x, so the mirror in x stays one.
+    assert box(other) == ([-x1, y0, z0, -x0, y1, z1] if variant == "mirror" else [x0, y0, z0, x1, y1, z1])
+
+
+def test_regions_kept_side_by_side_are_joined_into_one_solid():
+    # Regions cut from one arrangement share their faces exactly; joined from
+    # the faces only one of them uses they make one solid without a boolean,
+    # where a fuse of the Cone 4 x 4 x 2's 21 regions came back empty.
+    _kernel()
+    tris = _box((0, 0, 0), (10, 10, 10)) + _box((10, 0, 0), (20, 10, 10))
+    solid = ldraw._single(ldraw._solid_from_regions(tris))
+    assert solid.ShapeType() == ldraw_topabs_solid()
+    assert ldraw._solid_problems(solid) == []
+    assert _mm3(solid) == pytest.approx(2 * _mm3_box(10))
+
+
+def test_joining_regions_does_not_fill_a_cavity_none_of_them_is():
+    # The faces left after joining also bound the cavity, which was never
+    # kept; joined without a second vote it would come back filled.
+    _kernel()
+    tris = _box((0, 0, 0), (10, 10, 10)) + _box((10, 0, 0), (20, 10, 10)) + _box((2, 2, 2), (8, 8, 8), outward=False)
+    solid = ldraw._single(ldraw._solid_from_regions(tris))
+    assert ldraw._solid_problems(solid) == []
+    assert _mm3(solid) == pytest.approx(2 * _mm3_box(10) - _mm3_box(6))
+
+
+def test_a_triangle_with_a_corner_twice_is_no_face_to_turn_into():
+    # 58134 (inside 58122) reached the walk round its holes with triangles
+    # that had one corner twice, and turning across an edge one of them shared
+    # asked it for a third corner it does not have. It has no side, so it is
+    # passed over: the loops are those of the surface without it.
+    tris = ldraw._weld(_two_holes_and_a_fin(), ldraw._WELD_LDU)
+    ldraw._split_t_junctions(tris, ldraw._TJUNCTION_LDU)
+    corner = (10.0, 10.0, 0.0)
+    flat = (corner, (5.0, 10.0, 5.0), corner)
+    expected = sorted(_cyclic(L) for L in ldraw._boundary_loops(tris))
+    assert len(expected) == 2
+    assert sorted(_cyclic(L) for L in ldraw._boundary_loops(tris + [flat])) == expected
+
+
+def test_a_sliver_whose_apex_lies_on_its_own_edge_is_not_cut_into_nothing():
+    # Cutting an edge that is not open at every open vertex on it, the sliver's
+    # own apex among them, used to leave triangles with that apex twice.
+    a, b, m = (0.0, 0.0, 0.0), (10.0, 0.0, 0.0), (5.0, 0.01, 0.0)
+    tris = [(a, b, m), (b, a, (5.0, -5.0, 0.0)), (m, (5.0, 0.01, 5.0), (6.0, 0.01, 5.0))]
+    ldraw._split_at_loose_vertices(tris, ldraw._LOOSE_LDU)
+    assert all(len(set(t)) == 3 for t in tris)
+
+
+def test_a_stitch_through_a_wall_closes_regions_but_does_not_vote_on_them():
+    # Two blocks drawn face to face, as LDraw draws a part from primitives,
+    # and a stitch that runs through the second block half a unit from the
+    # face they share: what a seam stitched across the steps of a wall makes.
+    # Its triangles face the shared face, so the slice between the two is a
+    # region they face into; voting, they would take it out of the part.
+    _kernel()
+    tris = _box((0, 0, 0), (10, 10, 10)) + _box((10, 0, 0), (20, 10, 10))
+    stitch = [
+        ((10.5, 0.0, 0.0), (10.5, 10.0, 10.0), (10.5, 10.0, 0.0)),
+        ((10.5, 0.0, 0.0), (10.5, 0.0, 10.0), (10.5, 10.0, 10.0)),
+    ]
+    assert ldraw._normal(*stitch[0])[0] < 0.0 and ldraw._normal(*stitch[1])[0] < 0.0
+    voted = ldraw._single(ldraw._solid_from_regions(tris + stitch))
+    assert _mm3(voted) == pytest.approx(2 * _mm3_box(10) - (0.5 * ldraw._LDU_MM) * (10 * ldraw._LDU_MM) ** 2)
+    solid = ldraw._single(ldraw._solid_from_regions(tris + stitch, silent=set(stitch)))
+    assert ldraw._solid_problems(solid) == []
+    assert _mm3(solid) == pytest.approx(2 * _mm3_box(10))
+
+
+def ldraw_topabs_solid():
+    from OCP.TopAbs import TopAbs_SOLID
+
+    return TopAbs_SOLID
 
 
 #
@@ -797,3 +1267,197 @@ def test_a_seam_only_the_split_creates_is_settled_too():
 
     # A second pass, which is what '_close_mesh' makes, settles it.
     assert _seam_faults(ldraw._orient_consistently(once)) == []
+
+
+# --- the patch list ----------------------------------------------------------
+#
+# Known defects in particular LDraw files, mended as the file is read. A patch
+# is pinned to the exact text it was written against, so it has to go on only
+# there and nowhere else - and a patch that no longer fits has to cost the part
+# its patch, never the build.
+
+_UPSTREAM = "0 Test Part\n0 BFC CERTIFY CCW\n3 16 0 0 0 1 0 0 0 1 0\n3 16 0 0 0 0 0 1 1 0 0\n"
+
+
+def _with_patches(monkeypatch, patches):
+    """Install a patch list in place of the shipped one: {key: (upstream text, patch text)}."""
+    monkeypatch.setattr(
+        ldraw,
+        "_patches_loaded",
+        {
+            key: (ldraw._content_hash(upstream), patch, "test/%s.patch" % key)
+            for key, (upstream, patch) in patches.items()
+        },
+    )
+    monkeypatch.setattr(ldraw, "_patch_warned", set())
+
+
+def test_a_patch_is_applied_to_the_file_it_was_written_against(monkeypatch):
+    patch = "0 // a face the file leaves out\n0 !PATCH ADD\n3 16 1 0 0 0 1 0 0 0 1\n"
+    _with_patches(monkeypatch, {"s/tests01.dat": (_UPSTREAM, patch)})
+    assert ldraw._patched("s/tests01.dat", _UPSTREAM) == _UPSTREAM + "3 16 1 0 0 0 1 0 0 0 1\n"
+    # Every other file is read as the library has it.
+    assert ldraw._patched("s/tests02.dat", _UPSTREAM) == _UPSTREAM
+
+
+def test_a_patch_names_the_lines_of_the_file_as_it_was_written():
+    # Line numbers are the upstream file's, whatever order the directives come
+    # in and whatever an earlier one has inserted.
+    text = "a\nb\nc\nd\n"
+    patch = (
+        "notes, not copied\n"
+        "0 !PATCH AFTER 1\nafter-a\n"
+        "0 !PATCH REPLACE 3\nC1\nC2\n"
+        "0 !PATCH DELETE 4\n"
+        "0 !PATCH AFTER 0\nfirst\n"
+    )
+    assert ldraw._apply_patch(text, patch) == "first\na\nafter-a\nb\nC1\nC2\n"
+    assert ldraw._apply_patch(text, "0 !PATCH ADD\n0 BFC INVERTNEXT\nlast\n") == text + "0 BFC INVERTNEXT\nlast\n"
+
+
+@pytest.mark.parametrize(
+    "patch",
+    [
+        "0 !PATCH REPLACE 9\nx\n",  # past the end of the file
+        "0 !PATCH DELETE 0\n",  # there is no line 0 to delete
+        "0 !PATCH REPLACE 2\nx\n0 !PATCH DELETE 2\n",  # one line, two fates
+        "0 !PATCH MOVE 2\n",  # not a directive
+        "0 // only notes\n",  # changes nothing
+        "0 !PATCH DELETE 2\n3 16 0 0 0 1 0 0 0 1 0\n",  # a line a DELETE cannot carry
+    ],
+)
+def test_a_patch_that_does_not_make_sense_is_refused(patch):
+    with pytest.raises(ValueError):
+        ldraw._apply_patch("a\nb\nc\n", patch)
+
+
+def test_a_patch_written_against_other_text_is_not_applied(monkeypatch, capsys):
+    # The library has changed the file since the patch was written. The patch
+    # may not fit any more, or not be needed: the file is built as the library
+    # has it, and the run says so - once, however often the file is read.
+    _with_patches(monkeypatch, {"s/tests01.dat": (_UPSTREAM, "0 !PATCH ADD\n3 16 1 0 0 0 1 0 0 0 1\n")})
+    changed = _UPSTREAM.replace("0 Test Part", "0 Test Part, revised")
+    assert ldraw._patched("s/tests01.dat", changed) == changed
+    assert ldraw._patched("s/tests01.dat", changed) == changed
+    err = capsys.readouterr().err
+    assert err.count("s/tests01.dat is not the text its patch") == 1
+    assert "unpatched" in err
+
+
+def test_a_patch_that_cannot_be_applied_leaves_the_file_as_it_is(monkeypatch, capsys):
+    _with_patches(monkeypatch, {"s/tests01.dat": (_UPSTREAM, "0 !PATCH REPLACE 99\nx\n")})
+    assert ldraw._patched("s/tests01.dat", _UPSTREAM) == _UPSTREAM
+    assert "could not be applied" in capsys.readouterr().err
+
+
+def test_a_file_s_hash_does_not_depend_on_how_its_lines_end():
+    # Straight off the network a file has CRLF line ends, and read back out of
+    # the cache it has LF ones; it is one file and one patch fits both.
+    assert ldraw._content_hash(_UPSTREAM) == ldraw._content_hash(_UPSTREAM.replace("\n", "\r\n"))
+    assert ldraw._content_hash(_UPSTREAM) != ldraw._content_hash(_UPSTREAM + "2 24 0 0 0 1 0 0\n")
+
+
+def test_a_patch_goes_on_as_the_file_is_read_and_the_cache_keeps_the_original(tmp_path, monkeypatch):
+    monkeypatch.setattr(ldraw, "_ldraw_fetch", _REAL_FETCH)
+    _with_patches(monkeypatch, {"s/tests01.dat": (_UPSTREAM, "0 !PATCH ADD\n3 16 1 0 0 0 1 0 0 0 1\n")})
+    (tmp_path / "s").mkdir()
+    (tmp_path / "s" / "tests01.dat").write_bytes(_UPSTREAM.replace("\n", "\r\n").encode("latin-1"))
+    assert ldraw._ldraw_fetch("s\\tests01.dat", str(tmp_path)).endswith("3 16 1 0 0 0 1 0 0 0 1\n")
+    assert (tmp_path / "s" / "tests01.dat").read_bytes() == _UPSTREAM.replace("\n", "\r\n").encode("latin-1")
+
+
+def _ldraw_lines(tris):
+    return "".join("3 16 %s\n" % " ".join("%g" % c for p in t for c in p) for t in tris)
+
+
+def test_a_patched_file_builds_the_solid_its_unpatched_text_does_not(monkeypatch):
+    # A box whose bottom LDraw leaves out, and whose opening is pulled far out
+    # of flat, so no general rule may close it: the unpatched file is refused.
+    # The patch adds the two triangles of the missing face, and it builds.
+    _kernel()
+    box = _box((0, 0, 0), (10, 10, 10))
+    pulled = [tuple((p[0], -6.0, p[2]) if p == (0.0, 0.0, 0.0) else p for p in t) for t in box]
+    bottom = [t for t in pulled if all(p[1] <= 0.0 for p in t)]
+    assert len(bottom) == 2
+    upstream = "0 Pulled box\n0 BFC CERTIFY CCW\n" + _ldraw_lines([t for t in pulled if t not in bottom])
+    patch = "0 // the bottom, two triangles\n0 !PATCH ADD\n" + _ldraw_lines(bottom)
+    parent = "0 Test Part\n0 BFC CERTIFY CCW\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 s\\tests01.dat\n"
+
+    def build(patches):
+        _with_patches(monkeypatch, patches)
+        fetch = lambda name, cache: ldraw._patched(name.replace("\\", "/").lower(), upstream)  # noqa: E731
+        return ldraw._build_shape(_mesh(parent, fetch))
+
+    with pytest.raises(ldraw.LDrawNotSolid):
+        build({})
+    with pytest.raises(ldraw.LDrawNotSolid):
+        build({"s/tests01.dat": (upstream + "0 // revised\n", patch)})  # a stale patch is not applied
+    solid = build({"s/tests01.dat": (upstream, patch)})
+    assert ldraw._solid_problems(solid) == []
+    assert _mm3(solid) == pytest.approx(
+        abs(_signed_volume([tuple(ldraw._scaled(p) for p in t) for t in pulled])), rel=1e-6
+    )
+
+
+def test_the_shipped_patch_list_is_well_formed(monkeypatch):
+    # Every patch says which file, against what text, what kind of change it
+    # is, why, and for which parts; names a patch file that is there and makes
+    # sense; and is read by the wrapper. Each one's evidence is in its reason.
+    # A patch either corrects what the file draws or adds geometry the file
+    # leaves out, and says which: the two are held to different standards of
+    # evidence (see the README), and a reader of the part has to be able to
+    # tell a mended surface from an authored one.
+    with open(os.path.join(_here, "patches", "manifest.json"), encoding="utf-8") as f:
+        manifest = json.load(f)
+    assert manifest["format"] == ldraw._PATCH_FORMAT
+    seen = set()
+    for entry in manifest["patches"]:
+        assert set(entry) >= {"file", "sha256", "patch", "kind", "parts", "reason"}, entry
+        assert entry["kind"] in ("correction", "authored"), entry["file"]
+        key = entry["file"]
+        assert key == key.lower() and "\\" not in key and key.endswith(".dat"), key
+        assert key not in seen, "two patches for %s" % key
+        seen.add(key)
+        assert re.fullmatch(r"[0-9a-f]{64}", entry["sha256"]), key
+        assert entry["reason"] and all(isinstance(line, str) and line.strip() for line in entry["reason"]), key
+        assert entry["parts"] and all(isinstance(p, str) for p in entry["parts"]), key
+        path = os.path.join(_here, "patches", *entry["patch"].split("/"))
+        assert os.path.isfile(path), "%s names %s, which is not there" % (key, entry["patch"])
+        with open(path, encoding="latin-1") as f:
+            patch = f.read()
+        numbers = [int(n) for n in re.findall(r"^0 !PATCH (?:AFTER|REPLACE|DELETE) (\d+)\s*$", patch, re.M)]
+        ldraw._apply_patch("".join("%d\n" % n for n in range(1, max(numbers + [1]) + 1)), patch)
+    names = {entry["patch"] for entry in manifest["patches"]}
+    on_disk = set()
+    for directory, _, files in os.walk(os.path.join(_here, "patches")):
+        for name in files:
+            if name.endswith(".patch"):
+                on_disk.add(
+                    os.path.relpath(os.path.join(directory, name), os.path.join(_here, "patches")).replace(os.sep, "/")
+                )
+    assert on_disk == names, "patch files the manifest does not list, or the reverse"
+    monkeypatch.setattr(ldraw, "_patches_loaded", None)
+    assert set(ldraw._patches()) == seen
+
+
+def test_each_shipped_patch_fits_the_library_it_was_written_against():
+    # Against a local copy of the library, where there is one (the directory
+    # holding 'parts' and 'p'): the pinned hash is that file's, and the patch
+    # goes on to it.
+    library = os.environ.get("LDRAW_LIBRARY")
+    if not library or not os.path.isdir(library):
+        pytest.skip("set LDRAW_LIBRARY to an unpacked LDraw library to check the patches against it")
+    with open(os.path.join(_here, "patches", "manifest.json"), encoding="utf-8") as f:
+        manifest = json.load(f)
+    for entry in manifest["patches"]:
+        for sub in ("parts", "p"):
+            path = os.path.join(library, sub, *entry["file"].split("/"))
+            if os.path.isfile(path):
+                break
+        else:
+            pytest.fail("%s is not in %s" % (entry["file"], library))
+        with open(path, encoding="latin-1") as f:
+            text = f.read()
+        assert ldraw._content_hash(text) == entry["sha256"], entry["file"]
+        with open(os.path.join(_here, "patches", *entry["patch"].split("/")), encoding="latin-1") as f:
+            assert ldraw._apply_patch(text, f.read()) != text

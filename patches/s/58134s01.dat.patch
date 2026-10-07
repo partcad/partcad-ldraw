@@ -1,0 +1,10 @@
+0 // s\58134s01.dat, the IR remote's bottom half. Quad 99 is the inner wall
+0 // that slopes down to the boss of the hole in 58134.dat (lines 84-102, a
+0 // 4-4cyli of radius 9 about x = 0, z = 74). Its top corner is (82, 0, -4)
+0 // here, (4, 0, 82) in the part: where a true circle of radius 9 would be,
+0 // but the boss is a 16-gon, which is at z = 81.94 there, so the corner
+0 // stands 0.05 LDU outside it and leaves the wall, the boss and the strip on
+0 // top (58134.dat line 25) a gap to the outside. The corner is moved to
+0 // x = 3.5 in the part, inside the boss's wall, which is where the wall ends.
+0 !PATCH REPLACE 99
+4 16 77.17 -14 -8 82 0 -3.5 82 0 -19 77.17 -14 -40

@@ -72,9 +72,175 @@ Two mechanisms are combined:
    of the closed shells, cutting the ones LDraw drew facing inward, which are
    its cavities, rather than fusing them.
 
-   A part the wrapper cannot close comes back from the mesh import unchanged,
-   as a shell, exactly as every part did before; so does one whose solid the
-   kernel will not certify. The step can only improve a part or leave it alone.
+   A part the wrapper cannot close is refused, with the reason, rather than
+   handed back as a shell: a shell renders like the part and makes every
+   boolean taken against it meaningless. Where the reason is a defect in one
+   particular LDraw file, the file is mended as it is read, by a patch from the
+   maintained list in `patches/` (see [Patches](#patches)).
+
+## Patches
+
+Most of what keeps an LDraw surface from closing is general, and is mended by a
+rule that holds for every part. What is left is particular to one file: a face
+its author left out, or two faces that were meant to meet and miss by a tenth of
+an LDraw unit. No general rule can tell that from a part that really is open
+there - a rule that guessed would guess wrong somewhere else - so those are
+mended one file at a time, by a maintained list of patches applied as the file
+is read. The library's file itself, and the copy in the cache, are left as they
+are.
+
+A patch is one of two kinds, and says which in its manifest entry (`kind`):
+
+- A **correction** (`"kind": "correction"`) mends what the file draws: a corner
+  placed on the true circle where the primitive beside it ends on the polygon,
+  a face that stops a tenth of a unit short of the face it was meant to meet.
+  The file is the evidence for what was meant, and the patch invents nothing.
+- **Authored** geometry (`"kind": "authored"`) adds surface the file does not
+  draw at all. It is not a mend, and it is never presented as one: the part
+  that comes out is partly ours, and its manifest entry says so.
+
+A correction is justified when, and only when:
+
+- the part is refused (or wrong) because of a defect **in that LDraw file**,
+  traced to its lines;
+- the file is evidence for what was meant - the corner the next face starts
+  from, the edge lines (`2`) it draws, the primitive that stops a step short of
+  the one beside it - so the patch adds or corrects what the author evidently
+  intended, and invents nothing;
+- a general rule cannot or should not do it, because it would have to guess;
+- the part then builds a solid whose volume agrees with an independent estimate
+  of what its surface encloses, and whose extent is the LDraw geometry's.
+
+Authoring is acceptable only for a part whose LDraw file says the geometry is
+missing (`0 // Needs Work: Inner side not modelled`), or that leaves surfaces
+undrawn that no correction can recover. It is held to the same checks, and to
+these as well:
+
+- **Determined by the file, as far as it can be.** In order of preference: close
+  an opening with the surface its own rim defines, using a primitive where one
+  fits (a disc closing a cylinder, a cone, a flat cap); where the rim is not
+  flat, triangles spanning the drawn outline - the type `2` edge lines and the
+  open rims - fan-wise, or as a ruled surface between two drawn curves. Nothing
+  nobody drew: no internal ribs, no bosses, no wall that no opening shows.
+- **The filled envelope.** Where the inside of a part is unknown, the authored
+  surface closes it at the rim of each opening, so the solid is the part's
+  external shape, exact, filled solid: its volume is the envelope's, not the
+  plastic's. That is the conservative answer for an interference check, which
+  is what a solid is mostly for. A wall thickness is inferred instead only where
+  an opening shows the wall clearly, and the entry says which was done.
+- **Within the part.** Authored geometry never reaches outside the LDraw
+  geometry's bounding box.
+- **Said plainly.** The entry's `reason` quotes the file's own `Needs Work`
+  line where there is one; says what was modelled and on what evidence (the
+  rims and edge lines the file does draw, the wall an opening shows); and says
+  how the result differs from the real part ("the solid is the filled housing:
+  its volume is the envelope's, not the plastic's").
+
+If a part cannot be closed even by authoring without guessing at its external
+shape, it is not patched, and stays refused.
+
+Prefer patching the part's own file or its own subpart over a primitive or a
+subpart other parts share, and patch a shared one only if the change is right
+for every part that uses it - and list every one of them in `parts`.
+
+### Format
+
+`patches/manifest.json` lists the patches, one entry per LDraw file:
+
+```json
+{
+  "file": "s/919s01.dat",
+  "sha256": "40fcc09f...",
+  "patch": "s/919s01.dat.patch",
+  "kind": "correction",
+  "parts": ["58119"],
+  "reason": ["What LDraw gets wrong, with the lines and primitives that show it,", "and what the patch changes."]
+}
+```
+
+- `file` is the file as a part refers to it, lowercase with `/`: `58121.dat`,
+  `s/919s01.dat`, `48/1-4disc.dat`.
+- `sha256` pins the exact upstream text the patch was written against (the
+  hash of its lines, so CRLF and LF line ends are the same file).
+- `patch` is the patch file under `patches/`.
+- `kind` is `correction` or `authored` (see above).
+- `parts` are the library parts whose geometry reads the file, which are the
+  parts whose cache key the patch goes into (see below).
+- `reason` is for the reviewer: the defect, the evidence for it, and the change.
+
+The patch file is LDraw lines under directives naming the upstream file's lines,
+counted from 1 as an editor counts them:
+
+```
+0 // Notes for the reader, before the first directive; not copied.
+0 !PATCH REPLACE 43
+4 16 3.44415 -48.31492 20 3.56 -47.5 20 3.56 -47.5 8 3.44415 -48.31492 8
+0 !PATCH AFTER 21
+4 16 6.5 -8 34 6.5 -8 86 5 -8 86 5 -8 34
+0 !PATCH DELETE 105
+0 !PATCH ADD
+1 16 0 0 0 1 0 0 0 1 0 0 0 1 4-4disc.dat
+```
+
+`AFTER n` inserts after line `n` (`AFTER 0` before the first), `REPLACE n` puts
+the lines that follow in place of line `n`, `DELETE n` removes it, and `ADD`
+appends to the end. Every number refers to the file as written, whatever an
+earlier directive did, and everything after a directive is copied verbatim,
+`0 BFC` statements included. Keep a patch to the lines it needs; where the file
+evidently meant a primitive (a `4-4disc.dat` closing a `4-4cyli.dat`), add the
+primitive rather than its triangles.
+
+### Pinning
+
+A patch is applied only to the text it was written against. When the library
+changes the file, the hash no longer matches, and the patch is **not** applied:
+the run says so on stderr and builds the file as the library has it, which may
+mean the part is refused again until the patch is rewritten (or found to be no
+longer needed). A patch that does not make sense for the text - a line it names
+that is not there - is skipped the same way. Neither ever fails a build.
+
+### Adding one
+
+1. Trace the defect to its file and lines, and write the smallest patch that
+   mends it.
+2. Add the manifest entry, with its `kind`, the hash (`ldraw._content_hash(text)` of the
+   upstream file) and the reason.
+3. Fill in `parts`: `./build_parts_index.py --patch-users LIBRARY` reads every
+   patch's file and writes the parts that reach it, from an unpacked library.
+4. Check that the part builds, and how its volume and extent compare with an
+   independent estimate; run the tests, which check the manifest (and, with
+   `LDRAW_LIBRARY` set to an unpacked library, each patch against its file).
+5. Raise `CACHE_VERSION` in `ldraw_repo.py` and `cacheVersion` in
+   `partcad.yaml`.
+
+### How a patch reaches a build, and the cache
+
+`ldraw.py` reads the `patches/` directory beside it, which is what a checkout
+and the tests have. PartCAD runs the wrapper elsewhere: it writes the file the
+repository serves under `files/ldraw.py` into a directory of its own, with
+nothing beside it. So the repository serves it with the patch list written into
+it, in place of its `_EMBEDDED_PATCHES = None` line, and the copy that runs
+carries every patch.
+
+PartCAD keys a built part on its configuration, so a part built from a patched
+file carries a `patches` parameter, a hash of every patch it reads: change a
+patch and exactly the parts that read it are built again. A changed patch is
+served only once the cache version is raised, since the repository's answers
+and the wrapper are cached under it; raising it alone does not rebuild a part
+whose configuration is unchanged.
+
+### The list
+
+| File | Kind | Parts | What it does |
+| --- | --- | --- | --- |
+| `64681.dat` | correction | 64681, its three stickered versions, and 64393 (which mirrors it) | The top face of the lower body stops at x = 6 and the strip it turns up into stands at x = 6.075: a 0.075 LDU slit, 52 long. |
+| `s/919s01.dat` | correction | 58119 and the other 9V battery boxes built from the same bracket (54734, 919, 919c01, 923) | The bracket's 16-sided outer wall ends at x = 3.444 and the flat face beyond it starts at x = 3.56, at the same corner on the true circle: eight strips 0.08-0.12 LDU wide. |
+| `59155.dat` | correction | 58121 (PF XL motor) and the motor body 59154c01, with 59155 itself and the cabled 58121c01 | The front shell's corners at the top and bottom peg holes stand 0.03 LDU outside the boss they meet, and the side holes' channels stop 0.08 LDU short of their boss. The shell's inside is "not modelled"; nothing is authored for it, and the motor builds as its filled housing. |
+| `59154.dat` | correction | the same motor parts, with 59154 itself | The back shell's side ridges peak on the true circle, up to 0.1 LDU outside the front shell's 48-gon where the two meet, and two of its side-window faces run 0.2 LDU past their neighbours, to a corner just outside the boss they meet. |
+| `s/58134s01.dat` | correction | 58134 (PF IR remote, bottom half), and the remotes 58122 and 58135c01 | The inner wall that slopes down to the boss of the hole at the end has its corner on the true circle, 0.05 LDU outside the boss's 16-gon. |
+| `58132.dat` | **authored** | 58132 (PF IR remote, top half), and the remotes 58122 and 58135c01 | "Inside not modelled": the skin is open underneath. Closed across its own rim - a ruled underside between the drawn rim's vertices, the glass window by the planes of its straight edges, and the selector slot's floor on the bottom edges of its drawn walls. Filled envelope: the top half is solid to its rim; in the remotes the space between it and 58134's drawn interior stays a closed cavity. |
+| `s/58132s01.dat` | correction | the same three | The top in front of the selector's slot overlaps a ring drawn 0.002 LDU off its plane, and the slot's rounded ends are drawn twice by the two placements of the subpart. |
+| `s/62531s01.dat` | correction | 62531 (Technic panel, curved) | At the beam's end, by the pin hole at z = -/+80, half the pin hole's boss is drawn twice, the roof over the hole is scaled 8.001 instead of 8, and two wall faces overlap 0.0003 off one plane. |
 
 ## Which way is up
 
@@ -102,6 +268,20 @@ Run it when LDraw publishes a library update, and commit the result:
 ./build_parts_index.py                      # downloads complete.zip
 ./build_parts_index.py --archive complete.zip
 ```
+
+A change to how connectors are *read* does not need all of that. `--refresh`
+recomputes only the entries of the parts whose own files place one of the named
+primitives, from any unpacked copy of the library, and takes a new entry only
+where it keeps every port the old one had, instance names included; a part that
+would lose or move a port is reported and left as it was, because that is a
+change to the rules and belongs to a full rebuild. Nothing else in the index is
+touched, so the listings and the archive are not needed:
+
+```sh
+./build_parts_index.py --refresh path/to/ldraw --reaching bush0.dat bush.dat
+```
+
+That is how the bush's axle hole (below) went in.
 
 It takes names, authors and licences from
 [`complete.zip`](https://library.ldraw.org/library/updates/complete.zip) — one
@@ -144,7 +324,15 @@ All but the last are derived analytically from the part's name — no geometry i
 fetched — so attaching them costs nothing even when a whole category is
 enumerated. What a connection leaves free is declared with it: a pin turns in a
 round hole (`turnZ`), an axle slides through one (`moveZ`), and a minifig's head
-and torso turn on their joints.
+and torso turn on their joints. An axle is also the one connector that carries
+several parts on one end - the beams it runs through, bushes, gears and a wheel,
+each at its own `moveZ` - so `technic-axle` says `multiConnect: true`, and
+PartCAD's connectivity test does not report those parts as crowding one port. A pin
+in a round hole is a snap fit - its slotted end is squeezed past the lip and
+springs open behind it - so that mating says `snapIn: true`, and PartCAD's
+interference test takes the ridge inside the lip for the joint it is. An axle
+snaps past nothing, in a round hole or a cross one, so neither of its matings
+says so: an axle that overlaps the part it goes through is reported.
 
 **Gears** are the interesting case: a mesh is a port pair once each tooth and
 each gap is a port. LEGO gears are cut to one module, so a port on the pitch
@@ -389,6 +577,15 @@ library 574 parts carry only whole forms, 128 only perimeters, and the 13 with
 both never put the two in the same place, so taking either as a hole never
 counts one twice.
 
+One axle hole is drawn inside a primitive rather than by the part, and the walk
+never opens a primitive: `bush0`, "Technic Bush without Collars", is an
+`axlehol5` stretched through it, and `bush` is the same bush with its collars.
+Between them they are the axle hole of every Technic cross block and of the
+bushes themselves, so the cross blocks used to be served with their pin holes
+and not the axle hole they are for — `6536`, "Cross Block 1 x 2 (Axle/Pin)", had
+a pin hole beside nothing. Both are named in the vocabulary with the hole spelled
+out, which gives 47 parts an axle hole each and changes no port anything had.
+
 `lego-demo/` builds seven assemblies out of all this, and its `README.md`
 describes the interfaces in detail.
 
@@ -399,6 +596,7 @@ describes the interfaces in detail.
 | `partcad.yaml` | `//pub/universe/lego`; the `ldraw` external dependency (the library), the `ldraw_repo` repository, the `ldraw` partType, and the LEGO interfaces. |
 | `ldraw_repo.py` | Repository plugin: categories, paginated part lists, `.dat`-header metadata, the interfaces each part implements, the partType, and the wrapper file. |
 | `ldraw.py` | The `:ldraw` partType wrapper: fetch + recursively mesh a `.dat`. |
+| `patches/` | The maintained list of patches to LDraw files (see [Patches](#patches)). |
 | `lego-demo/` | Assemblies built purely out of those interfaces. |
 
 ## Usage

@@ -1,0 +1,48 @@
+0 // 58132.dat, the top half of the Power Functions IR remote: "Needs Work:
+0 // Inside not modelled". The file draws the outer skin and stops at its rim,
+0 // so the half is open underneath. AUTHORED, to the filled-envelope
+0 // convention: the skin is closed across its own open rim, nothing else.
+0 // 1. The underside: a ruled surface across the rim, one flat strip between
+0 //    each pair of matching rim vertices left and right (the rim is
+0 //    symmetric in x): flat at y = -47 along the sides, where the rim is,
+0 //    rising with the rim to y = -38, -32 and -24 at the ends. Every vertex
+0 //    is a vertex of the drawn rim.
+0 // 2. The window for the front glass (58133): its edges are the straight
+0 //    lines x = -/+19 from (-56, -99) to (-58.32, -53.25) along the top and
+0 //    from y = -24 to -56 at z = -99, so it is closed by the plane through
+0 //    the two top edges and by the plane z = -99.
+0 // 3. The channel selector's slot, x = -/+8 between z = 29.7 and 68.3: its
+0 //    walls (s\58132s01.dat line 354) and rounded ends (lines 349-353) are
+0 //    drawn down to their bottom edges and no further. Its floor is closed
+0 //    on those edges: a quad between the walls' bottom edges and a 1-4chrd
+0 //    on each end's bottom edge (the matrices of its 1-4edge lines, 350 and
+0 //    353 of the subpart, carried into this file).
+0 !PATCH AFTER 485
+4 16 -19 -24 -99 -18 -24 -97 18 -24 -97 19 -24 -99
+4 16 -18 -24 -97 -38 -32 -88 38 -32 -88 18 -24 -97
+4 16 -38 -32 -88 -41 -38 -69 41 -38 -69 38 -32 -88
+4 16 41 -38 -69 43 -38 -69 -43 -38 -69 -41 -38 -69
+4 16 -43 -38 -69 -43.688 -41.444 -68.315 43.688 -41.444 -68.315 43 -38 -69
+4 16 -43.688 -41.444 -68.315 -44.5 -44.364 -66.364 44.5 -44.364 -66.364 43.688 -41.444 -68.315
+4 16 -44.5 -44.364 -66.364 -45.312 -46.315 -63.444 45.312 -46.315 -63.444 44.5 -44.364 -66.364
+4 16 -45.312 -46.315 -63.444 -46 -47 -60 46 -47 -60 45.312 -46.315 -63.444
+4 16 -46 -47 -60 -47.96 -47 -45.25 47.96 -47 -45.25 46 -47 -60
+4 16 -47.96 -47 -45.25 -48.74 -47 -32.73 48.74 -47 -32.73 47.96 -47 -45.25
+4 16 -48.74 -47 -32.73 -49.01 -47 -20 49.01 -47 -20 48.74 -47 -32.73
+4 16 -49.01 -47 -20 -48.74 -47 0.12 48.74 -47 0.12 49.01 -47 -20
+4 16 -48.74 -47 0.12 -47.96 -47 19.9 47.96 -47 19.9 48.74 -47 0.12
+4 16 -47.96 -47 19.9 -46.67 -47 39 46.67 -47 39 47.96 -47 19.9
+4 16 -46.67 -47 39 -44.5 -47 60 44.5 -47 60 46.67 -47 39
+4 16 -44.5 -47 60 -43.926 -46.315 63.444 43.926 -46.315 63.444 44.5 -47 60
+4 16 -43.926 -46.315 63.444 -43.439 -44.364 66.364 43.439 -44.364 66.364 43.926 -46.315 63.444
+4 16 -43.439 -44.364 66.364 -43.114 -41.444 68.315 43.114 -41.444 68.315 43.439 -44.364 66.364
+4 16 -43.114 -41.444 68.315 -43 -38 69 43 -38 69 43.114 -41.444 68.315
+4 16 43 -38 69 41 -38 69 -41 -38 69 -43 -38 69
+4 16 -41 -38 69 -38 -32 88 38 -32 88 41 -38 69
+4 16 -38 -32 88 -18 -24 97 18 -24 97 38 -32 88
+4 16 -19 -56 -99 19 -56 -99 19 -58.32 -53.25 -19 -58.32 -53.25
+4 16 -19 -24 -99 19 -24 -99 19 -56 -99 -19 -56 -99
+4 16 -7.997 -52.267 33.003 7.997 -52.267 33.003 7.997 -51.203 64.997 -7.997 -51.203 64.997
+0 BFC INVERTNEXT
+1 16 0 -52 41 -7.997 0 7.997 -0.267 1.885 -0.267 -7.997 0 -7.997 1-4chrd.dat
+1 16 0 -51.47 57 7.997 0 -7.997 0.267 1.885 0.267 7.997 0 7.997 1-4chrd.dat

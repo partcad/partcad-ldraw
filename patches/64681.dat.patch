@@ -1,0 +1,10 @@
+0 // 64681.dat: the top of the lower body, at y = -8, ends at x = 6 from
+0 // z = 34 to 86 - the quads of lines 18 and 20, the ndis primitives of lines
+0 // 44 and 46 and the 1-4ring2 of s\64683s01.dat line 312 all stop there - but
+0 // the strip it turns up into, line 14, stands at x = 6.075, under the edge the
+0 // shell's inner surface starts from (lines 76 and 91). The 0.075 LDU between
+0 // them is open the whole length. This face closes it: it lies on the top face
+0 // from x = 5, across the slit, and on into the body behind the strip to
+0 // x = 6.5, so that it meets both rather than ending on either.
+0 !PATCH AFTER 21
+4 16 6.5 -8 34 6.5 -8 86 5 -8 86 5 -8 34

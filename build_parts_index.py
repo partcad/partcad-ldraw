@@ -43,6 +43,24 @@ note in ldraw_repo.py.
 
 Usage:
     ./build_parts_index.py [--archive complete.zip] [--output parts-index.zip]
+    ./build_parts_index.py --refresh LIBRARY --reaching PRIMITIVE [PRIMITIVE ...]
+
+    ./build_parts_index.py --patch-users LIBRARY
+
+The second form is for a change to how connectors are read, rather than to the
+library: it recomputes only the entries of parts whose geometry reaches one of
+the named primitives - read from LIBRARY, an unpacked 'ldraw' directory - and
+takes a new entry only where it keeps every port the old one had, instance
+names included. Everything else in the index is left exactly as it is, so it
+needs neither the archive nor the category listings, and cannot move a port an
+assembly already names. A part that would lose or move a port is reported and
+keeps its old entry: that is a change to the rules, and the full rebuild is the
+place for it.
+
+The third fills in, for every patch in 'patches/manifest.json', the parts whose
+geometry reads the file it patches - read from LIBRARY as the second form does -
+which are the parts whose cache key the patch goes into. Run it whenever a
+patch is added, and when the library is updated.
 
 Run it when the LDraw library publishes an update; commit the result. The
 list pages are cached on disk between runs like every other fetch, so a second
@@ -212,6 +230,136 @@ def write(index, path, plugin):
             z.writestr(plugin.member_name(category), json.dumps(parts, separators=(",", ":")))
 
 
+def _library_files(library):
+    """{reference name, lowercased: path} for 'parts/' (with 's/') and 'p/'."""
+    files = {}
+    for sub in ("parts", "p"):
+        root = os.path.join(library, sub)
+        for directory, _, names in os.walk(root):
+            for name in names:
+                if name.lower().endswith(".dat"):
+                    rel = os.path.relpath(os.path.join(directory, name), root).replace(os.sep, "/")
+                    files.setdefault(rel.lower(), os.path.join(directory, name))
+    return files
+
+
+def _library_files_parts(library):
+    """The part and subpart files alone, which is all the plugin ever fetches."""
+    parts = os.path.join(library, "parts")
+    return {
+        name: path for name, path in _library_files(library).items() if os.path.commonpath([path, parts]) == parts
+    }
+
+
+def _reaches(pid, files, primitives, memo):
+    """Whether a part places one of 'primitives', through its subparts and primitives alike.
+
+    Primitives are followed too, unlike the plugin's walk: 'bush.dat' is a
+    primitive that places 'bush0.dat', and a part drawn with the one uses the
+    other.
+    """
+    name = (pid + ".dat").lower()
+    if name in memo:
+        return memo[name]
+    memo[name] = False  # a cycle reaches nothing new
+    found = False
+    path = files.get(name) or files.get("s/" + name)
+    if path:
+        with open(path, encoding="latin-1") as f:
+            for line in f:
+                fields = line.split()
+                if len(fields) < 15 or fields[0] != "1":
+                    continue
+                ref = " ".join(fields[14:]).replace("\\", "/").lower()
+                if ref in primitives or (ref[:-4] != pid.lower() and _reaches(ref[:-4], files, primitives, memo)):
+                    found = True
+                    break
+    memo[name] = found
+    return found
+
+
+def _keeps(old, new):
+    """Whether 'new' has every interface instance of 'old', unchanged."""
+    for iface, instances in (old or {}).items():
+        for instance, port in instances.items():
+            if ((new or {}).get(iface) or {}).get(instance) != port:
+                return False
+    return True
+
+
+def refresh(path, library, primitives, plugin):
+    """Recompute, in place, the entries of the parts that reach 'primitives'."""
+    files = _library_files(library)
+    cache = tempfile.mkdtemp(prefix="ldraw-index-")
+    # Laid out where the plugin's fetcher looks, as _seed_cache does for the
+    # archive. Primitives are never fetched, so only the parts are copied.
+    for name, source in _library_files_parts(library).items():
+        dest = os.path.join(cache, "parts", name)
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        shutil.copyfile(source, dest)
+    os.environ["PARTCAD_LDRAW_CACHE"] = cache
+    with zipfile.ZipFile(path) as z:
+        meta = json.loads(z.read(plugin._INDEX_META))
+        members = {n: json.loads(z.read(n)) for n in z.namelist() if n != plugin._INDEX_META}
+    memo = {}
+    changed = kept = 0
+    for member, parts in sorted(members.items()):
+        for pid, entry in sorted(parts.items()):
+            if not _reaches(pid, files, primitives, memo):
+                continue
+            with open(files.get((pid + ".dat").lower()), encoding="latin-1") as f:
+                header = _header(f.read())
+            new = plugin._part_config(pid, header).get("implements")
+            if new == entry[3]:
+                continue
+            if not _keeps(entry[3], new):
+                kept += 1
+                print("  %s %s: would lose or move a port; left as it was" % (member, pid), file=sys.stderr)
+                continue
+            entry[3] = new
+            changed += 1
+            print("  %s %s: %s" % (member, pid, entry[0]), file=sys.stderr)
+    shutil.rmtree(cache, ignore_errors=True)
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+        z.writestr(plugin._INDEX_META, json.dumps(meta, separators=(",", ":")))
+        for member, parts in members.items():
+            z.writestr(member, json.dumps(parts, separators=(",", ":")))
+    print("%s: %d entries refreshed, %d left as they were" % (os.path.basename(path), changed, kept), file=sys.stderr)
+
+
+def patch_users(path, library, manifest_path):
+    """Fill in each patch's 'parts': every indexed part whose geometry reads the file it patches.
+
+    Those are the parts whose cache key carries the patch (see _patch_digest in
+    ldraw_repo.py), so a patch to a subpart or a primitive that leaves a user
+    out leaves that user's cached shape as the unpatched file built it.
+    """
+    files = _library_files(library)
+    with zipfile.ZipFile(path) as z:
+        ids = sorted({pid for ids in json.loads(z.read("index.json"))["categories"].values() for pid in ids})
+    with open(manifest_path, encoding="utf-8") as f:
+        manifest = json.load(f)
+    for entry in manifest["patches"]:
+        target = entry["file"].replace("\\", "/").lower()
+        memo = {}
+        users = [pid for pid in ids if (pid + ".dat").lower() == target or _reaches(pid, files, {target}, memo)]
+        entry["parts"] = users
+        print("  %s: %d parts: %s" % (target, len(users), " ".join(users)), file=sys.stderr)
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2)
+        f.write("\n")
+
+
+def _load_plugin():
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    spec = importlib.util.spec_from_file_location(
+        "ldraw_repo", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ldraw_repo.py")
+    )
+    plugin = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(plugin)
+    return plugin
+
+
 def main():
     if sys.version_info < (3, 10):
         # The plugin this imports uses zip(strict=True). Say so here rather
@@ -220,7 +368,33 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--archive", default=None, help="a local complete.zip; downloaded if omitted")
     parser.add_argument("--output", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "parts-index.zip"))
+    parser.add_argument(
+        "--refresh", metavar="LIBRARY", default=None, help="an unpacked 'ldraw' directory to refresh entries from"
+    )
+    parser.add_argument(
+        "--reaching", nargs="+", default=(), help="with --refresh: the primitives whose users to recompute"
+    )
+    parser.add_argument(
+        "--patch-users",
+        metavar="LIBRARY",
+        default=None,
+        help="an unpacked 'ldraw' directory: fill in the parts each patch in patches/manifest.json is read by",
+    )
     args = parser.parse_args()
+
+    if args.patch_users:
+        manifest = os.path.join(os.path.dirname(os.path.abspath(__file__)), "patches", "manifest.json")
+        patch_users(args.output, args.patch_users, manifest)
+        return
+
+    if args.refresh:
+        if not args.reaching:
+            parser.error("--refresh needs --reaching")
+        # The index being refreshed must not answer for the parts being recomputed.
+        os.environ["PARTCAD_LDRAW_IGNORE_INDEX"] = "1"
+        plugin = _load_plugin()
+        refresh(args.output, args.refresh, {p.lower() for p in args.reaching}, plugin)
+        return
 
     archive = args.archive
     if not archive:
@@ -236,12 +410,7 @@ def main():
     # The index being built must not be read while building it.
     os.environ["PARTCAD_LDRAW_IGNORE_INDEX"] = "1"
 
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    spec = importlib.util.spec_from_file_location(
-        "ldraw_repo", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ldraw_repo.py")
-    )
-    plugin = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(plugin)
+    plugin = _load_plugin()
 
     print("  %d part files" % _seed_cache(archive, cache), file=sys.stderr)
     print("reading the category listings ...", file=sys.stderr)
