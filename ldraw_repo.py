@@ -65,8 +65,14 @@ import zipfile
 # (64681, 58119 and the boxes sharing its bracket) are solids now; v14 finds
 # the holes in a surface the same way whatever its hand or the order it is
 # written in, so a part that mirrors another (64393, the mirror of 64681) is a
-# solid where its original is, and the mirror image of it.
-CACHE_VERSION = 14
+# solid where its original is, and the mirror image of it; v15 fuses a part's
+# shells and cuts its holes a batch at a time, so a part made of a thousand of
+# them (the 32 x 32 baseplate, 3811) is built where one boolean over all of
+# them ran out of memory and took the build down, and carries the patches
+# written since v14 (59154, 59155, 58132, s/58132s01, s/58134s01 and
+# s/62531s01), which make the XL motor (58121), the IR remote (58122) and the
+# 11 x 2 x 3 panel (62531) solids.
+CACHE_VERSION = 15
 
 _BASE = "https://library.ldraw.org"
 _CATEGORY_LIST_URL = _BASE + "/parts/category-list"

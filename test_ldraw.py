@@ -602,6 +602,27 @@ def test_a_face_laid_over_a_face_of_the_part_still_makes_a_solid():
     assert _mm3(solid) == pytest.approx((10 * ldraw._LDU_MM) ** 3)
 
 
+def test_a_part_of_many_shells_is_the_same_solid_whatever_the_batch(monkeypatch):
+    # A baseplate is a slab and a thousand studs, which OCCT cannot fuse in one
+    # boolean inside the memory a build has, so the bodies are fused and the
+    # holes cut a batch at a time. Here a slab with five studs on it and three
+    # pockets in it, two shells to a boolean, has to come out the same solid as
+    # all of them in one.
+    _kernel()
+    slab = _box((0, 0, 0), (40, 4, 10))
+    studs = [t for k in range(5) for t in _box((2 + 8 * k, 4, 3), (6 + 8 * k, 8, 7))]
+    pockets = [t for k in range(3) for t in _box((3 + 12 * k, 1, 2), (9 + 12 * k, 3, 8), outward=False)]
+    tris = slab + studs + pockets
+    whole = ldraw._solid_from_mesh(tris)
+    monkeypatch.setattr(ldraw, "_BOOLEAN_BATCH", 2)
+    batched = ldraw._solid_from_mesh(tris)
+    assert whole is not None and batched is not None
+    assert ldraw._solid_problems(batched) == []
+    expected = (40 * 4 * 10 + 5 * 4 * 4 * 4 - 3 * 6 * 2 * 6) * ldraw._LDU_MM**3
+    assert _mm3(whole) == pytest.approx(expected)
+    assert _mm3(batched) == pytest.approx(expected)
+
+
 def test_a_surface_that_cannot_be_closed_is_refused_rather_than_returned():
     # The STL import used to take this and hand back a shell: something that
     # renders as the part and makes every boolean against it meaningless.

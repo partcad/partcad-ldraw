@@ -674,6 +674,16 @@ _PLANAR_LDU = 0.05
 # By the time the mesh is sewn its triangles share vertices exactly, so the
 # kernel is given only enough room for the conversion to millimetres.
 _SEW_TOL_MM = 1e-4
+# The most shells _solid_from_mesh() hands OCCT in one boolean. A 32 x 32
+# baseplate (3811) is one slab and 1024 studs standing on it, and fusing all
+# 1024 at once peaks at 4.9 GB resident and 6.6 GB of address space; where
+# that is more than the process may have, OCCT does not raise, it segfaults
+# inside BOPAlgo_PaveFiller::PerformEF and takes the build with it. Fused 128
+# at a time the same baseplate peaks at 1.7 GB, comes out the same solid to
+# the face, and is faster as well. Smaller batches cost more than they save:
+# every batch cuts against the growing result, and 32 at a time takes twice as
+# long as 128. A part with fewer shells than this is built exactly as before.
+_BOOLEAN_BATCH = 128
 # How far from flat a hole the plain capping left may be and still be capped
 # on the way to a solid, by a fan from its centre. A Technic friction pin
 # leaves its ridges' footprints open, 0.26 LDU off flat; the side holes of the
@@ -1465,9 +1475,13 @@ def _solid_from_mesh(tris):
     result = steps[0][1]
     i = 1
     while i < len(steps):
+        # A run of bodies is fused and a run of holes cut, at most
+        # _BOOLEAN_BATCH of them per boolean: fusing (or cutting) a run in
+        # pieces is the same solid as fusing it whole, and is what keeps a part
+        # made of a thousand shells inside the memory a build is given.
         cut = steps[i][2]
         tools = TopTools_ListOfShape()
-        while i < len(steps) and steps[i][2] == cut:
+        while i < len(steps) and steps[i][2] == cut and tools.Size() < _BOOLEAN_BATCH:
             tools.Append(steps[i][1])
             i += 1
         args = TopTools_ListOfShape()
