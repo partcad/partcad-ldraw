@@ -35,10 +35,12 @@ import zipfile
 
 # When this plugin's answers stopped meaning what they meant before.
 #
-# PartCAD keys the cache of everything this returns - and the directory the
-# plugin's own files are materialized into - on this number. Nothing else tells
-# it that the code has moved on, so an existing checkout goes on being served
-# what it cached until this is raised.
+# PartCAD keys the cache of everything this returns - the directory the
+# plugin's own files are materialized into, and every part built from what it
+# serves - on this number. Nothing else tells it that the code has moved on, so
+# an existing checkout goes on being served what it cached until this is
+# raised. That includes ldraw.py: what a part is depends on the code that builds
+# it, so a change to ldraw.py that changes a part raises this too.
 #
 # v1 added the LEGO stud / anti-stud interfaces to every Brick / Plate / Tile;
 # v2 added the Technic interfaces (pin, pin hole, axle, axle hole) and the stud
@@ -71,8 +73,10 @@ import zipfile
 # them ran out of memory and took the build down, and carries the patches
 # written since v14 (59154, 59155, 58132, s/58132s01, s/58134s01 and
 # s/62531s01), which make the XL motor (58121), the IR remote (58122) and the
-# 11 x 2 x 3 panel (62531) solids.
-CACHE_VERSION = 15
+# 11 x 2 x 3 panel (62531) solids; v16 serves the ldraw.py that joins each run
+# of a part's faces lying in one plane into one face, so the flat side of a
+# beam is one face rather than the hundreds of triangles LDraw draws it with.
+CACHE_VERSION = 16
 
 _BASE = "https://library.ldraw.org"
 _CATEGORY_LIST_URL = _BASE + "/parts/category-list"
