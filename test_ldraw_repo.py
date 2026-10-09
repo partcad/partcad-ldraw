@@ -66,7 +66,10 @@ def test_part_config_tolerates_missing_metadata():
     assert cfg == {
         "type": ":ldraw",
         "dat": "zzz-not-a-part.dat",
-        "parameters": {"dat": {"type": "string", "default": "zzz-not-a-part.dat"}},
+        "parameters": {
+            "dat": {"type": "string", "default": "zzz-not-a-part.dat"},
+            "build": {"type": "int", "default": plugin.BUILD_VERSION},
+        },
     }
 
 
@@ -1290,6 +1293,14 @@ def test_part_config_declares_the_dat_as_a_parameter():
     assert a["parameters"]["dat"]["default"] == "3001.dat"
     assert b["parameters"]["dat"]["default"] == "3003.dat"
     assert a["parameters"] != b["parameters"]
+
+
+def test_every_part_is_keyed_on_the_ldraw_py_that_builds_it():
+    # The cache key is the config, so a part built by an older ldraw.py would
+    # otherwise go on being read back after the wrapper changed what it builds.
+    for cfg in (plugin._part_config("3001", ("Brick  2 x  4", None, None)), plugin._part_config("x1", None)):
+        assert cfg["parameters"]["build"] == {"type": "int", "default": plugin.BUILD_VERSION}
+    assert isinstance(plugin.BUILD_VERSION, int) and plugin.BUILD_VERSION >= 1
 
 
 # --- what happens when a fetch does not produce a body ----------------------

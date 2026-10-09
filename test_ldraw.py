@@ -1017,6 +1017,122 @@ def ldraw_topabs_solid():
     return TopAbs_SOLID
 
 
+# --- faces in one plane are one face ------------------------------------------
+
+
+def _count(shape, kind):
+    from OCP.TopAbs import TopAbs_FACE, TopAbs_SOLID, TopAbs_WIRE
+    from OCP.TopExp import TopExp
+    from OCP.TopTools import TopTools_IndexedMapOfShape
+
+    found = TopTools_IndexedMapOfShape()
+    TopExp.MapShapes_s(shape, {"face": TopAbs_FACE, "solid": TopAbs_SOLID, "wire": TopAbs_WIRE}[kind], found)
+    return found.Extent()
+
+
+def _frame():
+    """A 30 x 30 x 10 square frame round a 10 x 10 hole, each flat side drawn as triangles.
+
+    Its top and its bottom are each one flat ring, bounded by two loops: the
+    shape of the face a joined run has wherever a part has a hole through it.
+    """
+
+    def quad(q, facing):
+        n = ldraw._normal(q[0], q[1], q[2])
+        if sum(n[k] * facing[k] for k in range(3)) < 0.0:
+            q = list(reversed(q))
+        return [(q[0], q[1], q[2]), (q[0], q[2], q[3])]
+
+    outer = [(0.0, 0.0), (30.0, 0.0), (30.0, 30.0), (0.0, 30.0)]
+    inner = [(10.0, 10.0), (20.0, 10.0), (20.0, 20.0), (10.0, 20.0)]
+    tris = []
+    for i in range(4):
+        (ax, ay), (bx, by) = outer[i], outer[(i + 1) % 4]
+        (cx, cy), (dx, dy) = inner[(i + 1) % 4], inner[i]
+        out = ((ax + bx) / 2.0 - 15.0, (ay + by) / 2.0 - 15.0, 0.0)
+        tris += quad([(ax, ay, 0.0), (bx, by, 0.0), (cx, cy, 0.0), (dx, dy, 0.0)], (0.0, 0.0, -1.0))
+        tris += quad([(ax, ay, 10.0), (bx, by, 10.0), (cx, cy, 10.0), (dx, dy, 10.0)], (0.0, 0.0, 1.0))
+        tris += quad([(ax, ay, 0.0), (bx, by, 0.0), (bx, by, 10.0), (ax, ay, 10.0)], out)
+        tris += quad([(dx, dy, 0.0), (cx, cy, 0.0), (cx, cy, 10.0), (dx, dy, 10.0)], tuple(-v for v in out))
+    return tris
+
+
+def test_a_flat_side_drawn_as_triangles_is_one_face():
+    _kernel()
+    solid = ldraw._build_shape(_box((0, 0, 0), (10, 10, 10)))
+    assert ldraw._solid_problems(solid) == []
+    assert _count(solid, "face") == 6
+    assert _mm3(solid) == pytest.approx(_mm3_box(10))
+
+
+def test_a_flat_ring_is_one_face_with_its_hole_in_it():
+    _kernel()
+    from OCP.TopAbs import TopAbs_FACE
+    from OCP.TopExp import TopExp_Explorer
+
+    solid = ldraw._build_shape(_frame())
+    assert ldraw._solid_problems(solid) == []
+    # The ring top and bottom, and the four walls outside and the four inside.
+    assert _count(solid, "face") == 10
+    assert _mm3(solid) == pytest.approx((30.0**2 - 10.0**2) * 10.0 * ldraw._LDU_MM**3)
+    explorer = TopExp_Explorer(solid, TopAbs_FACE)
+    loops = []
+    while explorer.More():
+        loops.append(_count(explorer.Current(), "wire"))
+        explorer.Next()
+    assert sorted(loops) == [1] * 8 + [2, 2]
+
+
+def test_a_fold_however_slight_stays_an_edge():
+    # One corner of the box raised by a thousandth of a unit, 0.4 micrometres:
+    # the top is no longer one plane, and its two triangles stay two faces. The
+    # walls the corner moves within are still flat, and still one face each.
+    _kernel()
+    raised = (10.0, 10.0, 10.001)
+    tris = [tuple(raised if p == (10.0, 10.0, 10.0) else p for p in t) for t in _box((0, 0, 0), (10, 10, 10))]
+    solid = ldraw._build_shape(tris)
+    assert ldraw._solid_problems(solid) == []
+    assert _count(solid, "face") == 7
+
+
+def test_faces_in_one_plane_across_two_joined_regions_are_one_face():
+    # Two boxes drawn face to face are joined by the region builder; the sides
+    # they share a plane on are then one face each, as a 20 x 10 x 10 box's are.
+    _kernel()
+    solid = ldraw._build_shape(_box((0, 0, 0), (10, 10, 10)) + _box((10, 0, 0), (20, 10, 10)))
+    assert ldraw._solid_problems(solid) == []
+    assert _count(solid, "face") == 6
+    assert _mm3(solid) == pytest.approx(2 * _mm3_box(10))
+
+
+def test_a_cavity_keeps_its_own_faces_and_its_side():
+    _kernel()
+    tris = _box((0, 0, 0), (10, 10, 10)) + _box((3, 3, 3), (7, 7, 7), outward=False)
+    solid = ldraw._build_shape(tris)
+    assert ldraw._solid_problems(solid) == []
+    assert _count(solid, "face") == 12
+    assert _mm3(solid) == pytest.approx(_mm3_box(10) - _mm3_box(4))
+
+
+def test_each_solid_of_a_part_in_pieces_is_merged():
+    # A part that is two solids is served as a compound of both, and each of
+    # them has its sides joined.
+    _kernel()
+    shape = ldraw._build_shape(_box((0, 0, 0), (10, 10, 10)) + _box((20, 0, 0), (30, 10, 10)))
+    assert ldraw._solid_problems(shape) == []
+    assert _count(shape, "solid") == 2
+    assert _count(shape, "face") == 12
+    assert _mm3(shape) == pytest.approx(2 * _mm3_box(10))
+
+
+def test_a_solid_with_nothing_to_join_is_handed_back_as_it_is():
+    _kernel()
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
+
+    box = BRepPrimAPI_MakeBox(1.0, 2.0, 3.0).Solid()
+    assert ldraw._merge_coplanar(box) is box
+
+
 #
 # The two below reach ldraw.org, and the second wants a CAD kernel as well.
 # Both skip rather than fail where they cannot have what they need, because

@@ -72,6 +72,17 @@ Two mechanisms are combined:
    of the closed shells, cutting the ones LDraw drew facing inward, which are
    its cavities, rather than fusing them.
 
+   Last, each run of faces lying in one plane is joined into one face. LDraw
+   draws everything in triangles, so the flat side of a beam used to come out
+   as hundreds of faces, every edge between two of them an edge of the part:
+   a drawing drew them all, and OpenCASCADE's exact hidden-line removal, which
+   sets memory aside for every pair of edges in the picture, runs out of it on
+   models of a few hundred parts. Joined, the 31 distinct parts of the LEGO F1
+   car have 61% fewer faces and 42% fewer edges. Nothing moves: a joined face
+   is bounded by the edges its pieces were, a face is joined only to one every
+   vertex of which lies in its plane, and a part that comes out any other than
+   valid solids enclosing the same volume is served as it was built.
+
    A part the wrapper cannot close is refused, with the reason, rather than
    handed back as a shell: a shell renders like the part and makes every
    boolean taken against it meaningless. Where the reason is a defect in one
@@ -228,6 +239,13 @@ patch and exactly the parts that read it are built again. A changed patch is
 served only once the cache version is raised, since the repository's answers
 and the wrapper are cached under it; raising it alone does not rebuild a part
 whose configuration is unchanged.
+
+The same is true of `ldraw.py` itself: what a part is depends on the code that
+builds it, which is in no part's configuration. So every part also carries a
+`build` parameter, `BUILD_VERSION` in `ldraw_repo.py`. A change to `ldraw.py`
+that changes a part it already built raises that and the cache version
+together, and every part is built again; one that only builds parts it used to
+refuse needs the cache version alone, since nothing has those cached.
 
 ### The list
 

@@ -71,8 +71,23 @@ import zipfile
 # them ran out of memory and took the build down, and carries the patches
 # written since v14 (59154, 59155, 58132, s/58132s01, s/58134s01 and
 # s/62531s01), which make the XL motor (58121), the IR remote (58122) and the
-# 11 x 2 x 3 panel (62531) solids.
-CACHE_VERSION = 15
+# 11 x 2 x 3 panel (62531) solids; v16 serves the ldraw.py that joins each run
+# of a part's faces lying in one plane into one face (see BUILD_VERSION).
+CACHE_VERSION = 16
+
+# The parts ldraw.py builds, numbered. PartCAD keys a built part on its
+# configuration and not on the code that built it, so a change to ldraw.py that
+# changes the shape of a part it already built reaches nobody who has that part
+# cached: the cache version above serves the new ldraw.py, and every part built
+# by the old one goes on being read back. So every part carries this number as
+# its 'build' parameter (see _part_config), and raising it is what has every
+# part built again. Raise it, together with CACHE_VERSION, whenever ldraw.py
+# changes a part it used to build - and not for one it used to refuse, which
+# nothing has cached. 1 joins each run of a part's faces lying in one plane
+# into one face: the flat side of a beam is one face rather than the hundreds
+# of triangles LDraw draws it with.
+BUILD_VERSION = 1
+_BUILD_PARAMETER = "build"
 
 _BASE = "https://library.ldraw.org"
 _CATEGORY_LIST_URL = _BASE + "/parts/category-list"
@@ -1142,6 +1157,9 @@ def _part_config(pid, meta, category=None):
     # first would then be handed back for all the others. ldraw.py's
     # _resolve_dat() already reads parameters['dat'].
     config["parameters"] = {"dat": {"type": "string", "default": pid + ".dat"}}
+    # And which ldraw.py built it, for the same reason: what a part is depends on
+    # the code that builds it as well as on what it is built from.
+    config["parameters"][_BUILD_PARAMETER] = {"type": "int", "default": BUILD_VERSION}
     # The same reason again for a part built from a patched LDraw file: the
     # patch is part of what the part is, and the parameters are what is keyed.
     digest = _patch_digest(pid)

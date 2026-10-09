@@ -722,6 +722,14 @@ _LOOSE_LDU = 0.02
 # part: the larger of this fraction and three standard errors of the sample.
 _VOLUME_SLACK = 0.1
 _VOLUME_SAMPLES = 2000
+# How far a vertex may lie from a plane and still be in it, for two faces to be
+# joined into one (_merge_coplanar). Triangles LDraw draws in one plane come
+# out within rounding of it, about 1e-12 mm, however they were moved into
+# place; the kernel's own tolerance on an edge is 1e-7 mm, and a face whose
+# edges stray from its surface by more than that is one BRepCheck refuses. So
+# this sits between the two: anything further out is a fold, however slight,
+# and stays an edge.
+_COPLANAR_MM = 1e-9
 
 
 def _weld(tris, tol):
@@ -2170,6 +2178,231 @@ def _manifold(tris):
     return all(n == 2 for n in count.values())
 
 
+def _merge_coplanar(shape):
+    """'shape' with each run of faces in one plane joined into one face, or 'shape' itself.
+
+    Every face a part is built from is one of LDraw's triangles, so the flat
+    side of a beam is hundreds of faces where it is one, and each edge between
+    two of them is an edge of the part. A drawing draws every one of them, and
+    hidden-line removal pays for them twice over: OpenCASCADE's exact algorithm
+    sets memory aside for every pair of edges in the picture. So does every
+    boolean and every tessellation, a little.
+
+    OpenCASCADE has a merge of its own, ShapeUpgrade_UnifySameDomain, and it is
+    not used: it runs out of memory on the parts the region builder makes. This
+    one does less. It joins two faces only across an edge they share, only when
+    every vertex of the one lies in the plane of the other facing the same way,
+    and it bounds the joined face with the edges that bounded its pieces, so no
+    vertex moves and no edge is made. A run whose boundary it cannot follow -
+    an edge three of its faces share, a vertex the boundary passes through
+    twice - is left as the faces it was, as is a joined face the kernel does
+    not take. And the whole is checked as the part was: if it is not valid
+    solids or does not enclose the same volume, the part is served as built.
+    """
+    from OCP.BRep import BRep_Builder, BRep_Tool
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from OCP.BRepCheck import BRepCheck_Analyzer
+    from OCP.BRepGProp import BRepGProp
+    from OCP.GeomAbs import GeomAbs_Plane
+    from OCP.GProp import GProp_GProps
+    from OCP.TopAbs import (
+        TopAbs_COMPOUND,
+        TopAbs_EDGE,
+        TopAbs_FACE,
+        TopAbs_FORWARD,
+        TopAbs_REVERSED,
+        TopAbs_SHELL,
+        TopAbs_SOLID,
+        TopAbs_VERTEX,
+    )
+    from OCP.TopExp import TopExp, TopExp_Explorer
+    from OCP.TopLoc import TopLoc_Location
+    from OCP.TopoDS import TopoDS, TopoDS_Compound, TopoDS_Face, TopoDS_Shell, TopoDS_Solid, TopoDS_Wire
+    from OCP.TopTools import TopTools_IndexedDataMapOfShapeListOfShape, TopTools_IndexedMapOfShape
+
+    builder = BRep_Builder()
+
+    def below(shape, kind):
+        found = []
+        explorer = TopExp_Explorer(shape, kind)
+        while explorer.More():
+            found.append(explorer.Current())
+            explorer.Next()
+        return found
+
+    def volume(shape):
+        props = GProp_GProps()
+        BRepGProp.VolumeProperties_s(shape, props)
+        return props.Mass()
+
+    def plane(face):
+        """(normal, offset) of a planar face, the normal pointing the way the face does; else None."""
+        surface = BRepAdaptor_Surface(face)
+        if surface.GetType() != GeomAbs_Plane:
+            return None
+        pln = surface.Plane()
+        n, o = pln.Axis().Direction(), pln.Location()
+        # The surface's normal is X x Y of its frame, which is the frame's
+        # main direction only when the frame is right-handed.
+        k = 1.0 if pln.Direct() else -1.0
+        if face.Orientation() == TopAbs_REVERSED:
+            k = -k
+        n = (k * n.X(), k * n.Y(), k * n.Z())
+        return n, n[0] * o.X() + n[1] * o.Y() + n[2] * o.Z()
+
+    def joined(members):
+        """One face bounded as 'members' are together, or None."""
+        edges = TopTools_IndexedMapOfShape()
+        uses = []
+        for face in members:
+            for edge in below(face, TopAbs_EDGE):
+                if edge.Orientation() not in (TopAbs_FORWARD, TopAbs_REVERSED):
+                    return None  # an edge drawn on the face rather than round it
+                i = edges.Add(edge)
+                if i > len(uses):
+                    uses.append([])
+                uses[i - 1].append(TopoDS.Edge_s(edge))
+        if any(len(u) > 2 for u in uses):
+            return None
+        # An edge two of them share is inside the face; the rest bound it, each
+        # running the way round its own face ran, which is the way round the
+        # joined face runs too.
+        bounding = [u[0] for u in uses if len(u) == 1]
+        starts = TopTools_IndexedMapOfShape()
+        starting = {}
+        for k, edge in enumerate(bounding):
+            v = starts.Add(TopExp.FirstVertex_s(edge, True))
+            if v in starting:
+                return None  # the boundary passes through this vertex twice
+            starting[v] = k
+        wires = []
+        taken = [False] * len(bounding)
+        for first in range(len(bounding)):
+            if taken[first]:
+                continue
+            wire = TopoDS_Wire()
+            builder.MakeWire(wire)
+            k = first
+            while not taken[k]:
+                taken[k] = True
+                builder.Add(wire, bounding[k])
+                k = starting.get(starts.FindIndex(TopExp.LastVertex_s(bounding[k], True)))
+                if k is None:
+                    return None
+            if k != first:
+                return None  # ran into a loop part-way round: not a loop
+            wire.Closed(True)
+            wires.append(wire)
+        # The joined face lies on the first face's surface. Its wires run the
+        # way the faces did as the shell has them, so on a surface facing the
+        # other way they go on turned round and the face is turned round after.
+        location = TopLoc_Location()
+        surface = BRep_Tool.Surface_s(members[0], location)
+        face = TopoDS_Face()
+        builder.MakeFace(face, surface, location, max(BRep_Tool.Tolerance_s(m) for m in members))
+        backwards = members[0].Orientation() == TopAbs_REVERSED
+        for wire in wires:
+            builder.Add(face, wire.Reversed() if backwards else wire)
+        if backwards:
+            face = TopoDS.Face_s(face.Reversed())
+        if not BRepCheck_Analyzer(face).IsValid():
+            return None
+        return face
+
+    def merged_shell(shell):
+        """The shell with its coplanar runs joined, and how many faces fewer it has."""
+        forward = shell.Oriented(TopAbs_FORWARD)
+        faces = [TopoDS.Face_s(f) for f in below(forward, TopAbs_FACE)]
+        index = TopTools_IndexedMapOfShape()
+        for face in faces:
+            index.Add(face)
+        planes = [plane(face) for face in faces]
+        corners = [
+            [BRep_Tool.Pnt_s(TopoDS.Vertex_s(v)) for v in below(face, TopAbs_VERTEX)] if planes[i] else None
+            for i, face in enumerate(faces)
+        ]
+        across = [[] for _ in faces]
+        ancestors = TopTools_IndexedDataMapOfShapeListOfShape()
+        TopExp.MapShapesAndAncestors_s(forward, TopAbs_EDGE, TopAbs_FACE, ancestors)
+        for k in range(1, ancestors.Extent() + 1):
+            pair = sorted({index.FindIndex(f) - 1 for f in ancestors.FindFromIndex(k)})
+            if len(pair) == 2:
+                across[pair[0]].append(pair[1])
+                across[pair[1]].append(pair[0])
+
+        # Runs are grown from a face outwards, and every face taken in is held
+        # to that first face's plane: held only to its neighbour's, a run could
+        # creep round a curve a hair at a time.
+        run = [None] * len(faces)
+        runs = []
+        for seed in range(len(faces)):
+            if run[seed] is not None or planes[seed] is None:
+                continue
+            (nx, ny, nz), offset = planes[seed]
+            run[seed] = len(runs)
+            members = [seed]
+            todo = [seed]
+            while todo:
+                i = todo.pop()
+                for j in across[i]:
+                    if run[j] is not None or planes[j] is None:
+                        continue
+                    n = planes[j][0]
+                    if n[0] * nx + n[1] * ny + n[2] * nz <= 0.5:
+                        continue
+                    if all(abs(p.X() * nx + p.Y() * ny + p.Z() * nz - offset) <= _COPLANAR_MM for p in corners[j]):
+                        run[j] = len(runs)
+                        members.append(j)
+                        todo.append(j)
+            runs.append(members)
+
+        out = TopoDS_Shell()
+        builder.MakeShell(out)
+        fewer = 0
+        for i, face in enumerate(faces):
+            if run[i] is None:
+                builder.Add(out, face)
+        for members in runs:
+            face = joined([faces[i] for i in members]) if len(members) > 1 else None
+            if face is None:
+                for i in members:
+                    builder.Add(out, faces[i])
+            else:
+                builder.Add(out, face)
+                fewer += len(members) - 1
+        out.Closed(BRep_Tool.IsClosed_s(forward))
+        return out.Oriented(shell.Orientation()), fewer
+
+    def merged_solid(solid):
+        out = TopoDS_Solid()
+        builder.MakeSolid(out)
+        fewer = 0
+        for shell in below(solid.Oriented(TopAbs_FORWARD), TopAbs_SHELL):
+            merged, n = merged_shell(TopoDS.Shell_s(shell))
+            builder.Add(out, merged)
+            fewer += n
+        return out.Oriented(solid.Orientation()), fewer
+
+    if shape.ShapeType() == TopAbs_SOLID:
+        result, fewer = merged_solid(shape)
+    elif shape.ShapeType() == TopAbs_COMPOUND:
+        result = TopoDS_Compound()
+        builder.MakeCompound(result)
+        fewer = 0
+        for solid in below(shape, TopAbs_SOLID):
+            merged, n = merged_solid(TopoDS.Solid_s(solid))
+            builder.Add(result, merged)
+            fewer += n
+    else:
+        return shape
+    if not fewer:
+        return shape
+    before = volume(shape)
+    if _solid_problems(result) or abs(volume(result) - before) > 1e-6 * max(1.0, abs(before)):
+        return shape
+    return result
+
+
 def _build_shape(tris, uncertified=False):
     """The part's solid, or LDrawNotSolid saying why there is none. Never a shell.
 
@@ -2204,7 +2437,7 @@ def _build_shape(tris, uncertified=False):
         except Exception:
             solid = None
         if solid is not None and not _solid_problems(solid):
-            return solid
+            return _merge_coplanar(solid)
 
     mended = _weld(list(tris), _WELD_LDU)
     if uncertified:
@@ -2244,7 +2477,7 @@ def _build_shape(tris, uncertified=False):
     found = _solid_problems(solid)
     if found:
         raise LDrawNotSolid("what was built is %s" % ", ".join(found))
-    return solid
+    return _merge_coplanar(solid)
 
 
 if __name__ == "__partcad_part__":
