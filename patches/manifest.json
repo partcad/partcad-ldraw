@@ -98,7 +98,7 @@
         "and leaves the wall, the boss and the strip on top (58134.dat line 26) a gap to the outside. The corner is moved to",
         "x = 3.5, inside the boss's wall, where the wall ends. The subpart is placed twice, mirrored, so both sides are mended.",
         "The file also says \"Needs Work: Internal surface not exact\"; nothing is authored for that.",
-        "58134 builds 10,656 mm^3 against 10,148 +- 58 sampled. Every sample on which the two disagree is inside the solid",
+        "58134 built 10,656 mm^3 against 10,148 +- 58 sampled when this was written; it builds 10,730 mm^3 since the library rounded the corners of its Technic pin holes (npeghol2.dat and the beam 32524 it carries), which this patch has no part in. Every sample on which the two disagree is inside the solid",
         "and has a winding number of 0.32-0.5 - all of them in the side walls that carry the Technic beam (32524) at",
         "x = -/+41..49: the surface's winding there sits up to 0.3 below its whole value, where the beam overlaps the walls,",
         "while crossing the outer wall still raises it by 0.7-1.0. The sampled estimate's 0.5 threshold drops those walls;",
