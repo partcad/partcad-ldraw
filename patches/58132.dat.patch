@@ -12,12 +12,12 @@
 0 //    from y = -24 to -56 at z = -99, so it is closed by the plane through
 0 //    the two top edges and by the plane z = -99.
 0 // 3. The channel selector's slot, x = -/+8 between z = 29.7 and 68.3: its
-0 //    walls (s\58132s01.dat line 354) and rounded ends (lines 349-353) are
+0 //    walls (s\58132s01.dat line 355) and rounded ends (lines 350-354) are
 0 //    drawn down to their bottom edges and no further. Its floor is closed
 0 //    on those edges: a quad between the walls' bottom edges and a 1-4chrd
-0 //    on each end's bottom edge (the matrices of its 1-4edge lines, 350 and
-0 //    353 of the subpart, carried into this file).
-0 !PATCH AFTER 485
+0 //    on each end's bottom edge (the matrices of its 1-4edge lines, 351 and
+0 //    354 of the subpart, carried into this file).
+0 !PATCH AFTER 486
 4 16 -19 -24 -99 -18 -24 -97 18 -24 -97 19 -24 -99
 4 16 -18 -24 -97 -38 -32 -88 38 -32 -88 18 -24 -97
 4 16 -38 -32 -88 -41 -38 -69 41 -38 -69 38 -32 -88
