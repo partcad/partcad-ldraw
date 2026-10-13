@@ -1482,6 +1482,60 @@ def test_a_patch_goes_on_as_the_file_is_read_and_the_cache_keeps_the_original(tm
     assert (tmp_path / "s" / "tests01.dat").read_bytes() == _UPSTREAM.replace("\n", "\r\n").encode("latin-1")
 
 
+def test_a_cached_copy_older_than_its_patch_is_fetched_again(tmp_path, monkeypatch):
+    # The library re-served the file after this machine cached it (its move to
+    # CC BY 4.0 rewrote every header), and the patch was rebased onto the new
+    # text. The cached copy is asked for again, once, and replaced by the text
+    # the patch is pinned to - or the part would be refused here and nowhere else.
+    monkeypatch.setattr(ldraw, "_ldraw_fetch", _REAL_FETCH)
+    monkeypatch.setattr(ldraw, "_refetched", set())
+    _with_patches(monkeypatch, {"s/tests01.dat": (_UPSTREAM, "0 !PATCH ADD\n3 16 1 0 0 0 1 0 0 0 1\n")})
+    asked = []
+
+    def _get(key, deadline=None):
+        asked.append(key)
+        return _UPSTREAM.replace("\n", "\r\n"), None
+
+    monkeypatch.setattr(ldraw, "_ldraw_get", _get)
+    (tmp_path / "s").mkdir()
+    stale = _UPSTREAM.replace("0 Test Part", "0 Test Part, as it was")
+    (tmp_path / "s" / "tests01.dat").write_text(stale, encoding="latin-1")
+    for _ in range(2):
+        assert ldraw._ldraw_fetch("s/tests01.dat", str(tmp_path)).endswith("3 16 1 0 0 0 1 0 0 0 1\n")
+    assert asked == ["s/tests01.dat"]
+    cached = (tmp_path / "s" / "tests01.dat").read_text(encoding="latin-1")
+    assert ldraw._content_hash(cached) == ldraw._content_hash(_UPSTREAM)
+
+
+def test_a_cached_copy_the_library_has_not_replaced_is_kept(tmp_path, monkeypatch, capsys):
+    # What the library serves is not the pinned text either: the cached copy is
+    # read as it is, unpatched, and the library is not asked again.
+    monkeypatch.setattr(ldraw, "_ldraw_fetch", _REAL_FETCH)
+    monkeypatch.setattr(ldraw, "_refetched", set())
+    _with_patches(monkeypatch, {"s/tests01.dat": (_UPSTREAM, "0 !PATCH ADD\n3 16 1 0 0 0 1 0 0 0 1\n")})
+    asked = []
+    other = _UPSTREAM.replace("0 Test Part", "0 Test Part, revised again")
+    monkeypatch.setattr(ldraw, "_ldraw_get", lambda key, deadline=None: (asked.append(key), (other, None))[1])
+    (tmp_path / "s").mkdir()
+    stale = _UPSTREAM.replace("0 Test Part", "0 Test Part, as it was")
+    (tmp_path / "s" / "tests01.dat").write_text(stale, encoding="latin-1")
+    assert ldraw._ldraw_fetch("s/tests01.dat", str(tmp_path)) == stale
+    assert ldraw._ldraw_fetch("s/tests01.dat", str(tmp_path)) == stale
+    assert asked == ["s/tests01.dat"]
+    assert (tmp_path / "s" / "tests01.dat").read_text(encoding="latin-1") == stale
+    assert "unpatched" in capsys.readouterr().err
+
+
+def test_a_cached_copy_that_is_the_pinned_text_is_not_fetched_again(tmp_path, monkeypatch):
+    monkeypatch.setattr(ldraw, "_ldraw_fetch", _REAL_FETCH)
+    monkeypatch.setattr(ldraw, "_refetched", set())
+    _with_patches(monkeypatch, {"s/tests01.dat": (_UPSTREAM, "0 !PATCH ADD\n3 16 1 0 0 0 1 0 0 0 1\n")})
+    monkeypatch.setattr(ldraw, "_ldraw_get", lambda key, deadline=None: pytest.fail("asked the library"))
+    (tmp_path / "s").mkdir()
+    (tmp_path / "s" / "tests01.dat").write_text(_UPSTREAM, encoding="latin-1")
+    assert ldraw._ldraw_fetch("s/tests01.dat", str(tmp_path)).endswith("3 16 1 0 0 0 1 0 0 0 1\n")
+
+
 def _ldraw_lines(tris):
     return "".join("3 16 %s\n" % " ".join("%g" % c for p in t for c in p) for t in tris)
 

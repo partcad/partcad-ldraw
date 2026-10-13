@@ -243,7 +243,8 @@ def _ldraw_fetch(name, cache):
             # The cache holds the file as the library serves it, and the patch
             # goes on as it is read: it is the upstream text that a patch is
             # pinned to, so that is the text there has to be to check.
-            return _patched(key, f.read())
+            text = f.read()
+        return _patched(key, _refetched_for_patch(key, text, cached) or text)
     if _negative_is_fresh(cache, key):
         return None
     data, reason = _ldraw_get(key)
@@ -258,6 +259,39 @@ def _ldraw_fetch(name, cache):
     except OSError:
         pass  # an unwritable cache is a slow run, not a broken one
     return _patched(key, data)
+
+
+# Files asked for again because their cached copy is not the text their patch
+# is pinned to (see '_refetched_for_patch'): once per file per process.
+_refetched = set()
+
+
+def _refetched_for_patch(key, text, cached):
+    """The library's text of a patched file whose cached copy is older than its patch, or None.
+
+    The cache keeps a file as it was first fetched, for good, and a patch is
+    pinned to the text the library serves when the patch is written. So when the
+    library re-serves a file - its move to CC BY 4.0 rewrote every file's
+    header, and a patch names lines by number - a cache filled before the patch
+    was rebased holds a text the patch no longer fits, and the part it mends is
+    refused on that machine and nowhere else. Only for such a file, and once per
+    process, the library is asked again; if what it serves now is the pinned
+    text, that replaces the cached copy and is what is read. Otherwise the
+    cached copy is read as before, and '_patched' says why it is not patched.
+    """
+    entry = _patches().get(key)
+    if entry is None or key in _refetched or _content_hash(text) == entry[0]:
+        return None
+    _refetched.add(key)
+    data, _ = _ldraw_get(key)
+    if data is None or _content_hash(data) != entry[0]:
+        return None
+    try:
+        with open(cached, "w", encoding="latin-1") as f:
+            f.write(data)
+    except OSError:
+        pass  # an unwritable cache is a slow run, not a broken one
+    return data
 
 
 # --- patches: known defects in LDraw files, mended as they are read ----------

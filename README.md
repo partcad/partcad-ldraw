@@ -160,11 +160,11 @@ for every part that uses it - and list every one of them in `parts`.
 
 ```json
 {
-  "file": "s/919s01.dat",
-  "sha256": "40fcc09f...",
-  "patch": "s/919s01.dat.patch",
+  "file": "64681.dat",
+  "sha256": "ae5a8002...",
+  "patch": "64681.dat.patch",
   "kind": "correction",
-  "parts": ["58119"],
+  "parts": ["64681"],
   "reason": ["What LDraw gets wrong, with the lines and primitives that show it,", "and what the patch changes."]
 }
 ```
@@ -210,6 +210,21 @@ mean the part is refused again until the patch is rewritten (or found to be no
 longer needed). A patch that does not make sense for the text - a line it names
 that is not there - is skipped the same way. Neither ever fails a build.
 
+The cache keeps a file as it was first fetched, so a machine can hold an older
+text than the one a patch is pinned to. A patched file whose cached copy is not
+the pinned text is fetched again, once per run, and replaces the copy when what
+the library serves now is the pinned text.
+
+When the library changes a patched file, look at what changed before rewriting
+anything. Its move to CC BY 4.0 gave every file a new license line and a blank
+one: the geometry was the same, so each patch only had its lines renumbered and
+its hash pinned again. A file that was re-wound (`BFC CERTIFY CW` to `CCW`, as
+the XL motor's shells were) also has the faces its patch adds reversed with it,
+so they face the way the faces around them do. And a file whose defect the
+library has mended itself needs no patch at all: `s/919s01.dat`, the 9V battery
+box's bracket, had one until its 2023 update put the flat face on the corner
+the cylinder ends at.
+
 ### Adding one
 
 1. Trace the defect to its file and lines, and write the smallest patch that
@@ -252,7 +267,6 @@ part it already built until its cache is cleared.
 | File | Kind | Parts | What it does |
 | --- | --- | --- | --- |
 | `64681.dat` | correction | 64681, its three stickered versions, and 64393 (which mirrors it) | The top face of the lower body stops at x = 6 and the strip it turns up into stands at x = 6.075: a 0.075 LDU slit, 52 long. |
-| `s/919s01.dat` | correction | 58119 and the other 9V battery boxes built from the same bracket (54734, 919, 919c01, 923) | The bracket's 16-sided outer wall ends at x = 3.444 and the flat face beyond it starts at x = 3.56, at the same corner on the true circle: eight strips 0.08-0.12 LDU wide. |
 | `59155.dat` | correction | 58121 (PF XL motor) and the motor body 59154c01, with 59155 itself and the cabled 58121c01 | The front shell's corners at the top and bottom peg holes stand 0.03 LDU outside the boss they meet, and the side holes' channels stop 0.08 LDU short of their boss. The shell's inside is "not modelled"; nothing is authored for it, and the motor builds as its filled housing. |
 | `59154.dat` | correction | the same motor parts, with 59154 itself | The back shell's side ridges peak on the true circle, up to 0.1 LDU outside the front shell's 48-gon where the two meet, and two of its side-window faces run 0.2 LDU past their neighbours, to a corner just outside the boss they meet. |
 | `s/58134s01.dat` | correction | 58134 (PF IR remote, bottom half), and the remotes 58122 and 58135c01 | The inner wall that slopes down to the boss of the hole at the end has its corner on the true circle, 0.05 LDU outside the boss's 16-gon. |
