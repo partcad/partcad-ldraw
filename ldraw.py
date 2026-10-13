@@ -184,7 +184,10 @@ def _ldraw_get(key, deadline=None):
             url = "%s/%s/%s" % (_LDRAW_BASE, sub, key)
             try:
                 req = urllib.request.Request(url, headers={"User-Agent": _LDRAW_UA})
-                with urllib.request.urlopen(req, timeout=_FETCH_TIMEOUT) as resp:
+                # No request outlives the budget: a server that accepts and
+                # then says nothing is waited on for what is left of it.
+                timeout = min(_FETCH_TIMEOUT, max(1.0, deadline - time.monotonic()))
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
                     if resp.status == 200:
                         return resp.read().decode("latin-1"), None
             except urllib.error.HTTPError as e:
@@ -198,7 +201,12 @@ def _ldraw_get(key, deadline=None):
         if len(missing) == len(subdirs):
             return None, _MISSING
         if attempt + 1 < _FETCH_RETRIES:
-            time.sleep(delay)
+            # However long a 429 asks for, the wait ends with the budget: the
+            # next attempt would find it spent and give up anyway.
+            left = deadline - time.monotonic()
+            if left <= 0:
+                return None, _UNAVAILABLE
+            time.sleep(min(delay, left))
     return None, _UNAVAILABLE
 
 
@@ -243,7 +251,8 @@ def _ldraw_fetch(name, cache):
             # The cache holds the file as the library serves it, and the patch
             # goes on as it is read: it is the upstream text that a patch is
             # pinned to, so that is the text there has to be to check.
-            return _patched(key, f.read())
+            text = f.read()
+        return _patched(key, _refetched_for_patch(key, text, cached) or text)
     if _negative_is_fresh(cache, key):
         return None
     data, reason = _ldraw_get(key)
@@ -258,6 +267,49 @@ def _ldraw_fetch(name, cache):
     except OSError:
         pass  # an unwritable cache is a slow run, not a broken one
     return _patched(key, data)
+
+
+# Files asked for again because their cached copy is not the text their patch
+# is pinned to (see '_refetched_for_patch'), once per file per process: the
+# pinned text the library served for each, or None if it did not serve it.
+_refetched = {}
+# How long such a file waits for the library. A cache hit cost no wait at all
+# before, and what it waits for only mends a part that is refused without it,
+# so it gets a fraction of what a file the build cannot do without is given.
+_REFETCH_SECONDS = 15.0
+
+
+def _refetched_for_patch(key, text, cached):
+    """The library's text of a patched file whose cached copy is older than its patch, or None.
+
+    The cache keeps a file as it was first fetched, for good, and a patch is
+    pinned to the text the library serves when the patch is written. So when the
+    library re-serves a file - its move to CC BY 4.0 rewrote every file's
+    header, and a patch names lines by number - a cache filled before the patch
+    was rebased holds a text the patch no longer fits, and the part it mends is
+    refused on that machine and nowhere else. Only for such a file, and once per
+    process, the library is asked again, for '_REFETCH_SECONDS' at most; if
+    what it serves now is the pinned text, that is what is read from then on,
+    in this process whether or not the cache can be written, and it replaces
+    the cached copy. Otherwise the cached copy is read as before, and
+    '_patched' says why it is not patched.
+    """
+    entry = _patches().get(key)
+    if entry is None or _content_hash(text) == entry[0]:
+        return None
+    if key in _refetched:
+        return _refetched[key]
+    _refetched[key] = None
+    data, _ = _ldraw_get(key, deadline=time.monotonic() + _REFETCH_SECONDS)
+    if data is None or _content_hash(data) != entry[0]:
+        return None
+    _refetched[key] = data
+    try:
+        with open(cached, "w", encoding="latin-1") as f:
+            f.write(data)
+    except OSError:
+        pass  # an unwritable cache is a slow run, not a broken one
+    return data
 
 
 # --- patches: known defects in LDraw files, mended as they are read ----------

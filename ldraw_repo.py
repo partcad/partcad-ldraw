@@ -75,8 +75,13 @@ import zipfile
 # s/62531s01), which make the XL motor (58121), the IR remote (58122) and the
 # 11 x 2 x 3 panel (62531) solids; v16 serves the ldraw.py that joins each run
 # of a part's faces lying in one plane into one face, so the flat side of a
-# beam is one face rather than the hundreds of triangles LDraw draws it with.
-CACHE_VERSION = 16
+# beam is one face rather than the hundreds of triangles LDraw draws it with;
+# v17 carries the patches rebased onto the library as library.ldraw.org serves
+# it since its move to CC BY 4.0, which moved every line a patch names (64681
+# was refused again until then), drops the one for s/919s01.dat, whose gap the
+# library has since closed itself, and fetches a patched file again when the
+# copy a machine cached is older than its patch.
+CACHE_VERSION = 17
 
 _BASE = "https://library.ldraw.org"
 _CATEGORY_LIST_URL = _BASE + "/parts/category-list"
