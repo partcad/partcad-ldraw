@@ -163,6 +163,28 @@ def test_the_search_for_one_file_is_bounded_however_slow_the_server_is(monkeypat
     assert len(calls) < len(ldraw._LDRAW_SUBDIRS) * ldraw._FETCH_RETRIES
 
 
+def test_a_throttled_fetch_does_not_wait_past_its_budget(monkeypatch):
+    # A 429 asking for a minute does not outlast a budget of a few seconds: the
+    # wait is cut to what is left of it, and then the fetch gives up.
+    clock = [0.0]
+    slept = []
+
+    def _urlopen(req, timeout=None):
+        raise ldraw.urllib.error.HTTPError(req.full_url, 429, "Too Many Requests", {"Retry-After": "60"}, None)
+
+    def _sleep(seconds):
+        slept.append(seconds)
+        clock[0] += seconds
+
+    monkeypatch.setattr(ldraw.urllib.request, "urlopen", _urlopen)
+    monkeypatch.setattr(ldraw.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(ldraw.time, "sleep", _sleep)
+    text, reason = ldraw._ldraw_get("3020.dat", deadline=5.0)
+    assert text is None and reason == ldraw._UNAVAILABLE
+    assert clock[0] <= 5.0
+    assert slept and max(slept) <= 5.0
+
+
 def test_a_primitive_is_asked_of_the_primitives_directory_first():
     # A round brick is mostly primitives, and each used to be asked of
     # 'official/parts' before 'official/p'.

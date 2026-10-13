@@ -201,7 +201,12 @@ def _ldraw_get(key, deadline=None):
         if len(missing) == len(subdirs):
             return None, _MISSING
         if attempt + 1 < _FETCH_RETRIES:
-            time.sleep(delay)
+            # However long a 429 asks for, the wait ends with the budget: the
+            # next attempt would find it spent and give up anyway.
+            left = deadline - time.monotonic()
+            if left <= 0:
+                return None, _UNAVAILABLE
+            time.sleep(min(delay, left))
     return None, _UNAVAILABLE
 
 
