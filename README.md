@@ -98,7 +98,8 @@ an LDraw unit. No general rule can tell that from a part that really is open
 there - a rule that guessed would guess wrong somewhere else - so those are
 mended one file at a time, by a maintained list of patches applied as the file
 is read. The library's file itself, and the copy in the cache, are left as they
-are.
+are: a patch never changes the text it is applied to. (The cached copy is only
+ever replaced by the library's own newer text - see Pinning.)
 
 A patch is one of two kinds, and says which in its manifest entry (`kind`):
 

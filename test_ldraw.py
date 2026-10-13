@@ -1488,7 +1488,7 @@ def test_a_cached_copy_older_than_its_patch_is_fetched_again(tmp_path, monkeypat
     # text. The cached copy is asked for again, once, and replaced by the text
     # the patch is pinned to - or the part would be refused here and nowhere else.
     monkeypatch.setattr(ldraw, "_ldraw_fetch", _REAL_FETCH)
-    monkeypatch.setattr(ldraw, "_refetched", set())
+    monkeypatch.setattr(ldraw, "_refetched", {})
     _with_patches(monkeypatch, {"s/tests01.dat": (_UPSTREAM, "0 !PATCH ADD\n3 16 1 0 0 0 1 0 0 0 1\n")})
     asked = []
 
@@ -1511,7 +1511,7 @@ def test_a_cached_copy_the_library_has_not_replaced_is_kept(tmp_path, monkeypatc
     # What the library serves is not the pinned text either: the cached copy is
     # read as it is, unpatched, and the library is not asked again.
     monkeypatch.setattr(ldraw, "_ldraw_fetch", _REAL_FETCH)
-    monkeypatch.setattr(ldraw, "_refetched", set())
+    monkeypatch.setattr(ldraw, "_refetched", {})
     _with_patches(monkeypatch, {"s/tests01.dat": (_UPSTREAM, "0 !PATCH ADD\n3 16 1 0 0 0 1 0 0 0 1\n")})
     asked = []
     other = _UPSTREAM.replace("0 Test Part", "0 Test Part, revised again")
@@ -1528,12 +1528,65 @@ def test_a_cached_copy_the_library_has_not_replaced_is_kept(tmp_path, monkeypatc
 
 def test_a_cached_copy_that_is_the_pinned_text_is_not_fetched_again(tmp_path, monkeypatch):
     monkeypatch.setattr(ldraw, "_ldraw_fetch", _REAL_FETCH)
-    monkeypatch.setattr(ldraw, "_refetched", set())
+    monkeypatch.setattr(ldraw, "_refetched", {})
     _with_patches(monkeypatch, {"s/tests01.dat": (_UPSTREAM, "0 !PATCH ADD\n3 16 1 0 0 0 1 0 0 0 1\n")})
     monkeypatch.setattr(ldraw, "_ldraw_get", lambda key, deadline=None: pytest.fail("asked the library"))
     (tmp_path / "s").mkdir()
     (tmp_path / "s" / "tests01.dat").write_text(_UPSTREAM, encoding="latin-1")
     assert ldraw._ldraw_fetch("s/tests01.dat", str(tmp_path)).endswith("3 16 1 0 0 0 1 0 0 0 1\n")
+
+
+def test_a_refetched_text_is_kept_for_the_run_when_the_cache_cannot_be_written(tmp_path, monkeypatch):
+    # The fresh text could not replace the cached copy: every later read in this
+    # run still gets it, rather than the stale copy unpatched.
+    monkeypatch.setattr(ldraw, "_ldraw_fetch", _REAL_FETCH)
+    monkeypatch.setattr(ldraw, "_refetched", {})
+    _with_patches(monkeypatch, {"s/tests01.dat": (_UPSTREAM, "0 !PATCH ADD\n3 16 1 0 0 0 1 0 0 0 1\n")})
+    monkeypatch.setattr(ldraw, "_ldraw_get", lambda key, deadline=None: (_UPSTREAM, None))
+    (tmp_path / "s").mkdir()
+    stale = _UPSTREAM.replace("0 Test Part", "0 Test Part, as it was")
+    (tmp_path / "s" / "tests01.dat").write_text(stale, encoding="latin-1")
+    real_open = open
+
+    def _read_only(path, mode="r", *args, **kwargs):
+        if "w" in mode:
+            raise OSError("read-only cache")
+        return real_open(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr(ldraw, "open", _read_only, raising=False)
+    for _ in range(2):
+        assert ldraw._ldraw_fetch("s/tests01.dat", str(tmp_path)).endswith("3 16 1 0 0 0 1 0 0 0 1\n")
+    assert (tmp_path / "s" / "tests01.dat").read_text(encoding="latin-1") == stale
+
+
+def test_a_refetch_waits_for_the_library_a_short_while_only(tmp_path, monkeypatch):
+    # A cache hit cost no wait before; asking about a stale copy is bounded well
+    # inside what a file the build cannot do without is given.
+    monkeypatch.setattr(ldraw, "_ldraw_fetch", _REAL_FETCH)
+    monkeypatch.setattr(ldraw, "_refetched", {})
+    _with_patches(monkeypatch, {"s/tests01.dat": (_UPSTREAM, "0 !PATCH ADD\n3 16 1 0 0 0 1 0 0 0 1\n")})
+    monkeypatch.setattr(ldraw.time, "monotonic", lambda: 1000.0)
+    deadlines = []
+    monkeypatch.setattr(ldraw, "_ldraw_get", lambda key, deadline=None: (deadlines.append(deadline), (None, "x"))[1])
+    (tmp_path / "s").mkdir()
+    (tmp_path / "s" / "tests01.dat").write_text(_UPSTREAM.replace("0 Test Part", "0 Old"), encoding="latin-1")
+    ldraw._ldraw_fetch("s/tests01.dat", str(tmp_path))
+    assert deadlines == [1000.0 + ldraw._REFETCH_SECONDS]
+    assert ldraw._REFETCH_SECONDS < ldraw._FETCH_SECONDS
+
+
+def test_no_request_is_given_longer_than_what_is_left_of_the_budget(monkeypatch):
+    timeouts = []
+
+    def _urlopen(req, timeout=None):
+        timeouts.append(timeout)
+        raise OSError("timed out")
+
+    monkeypatch.setattr(ldraw.urllib.request, "urlopen", _urlopen)
+    monkeypatch.setattr(ldraw.time, "monotonic", lambda: 50.0)
+    monkeypatch.setattr(ldraw.time, "sleep", lambda s: None)
+    ldraw._ldraw_get("3020.dat", deadline=55.0)
+    assert timeouts and max(timeouts) <= 5.0
 
 
 def _ldraw_lines(tris):
