@@ -14,9 +14,13 @@ desc: |
   is vendored.
 url: https://library.ldraw.org/
 
-# Requires the PartCAD version that introduced partTypes and plugin-backed
-# (external) packages.
-partcad: ">=0.7.146"
+# Requires the PartCAD release that keys every object a repository plugin
+# serves on the CACHE_VERSION the plugin states in its own script
+# (partcad/partcad#767, in 0.8.188). An older one keys the plugin's answers on
+# it but not the parts built from them, so it goes on handing back parts built
+# by an earlier ldraw.py - and before partcad/partcad#703 it read the number
+# from this file instead, which no longer carries one.
+partcad: ">=0.8.188"
 
 docs:
   name: LDraw for PartCAD
@@ -34,45 +38,6 @@ dependencies:
     type: external
     plugin: :ldraw_repo
     desc: The LDraw parts library, with one sub-package per category.
-    # Kept for PartCAD releases older than partcad/partcad#703, which read the
-    # number from here. From that release on it is the plugin that states it,
-    # as 'CACHE_VERSION' in ldraw_repo.py, and this is ignored with a warning -
-    # so the two have to be raised together until the older releases are no
-    # longer supported, and then this one goes.
-    #
-    # Bump whenever ldraw_repo.py changes the shape of the data it returns, so
-    # stale entries cached by an older plugin are invalidated. v1 added the LEGO
-    # stud / anti-stud interfaces to every Brick / Plate / Tile config; v2 added
-    # the Technic interfaces (pin, pin hole, axle, axle hole) and the stud grid
-    # of the Technic bricks that carry them; v3 added the gear, minifig, Duplo,
-    # wheel/tyre and RJ12 interfaces; v4 moved the studs off the part's name and
-    # onto its geometry, which changes which studs a part carries and where; v5
-    # did the same for the anti-studs underneath, and added the headgear socket
-    # and the 3/4 pin, both of which the geometry settles and a name cannot; v6
-    # raised the geometry walk's budget so that no part is cut off before the
-    # walk finishes, which is what the last 198 of them were; v7 serves the axle
-    # holes the Mindstorms parts were already known to have but never got; v8
-    # reads every part's Technic connectors from its geometry rather than from
-    # the 80 names the rules happened to cover; v9 turned every part upright,
-    # which moves every port and re-meshes every part - and, because the key
-    # also names the directory the plugin's own files are materialized into, is
-    # what makes a cached 'ldraw.py' from before the turn stop being served;
-    # v10 serves the axle hole inside every "Technic Bush" primitive, which is
-    # what the cross blocks and the bushes are drawn with; v11 serves a part as
-    # a solid or not at all; v12 closes seams v11 refused or leaked through, so
-    # more parts are solids and some gain bodies their v11 solid had lost; v13
-    # carries the patches to particular LDraw files (patches/), which make
-    # more parts solids, and keys each patched part on its patches; v14 mends a
-    # mirrored surface into the mirror image of what its original mends into,
-    # so 64393, which is 64681 mirrored, is a solid as 64681 is; v15 fuses a
-    # part's shells a batch at a time, so the 32 x 32 baseplate (3811) is
-    # built where fusing its 1024 studs at once ran out of memory and crashed,
-    # and carries the patches written since v14, which make the XL motor
-    # (58121), the IR remote (58122) and the 11 x 2 x 3 panel (62531) solids;
-    # v16 joins each run of a part's faces lying in one plane into one face;
-    # v17 rebases the patches onto the library as it is served since its move
-    # to CC BY 4.0, and drops the one the library made unneeded.
-    cacheVersion: 17
 
 repositories:
   ldraw_repo:

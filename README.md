@@ -237,8 +237,7 @@ the cylinder ends at.
 4. Check that the part builds, and how its volume and extent compare with an
    independent estimate; run the tests, which check the manifest (and, with
    `LDRAW_LIBRARY` set to an unpacked library, each patch against its file).
-5. Raise `CACHE_VERSION` in `ldraw_repo.py` and `cacheVersion` in
-   `partcad.yaml`.
+5. Raise `CACHE_VERSION` in `ldraw_repo.py`.
 
 ### How a patch reaches a build, and the cache
 
@@ -259,9 +258,10 @@ What a part is also depends on the code that builds it, `ldraw.py`, which is in
 no part's configuration. That is what the cache version is for: PartCAD keys
 every object a repository plugin serves on the `CACHE_VERSION` the plugin
 states, so raising it - which a change to `ldraw.py` does anyway, to be served
-at all - has every part built again. An older PartCAD keys the repository's
-answers on it but not the parts built from them, and goes on handing back a
-part it already built until its cache is cleared.
+at all - has every part built again. That is why `partcad.yaml` requires
+PartCAD 0.8.188 or later: an older one keys the repository's answers on it but
+not the parts built from them, and goes on handing back a part it already built
+until its cache is cleared.
 
 ### The list
 
@@ -682,8 +682,10 @@ everything that failed without re-fetching what did not.
 
 ## Requirements
 
-Requires a PartCAD version that provides plugin-backed (`external`) packages and
-`partTypes` (`partcad: ">=0.7.146"` in `partcad.yaml`). Because parts are fetched
+Requires PartCAD 0.8.188 or later (`partcad: ">=0.8.188"` in `partcad.yaml`):
+the first release that keys every part a plugin serves on the plugin's own
+`CACHE_VERSION`, so a part is built again whenever the code that builds it
+changes. Because parts are fetched
 on demand, first use of a part or category needs network access; afterwards the
 cache is used.
 
