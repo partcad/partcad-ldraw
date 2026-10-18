@@ -1162,6 +1162,9 @@ def _part_config(pid, meta, category=None):
         config["author"] = author
     if lic:
         config["license"] = lic
+    if category not in _NOT_SOLD:
+        config["vendor"] = _VENDOR
+        config["sku"] = _sku(pid, desc)
     implements = _indexed_implements(pid, category)
     if implements is _NOT_INDEXED:
         # Not a part the index knows: work them out the long way, which reads
@@ -1194,7 +1197,64 @@ def _catalog(category):
         return {pid: _part_config(pid, _dat_header(pid, category), category) for pid in ids}
     with concurrent.futures.ThreadPoolExecutor(max_workers=_HEADER_WORKERS) as pool:
         metas = list(pool.map(_dat_header, ids))
-    return {pid: _part_config(pid, meta) for pid, meta in zip(ids, metas)}
+    return {pid: _part_config(pid, meta, category) for pid, meta in zip(ids, metas)}
+
+
+# --- where a part is bought --------------------------------------------------
+#
+# A LEGO part is something to order rather than to make, so every part says so:
+# its vendor is LEGO and its SKU is its LDraw number. That is LEGO's own design
+# ID wherever LDraw knows it, which for the parts a store stocks it nearly
+# always does; where LDraw had to tell apart two moulds LEGO numbers the same,
+# it is the design ID with a letter after it (3942b). It is not what any one
+# store calls the part - LEGO sells elements, a design in a colour, and BrickLink
+# and Brick Owl number their catalogues their own way - so each store under
+# //pub/universe/lego translates it into its own catalogue (see the README,
+# "Buying the parts"). A part carries no colour, because the geometry has none:
+# the colour to buy is something a store is told.
+#
+# The SKU is not the part's name in every case. A part LDraw has moved to another
+# number ("~Moved to 3665") is ordered as the part it moved to.
+_VENDOR = "lego"
+
+# What the parts of every category are looked for at, in this order: LEGO's own
+# shop, then the two marketplaces, then the collection of parts already owned.
+# Absolute rather than relative to the category ("../../bricklink"), because
+# PartCAD resolves one ".." of a reference and not two.
+_SUPPLIERS = (
+    "//pub/universe/lego/pick-a-brick:pick-a-brick",
+    "//pub/universe/lego/bricklink:bricklink",
+    "//pub/universe/lego/brickowl:brickowl",
+    "//pub/universe/lego/rebrickable:rebrickable",
+)
+
+# The categories whose files are not LEGO parts at all. 'Helper' is a light
+# source for renderers.
+_NOT_SOLD = frozenset(["Helper"])
+
+# How many "~Moved to" hops are followed to the part that is sold.
+_MAX_MOVES = 4
+
+
+def _sku(pid, desc):
+    """What a part is ordered by: its LDraw number, or the number it moved to."""
+    seen = {pid}
+    while desc:
+        m = _MOVED_RE.match(desc.strip())
+        if not m or m.group(1) in seen or len(seen) > _MAX_MOVES:
+            break
+        pid = m.group(1)
+        seen.add(pid)
+        header = _dat_header(pid)
+        desc = header[0] if header else None
+    return pid
+
+
+def _suppliers(category):
+    """The 'suppliers' section of a category's metadata."""
+    if category in _NOT_SOLD:
+        return {}
+    return {name: {} for name in _SUPPLIERS}
 
 
 # --- patches -----------------------------------------------------------------
@@ -1332,10 +1392,14 @@ def get(key):
     if sub == "deps":
         return []
     if sub == "meta":
-        return {
+        meta = {
             "desc": "LDraw parts in the '%s' category." % category,
             "objectKinds": list(_CATEGORY_OBJECT_KINDS),
         }
+        suppliers = _suppliers(category)
+        if suppliers:
+            meta["suppliers"] = suppliers
+        return meta
     if sub == "objects/part":
         return _catalog(category)
     if sub.startswith("objects/part/"):

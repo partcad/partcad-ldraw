@@ -67,7 +67,52 @@ def test_part_config_tolerates_missing_metadata():
         "type": ":ldraw",
         "dat": "zzz-not-a-part.dat",
         "parameters": {"dat": {"type": "string", "default": "zzz-not-a-part.dat"}},
+        "vendor": "lego",
+        "sku": "zzz-not-a-part",
     }
+
+
+# --- buying the parts ---------------------------------------------------------
+
+_STORES = [
+    "//pub/universe/lego/pick-a-brick:pick-a-brick",
+    "//pub/universe/lego/bricklink:bricklink",
+    "//pub/universe/lego/brickowl:brickowl",
+    "//pub/universe/lego/rebrickable:rebrickable",
+]
+
+
+def test_a_part_is_ordered_from_lego_by_its_ldraw_number():
+    cfg = plugin._part_config("3001", ("Brick  2 x  4", None, None), "Brick")
+    assert (cfg["vendor"], cfg["sku"]) == ("lego", "3001")
+    # A mould LDraw tells apart and LEGO does not keeps LDraw's letter: the
+    # stores are what knows which of their items it is.
+    cfg = plugin._part_config("3942b", ("Cone  2 x  2 x  2 with Hollow Stud", None, None), "Cone")
+    assert cfg["sku"] == "3942b"
+
+
+def test_a_part_that_moved_is_ordered_as_the_part_it_moved_to(monkeypatch):
+    headers = {"3665": ("~Moved to 3665a", None, None), "3665a": ("Slope Brick 45  2 x  1 Inverted", None, None)}
+    monkeypatch.setattr(plugin, "_dat_header", lambda pid, category=None: headers.get(pid))
+    assert plugin._part_config("100", ("~Moved to 3665", None, None), "Moved")["sku"] == "3665a"
+
+
+def test_a_move_that_goes_round_in_a_circle_stops(monkeypatch):
+    headers = {"a": ("~Moved to b", None, None), "b": ("~Moved to a", None, None)}
+    monkeypatch.setattr(plugin, "_dat_header", lambda pid, category=None: headers.get(pid))
+    assert plugin._sku("a", "~Moved to b") in ("a", "b")
+
+
+def test_a_file_that_is_not_a_lego_part_is_not_for_sale():
+    cfg = plugin._part_config("light", ("~Light Source", None, None), "Helper")
+    assert "vendor" not in cfg and "sku" not in cfg
+
+
+def test_every_category_of_parts_names_the_lego_stores(_no_network):
+    assert list(plugin.get("Brick/meta")["suppliers"]) == _STORES
+    assert "suppliers" not in plugin.get("Helper/meta")
+    # The library root holds no parts, so it has nothing to buy.
+    assert "suppliers" not in plugin.get("meta")
 
 
 def test_sanitize_category_name():
