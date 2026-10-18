@@ -1217,15 +1217,18 @@ def _catalog(category):
 # number ("~Moved to 3665") is ordered as the part it moved to.
 _VENDOR = "lego"
 
-# What the parts of every category are looked for at, in this order: LEGO's own
-# shop, then the two marketplaces, then the collection of parts already owned.
+# What the parts of every category are looked for at, in this order: the parts
+# already owned (as Rebrickable records them), so that nothing on the shelf is
+# bought again; then LEGO's own shop; then the two marketplaces. PartCAD buys a
+# part from the first of them that has it, and a store that has not been set up
+# - the collection, the marketplaces - says quietly that it has nothing.
 # Absolute rather than relative to the category ("../../bricklink"), because
 # PartCAD resolves one ".." of a reference and not two.
 _SUPPLIERS = (
+    "//pub/universe/lego/rebrickable:rebrickable",
     "//pub/universe/lego/pick-a-brick:pick-a-brick",
     "//pub/universe/lego/bricklink:bricklink",
     "//pub/universe/lego/brickowl:brickowl",
-    "//pub/universe/lego/rebrickable:rebrickable",
 )
 
 # The categories whose files are not LEGO parts at all. 'Helper' is a light

@@ -75,10 +75,10 @@ def test_part_config_tolerates_missing_metadata():
 # --- buying the parts ---------------------------------------------------------
 
 _STORES = [
+    "//pub/universe/lego/rebrickable:rebrickable",
     "//pub/universe/lego/pick-a-brick:pick-a-brick",
     "//pub/universe/lego/bricklink:bricklink",
     "//pub/universe/lego/brickowl:brickowl",
-    "//pub/universe/lego/rebrickable:rebrickable",
 ]
 
 

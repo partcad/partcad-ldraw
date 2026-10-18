@@ -622,6 +622,98 @@ out, which gives 47 parts an axle hole each and changes no port anything had.
 `lego-demo/` builds seven assemblies out of all this, and its `README.md`
 describes the interfaces in detail.
 
+## Buying the parts
+
+A LEGO part is something to order rather than to make, so every part here says
+so: `vendor: lego`, and its LDraw number as its `sku`. (A part LDraw has moved
+to another number is ordered as the one it moved to; the `Helper` category,
+which holds a renderer's light source, is not for sale.) And every category
+names four stores as its suppliers, which live beside the library under
+`//pub/universe/lego`, in the order `pc supply` looks for a part at them:
+
+| Store | Provider | What it needs |
+| --- | --- | --- |
+| The parts you own, as [Rebrickable](https://rebrickable.com) records them | `//pub/universe/lego/rebrickable:rebrickable` | An API key and your user token, or a parts list exported from Rebrickable |
+| LEGO's [Pick a Brick](https://www.lego.com/pick-and-build/pick-a-brick) | `//pub/universe/lego/pick-a-brick:pick-a-brick` | Nothing |
+| [BrickLink](https://www.bricklink.com) | `//pub/universe/lego/bricklink:bricklink` | An account's four OAuth values |
+| [Brick Owl](https://www.brickowl.com) | `//pub/universe/lego/brickowl:brickowl` | Not implemented: its API terms do not allow a tool built with AI-written code |
+
+The parts you own come first so that nothing on the shelf is bought again.
+A store that has not been given what it needs says, quietly, that it has
+nothing, which is what lets every part name all four. Each store's README says
+how to set it up; a package of models can name stores of its own as well, and
+they are asked first (see `//pub/examples/lego`).
+
+```shell
+pc supply quote --provider //pub/universe/lego/pick-a-brick:pick-a-brick //pub/universe/lego/ldraw/Brick:3001#10
+pc supply find //pub/examples/lego:castle
+```
+
+No store sells by an LDraw number alone, and each of them works out what to buy
+for one from two public sources, neither of which needs an account:
+
+* **Rebrickable's catalogue downloads**, for the LEGO elements - a design in a
+  colour - a part has been made as, and which parts are moulds of one another.
+  Where none of a part's own elements is on sale, the mould LEGO makes in its
+  place is bought instead: the friction pin LDraw draws as `2780` is sold as
+  `61332`, the 2L axle `3704` as `32062`, the 2 x 2 cone `3942b` as `3942c`.
+  Only a mould - the same part made again - stands in for a part; one
+  Rebrickable merely calls an *alternate* does not, because the pin without
+  friction that is an alternate of `2780` does not hold an angle.
+* **The LDraw library**, for a *shortcut*: a part drawn together with another
+  one, a wheel with its tyre on (`41896c01`), whose file names the parts it is
+  made of. It is bought as those.
+
+A part has no colour, because the geometry has none, so a store quotes the
+cheapest colour it has unless it is told one (each store's `color`).
+
+## Which numbers to name LEGO parts by
+
+The parts here are named by their LDraw numbers. LEGO has numbers of its own,
+and Pick a Brick sells by them, so it is fair to ask whether LEGO packages in
+PartCAD should be named by LEGO's numbers instead. They should not, and the
+reason is what each numbering counts.
+
+* **An LDraw number** names one shape LDraw draws. It is LEGO's design ID where
+  LDraw knows it, and says what it adds to it: a letter for a mould LEGO did not
+  number apart (`3942a`, `3942b`, `3942c`), `p`/`pr` for a print, `c01` for a
+  shortcut, `-f1` for a pose of a flexible part. 15,634 parts, leaving out the
+  stickers, the obsolete parts and the files that only say a part moved.
+* **A LEGO design ID** names a mould, and LEGO gives the same shape new ones:
+  the 1 x 1 brick `3005` has been sold as designs 3005, 30071 and 35382, and the
+  friction pin is `61332` at Pick a Brick and `2780` everywhere else. A print
+  gets a design ID of its own that says nothing of the part it is printed on.
+  Of the 114,661 elements Rebrickable knows, 21,697 have no design ID at all.
+* **A LEGO element ID**, which is what Pick a Brick sells by, names a design in
+  a colour: `300121` is the 2 x 4 brick in Bright Red. It is a SKU, not a part:
+  the 1 x 1 brick has been 177 of them.
+* **BrickLink, Brick Owl and Rebrickable** number their catalogues their own way,
+  each close to LDraw's and none the same as it; Rebrickable records how the
+  others map to its own.
+
+So no numbering but LDraw's is one name per shape, and a PartCAD part is a
+shape. An element ID is a shape and a colour, and a colour belongs to a part as
+a parameter rather than in its name. A design ID is not stable from one mould
+to the next, and Pick a Brick knows only what is on sale today - about 17,000
+elements in a shop - so a library named by it would lose every part LEGO has
+stopped making: seven of the 31 parts of the LEGO F1 car in
+`//pub/examples/lego`. LEGO publishes no catalogue of its numbers either; the
+open record of them is Rebrickable's, which a library named by them would rest
+on anyway. And where the two numberings could agree, they already do: of the
+7,950 parts LDraw numbers without a suffix, 4,474 are exactly LEGO design IDs,
+and 5,011 once a mould letter is dropped.
+
+What is worth making standard instead is the other side: how a LEGO part says
+it is for sale. Here that is `vendor: lego` with the LDraw number as the SKU,
+and a store's job to translate - and any package that declares LEGO parts the
+same way can be bought at every store here. Two things would take it further.
+A colour parameter on every part, once PartCAD can key a shape's cache on its
+geometry and not on its colour, would let a model say what colour each brick is,
+and its quote stop being the cheapest colour. And PartCAD hands a store only a
+part's vendor and SKU when it asks whether it has it; were it to hand over the
+part's declaration too, the index could carry each part's Rebrickable, BrickLink
+and LEGO numbers, and the stores would not have to work them out.
+
 ## Layout
 
 | Path | Purpose |
@@ -631,6 +723,7 @@ describes the interfaces in detail.
 | `ldraw.py` | The `:ldraw` partType wrapper: fetch + recursively mesh a `.dat`. |
 | `patches/` | The maintained list of patches to LDraw files (see [Patches](#patches)). |
 | `lego-demo/` | Assemblies built purely out of those interfaces. |
+| `pick-a-brick`, `rebrickable`, `bricklink`, `brickowl` | The stores the parts are bought at (see [Buying the parts](#buying-the-parts)): dependencies, each a repository of its own. |
 
 ## Usage
 
