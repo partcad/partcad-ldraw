@@ -10,8 +10,9 @@ and **cached on disk** under `~/.cache/partcad-ldraw/`.
 
 What *does* ship with the package is an index of names: `parts-index.zip`,
 which says which categories exist, which parts are in each, what every part is
-called (with its author and licence) and what it connects with. It is 20,569
-parts in about 1.1 MiB, built by
+called (with its author and licence), what it connects with, and which parts
+LDraw draws as several of LEGO's (see [Shortcuts](#shortcuts-are-assemblies)).
+It is 20,569 parts in about 1.25 MiB, built by
 [`build_parts_index.py`](build_parts_index.py) and committed.
 
 That index is what makes the package usable at all. PartCAD asks for a whole
@@ -315,6 +316,13 @@ touched, so the listings and the archive are not needed:
 ```
 
 That is how the bush's axle hole (below) went in.
+
+What each shortcut is made of (see [Shortcuts](#shortcuts-are-assemblies)) is
+read again the same way, with nothing else in the index touched:
+
+```sh
+./build_parts_index.py --shortcuts path/to/ldraw
+```
 
 It takes names, authors and licences from
 [`complete.zip`](https://library.ldraw.org/library/updates/complete.zip) — one
@@ -628,19 +636,17 @@ A LEGO part is something to order rather than to make, so every part here says
 so: `vendor: lego`, and its LDraw number as its `sku`. (A part LDraw has moved
 to another number is ordered as the one it moved to; the `Helper` category,
 which holds a renderer's light source, is not for sale.) And every category
-names four stores as its suppliers, which live beside the library under
+names three stores as its suppliers, which live beside the library under
 `//pub/universe/lego`, in the order `pc supply` looks for a part at them:
 
 | Store | Provider | What it needs |
 | --- | --- | --- |
-| The parts you own, as [Rebrickable](https://rebrickable.com) records them | `//pub/universe/lego/rebrickable:rebrickable` | An API key and your user token, or a parts list exported from Rebrickable |
 | LEGO's [Pick a Brick](https://www.lego.com/pick-and-build/pick-a-brick) | `//pub/universe/lego/pick-a-brick:pick-a-brick` | Nothing |
 | [BrickLink](https://www.bricklink.com) | `//pub/universe/lego/bricklink:bricklink` | An account's four OAuth values |
-| [Brick Owl](https://www.brickowl.com) | `//pub/universe/lego/brickowl:brickowl` | Not implemented: its API terms do not allow a tool built with AI-written code |
+| [Brick Owl](https://www.brickowl.com) | `//pub/universe/lego/brickowl:brickowl` | An API key approved for its catalogue, and one line of code that a person writes: its API terms do not allow a tool built with AI-written code |
 
-The parts you own come first so that nothing on the shelf is bought again.
 A store that has not been given what it needs says, quietly, that it has
-nothing, which is what lets every part name all four. Each store's README says
+nothing, which is what lets every part name all three. Each store's README says
 how to set it up; a package of models can name stores of its own as well (see
 `//pub/examples/lego`), which a PartCAD that reads them asks first.
 
@@ -650,22 +656,52 @@ pc supply find //pub/examples/lego:castle
 ```
 
 No store sells by an LDraw number alone, and each of them works out what to buy
-for one from two public sources, neither of which needs an account:
-
-* **Rebrickable's catalogue downloads**, for the LEGO elements - a design in a
-  colour - a part has been made as, and which parts are moulds of one another.
-  Where none of a part's own elements is on sale, the mould LEGO makes in its
-  place is bought instead: the friction pin LDraw draws as `2780` is sold as
-  `61332`, the 2L axle `3704` as `32062`, the 2 x 2 cone `3942b` as `3942c`.
-  Only a mould - the same part made again - stands in for a part; one
-  Rebrickable merely calls an *alternate* does not, because the pin without
-  friction that is an alternate of `2780` does not hold an angle.
-* **The LDraw library**, for a *shortcut*: a part drawn together with another
-  one, a wheel with its tyre on (`41896c01`), whose file names the parts it is
-  made of. It is bought as those.
+for one from Rebrickable's catalogue downloads, which need no account: the LEGO
+elements - a design in a colour - a part has been made as, and which parts are
+moulds of one another. Where none of a part's own elements is on sale, the
+mould LEGO makes in its place is bought instead: the friction pin LDraw draws as
+`2780` is sold as `61332`, the 2L axle `3704` as `32062`, the 2 x 2 cone `3942b`
+as `3942c`. Only a mould - the same part made again - stands in for a part; one
+Rebrickable merely calls an *alternate* does not, because the pin without
+friction that is an alternate of `2780` does not hold an angle.
 
 A part has no colour, because the geometry has none, so a store quotes the
 cheapest colour it has unless it is told one (each store's `color`).
+
+### Shortcuts are assemblies
+
+A *shortcut* in the LDraw library is a part drawn together with others, whose
+file does nothing but place them: a wheel with its tyre on (`41896c01`), a
+battery box as its case, two lids and switch (`58119`), a shock absorber with its
+spring (`76320-f2`). LEGO makes those as the separate parts, and sells them so,
+now and then assembled. So each of the 2,715 shortcuts is served here as what it
+is - an **assembly** of its parts, each placed where the shortcut's file places
+it - and is sold as one, with its LDraw number as its SKU:
+
+```shell
+pc info -a //pub/universe/lego/ldraw/Wheel:41896c01
+pc supply quote //pub/universe/lego/ldraw/Wheel:41896c01            # whole, where a store sells it whole
+pc supply quote -r //pub/universe/lego/ldraw/Wheel:41896c01         # as a rim and a tyre
+```
+
+`pc supply` asks for an assembly that is for sale as itself, and `-r` asks for
+its parts instead, which is how Pick a Brick sells a wheel. A model links a
+shortcut as `assembly:` rather than `part:`, by the same name.
+
+It is joined by the same ports. The assembly's `map:` gives each port of its
+parts the name the shortcut, as the one part LDraw draws, gives the port in the
+same place facing the same way: the battery box keeps the `h0` its end holes
+were always joined by, though the hole is now its case's, and the hole in its
+switch, which comes out turned half round its own axis, is mapped with that
+half turn undone - so that every port is the box's exactly, roll and all. A port the shortcut never had - the tyre's bore,
+`d43` - is named as its own part names it, or `<part>-<name>` where two of the
+parts share a name.
+
+Only a file that holds nothing but other parts of the library, none of them
+mirrored, is a shortcut here. One drawn with faces of its own, or with a part in
+it mirrored - which no placement of that part can reproduce - stays a part. A
+shortcut made of shortcuts (the IR receiver with its cable, `58123c01`) is an
+assembly of assemblies.
 
 ## Which numbers to name LEGO parts by
 
@@ -719,11 +755,11 @@ and LEGO numbers, and the stores would not have to work them out.
 | Path | Purpose |
 | --- | --- |
 | `partcad.yaml` | `//pub/universe/lego`; the `ldraw` external dependency (the library), the `ldraw_repo` repository, the `ldraw` partType, and the LEGO interfaces. |
-| `ldraw_repo.py` | Repository plugin: categories, paginated part lists, `.dat`-header metadata, the interfaces each part implements, the partType, and the wrapper file. |
+| `ldraw_repo.py` | Repository plugin: categories, paginated part lists, `.dat`-header metadata, the interfaces each part implements, the shortcuts as assemblies, the partType, and the wrapper file. |
 | `ldraw.py` | The `:ldraw` partType wrapper: fetch + recursively mesh a `.dat`. |
 | `patches/` | The maintained list of patches to LDraw files (see [Patches](#patches)). |
 | `lego-demo/` | Assemblies built purely out of those interfaces. |
-| `pick-a-brick`, `rebrickable`, `bricklink`, `brickowl` | The stores the parts are bought at (see [Buying the parts](#buying-the-parts)): dependencies, each a repository of its own. |
+| `pick-a-brick`, `bricklink`, `brickowl` | The stores the parts are bought at (see [Buying the parts](#buying-the-parts)): dependencies, each a repository of its own. |
 
 ## Usage
 

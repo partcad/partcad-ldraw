@@ -62,6 +62,14 @@ geometry reads the file it patches - read from LIBRARY as the second form does -
 which are the parts whose cache key the patch goes into. Run it whenever a
 patch is added, and when the library is updated.
 
+    ./build_parts_index.py --shortcuts LIBRARY
+
+The fourth writes what each shortcut is made of - every part the library draws
+as other parts, a wheel with its tyre on - into the index ('shortcuts.json'),
+read from LIBRARY, and leaves everything else in it as it is. The plugin serves
+those as assemblies rather than parts. A full rebuild does the same from the
+archive.
+
 Run it when the LDraw library publishes an update; commit the result. The
 list pages are cached on disk between runs like every other fetch, so a second
 run is cheap.
@@ -81,6 +89,7 @@ import zipfile
 
 ARCHIVE_URL = "https://library.ldraw.org/library/updates/complete.zip"
 FORMAT = 3  # a zip: 'index.json' plus one member per category
+SHORTCUTS_MEMBER = "shortcuts.json"  # what each shortcut is made of; see 'shortcuts'
 
 _AUTHOR_LINE = re.compile(r"^0\s+Author:\s*(.+?)\s*$")
 _LICENSE_LINE = re.compile(r"^0\s+!LICENSE\s+(.+?)\s*$")
@@ -152,6 +161,70 @@ def _seed_cache(archive, cache):
                 f.write(z.read(info))
             n += 1
     return n
+
+
+# A file the library types a Shortcut, or numbers as one: 'c' and two digits.
+_SHORTCUT_TYPE = re.compile(r"^0\s+!LDRAW_ORG\s+(\S+)", re.MULTILINE)
+_SHORTCUT_NUMBER = re.compile(r"c\d\d$")
+
+
+def _determinant(m):
+    return m[0] * (m[4] * m[8] - m[5] * m[7]) - m[1] * (m[3] * m[8] - m[5] * m[6]) + m[2] * (m[3] * m[7] - m[4] * m[6])
+
+
+def shortcuts(ids, read):
+    """{shortcut id: [[part id, [x, y, z], [a, ..., i]], ...]} for the parts of 'ids' that are other parts.
+
+    'read(pid)' is the text of a part's file, or None. A shortcut is kept only
+    if every line that draws anything places another part of 'ids', unmirrored:
+    one with faces of its own, or with a primitive or a subpart in it, would
+    lose them as an assembly, and a mirrored part is not one any placement of
+    it can reproduce. Those stay parts. Positions and matrices are LDraw's, as
+    the file has them.
+    """
+    known = {pid.lower(): pid for pid in ids}
+    found = {}
+    for pid in sorted(ids):
+        text = read(pid)
+        if not text:
+            continue
+        kind = _SHORTCUT_TYPE.search(text)
+        if not ((kind and kind.group(1).lower() == "shortcut") or _SHORTCUT_NUMBER.search(pid)):
+            continue
+        components = []
+        for line in text.splitlines():
+            fields = line.split()
+            if not fields or fields[0] in ("0", "2", "5"):
+                continue  # meta, edges and conditional lines draw no surface
+            if fields[0] != "1" or len(fields) < 15:
+                components = None  # faces of its own
+                break
+            ref = " ".join(fields[14:]).replace("\\", "/").lower()
+            part = known.get(ref[:-4]) if ref.endswith(".dat") else None
+            matrix = [float(v) for v in fields[5:14]]
+            if part is None or part == pid or _determinant(matrix) <= 0:
+                components = None
+                break
+            components.append([part, [float(v) for v in fields[2:5]], matrix])
+        if components:
+            found[pid] = components
+    return found
+
+
+def write_shortcuts(path, found):
+    """Put 'found' into the index at 'path' as its shortcuts member, keeping every other member."""
+    with zipfile.ZipFile(path) as z:
+        members = {n: z.read(n) for n in z.namelist() if n != SHORTCUTS_MEMBER}
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+        for name, data in members.items():
+            z.writestr(name, data)
+        z.writestr(SHORTCUTS_MEMBER, json.dumps(dict(sorted(found.items())), separators=(",", ":")))
+    print("%s: %d shortcuts" % (os.path.basename(path), len(found)), file=sys.stderr)
+
+
+def _indexed_ids(path):
+    with zipfile.ZipFile(path) as z:
+        return sorted({pid for ids in json.loads(z.read("index.json"))["categories"].values() for pid in ids})
 
 
 def build(archive, plugin):
@@ -375,12 +448,31 @@ def main():
         "--reaching", nargs="+", default=(), help="with --refresh: the primitives whose users to recompute"
     )
     parser.add_argument(
+        "--shortcuts",
+        metavar="LIBRARY",
+        default=None,
+        help="an unpacked 'ldraw' directory: write what each shortcut is made of into the index",
+    )
+    parser.add_argument(
         "--patch-users",
         metavar="LIBRARY",
         default=None,
         help="an unpacked 'ldraw' directory: fill in the parts each patch in patches/manifest.json is read by",
     )
     args = parser.parse_args()
+
+    if args.shortcuts:
+        files = _library_files_parts(args.shortcuts)
+
+        def read(pid):
+            path = files.get((pid + ".dat").lower())
+            if path is None:
+                return None
+            with open(path, encoding="latin-1") as f:
+                return f.read()
+
+        write_shortcuts(args.output, shortcuts(_indexed_ids(args.output), read))
+        return
 
     if args.patch_users:
         manifest = os.path.join(os.path.dirname(os.path.abspath(__file__)), "patches", "manifest.json")
@@ -416,6 +508,15 @@ def main():
     print("reading the category listings ...", file=sys.stderr)
     index, missing = build(archive, plugin)
     write(index, args.output, plugin)
+
+    def read(pid):
+        path = os.path.join(cache, "parts", (pid + ".dat").lower())
+        if not os.path.exists(path):
+            return None
+        with open(path, encoding="latin-1") as f:
+            return f.read()
+
+    write_shortcuts(args.output, shortcuts(_indexed_ids(args.output), read))
 
     shutil.rmtree(cache, ignore_errors=True)
     parts = sum(len(p) for p in index["categories"].values())
