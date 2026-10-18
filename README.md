@@ -636,14 +636,21 @@ A LEGO part is something to order rather than to make, so every part here says
 so: `vendor: lego`, and its LDraw number as its `sku`. (A part LDraw has moved
 to another number is ordered as the one it moved to; the `Helper` category,
 which holds a renderer's light source, is not for sale.) And every category
-names three stores as its suppliers, which live beside the library under
-`//pub/universe/lego`, in the order `pc supply` looks for a part at them:
+names three stores as its suppliers, in the order `pc supply` looks for a part
+at them:
 
 | Store | Provider | What it needs |
 | --- | --- | --- |
-| LEGO's [Pick a Brick](https://www.lego.com/pick-and-build/pick-a-brick) | `//pub/universe/lego/pick-a-brick:pick-a-brick` | Nothing |
-| [BrickLink](https://www.bricklink.com) | `//pub/universe/lego/bricklink:bricklink` | An account's four OAuth values |
-| [Brick Owl](https://www.brickowl.com) | `//pub/universe/lego/brickowl:brickowl` | An API key approved for its catalogue, and one line of code that a person writes: its API terms do not allow a tool built with AI-written code |
+| LEGO's [Pick a Brick](https://www.lego.com/pick-and-build/pick-a-brick) | `//pub/svc/commerce/lego-pick-a-brick:pick-a-brick` | Nothing |
+| [BrickLink](https://www.bricklink.com) | `//pub/svc/commerce/bricklink:bricklink` | An account's four OAuth values |
+| [Brick Owl](https://www.brickowl.com) | `//pub/svc/commerce/brickowl:brickowl` | An API key approved for its catalogue, and one line of code that a person writes: its API terms do not allow a tool built with AI-written code |
+
+The stores are not part of this package. Each is a repository of its own
+(`svc-commerce-lego-pick-a-brick`, `svc-commerce-bricklink`,
+`svc-commerce-brickowl`), registered by the PartCAD index at
+`//pub/svc/commerce` beside the other stores, and the parts name them there - so
+they are found wherever this library is used through the index. A PartCAD that
+cannot load one passes over it.
 
 A store that has not been given what it needs says, quietly, that it has
 nothing, which is what lets every part name all three. Each store's README says
@@ -651,7 +658,7 @@ how to set it up; a package of models can name stores of its own as well (see
 `//pub/examples/lego`), which a PartCAD that reads them asks first.
 
 ```shell
-pc supply quote --provider //pub/universe/lego/pick-a-brick:pick-a-brick //pub/universe/lego/ldraw/Brick:3001#10
+pc supply quote --provider //pub/svc/commerce/lego-pick-a-brick:pick-a-brick //pub/universe/lego/ldraw/Brick:3001#10
 pc supply find //pub/examples/lego:castle
 ```
 
@@ -759,7 +766,6 @@ and LEGO numbers, and the stores would not have to work them out.
 | `ldraw.py` | The `:ldraw` partType wrapper: fetch + recursively mesh a `.dat`. |
 | `patches/` | The maintained list of patches to LDraw files (see [Patches](#patches)). |
 | `lego-demo/` | Assemblies built purely out of those interfaces. |
-| `pick-a-brick`, `bricklink`, `brickowl` | The stores the parts are bought at (see [Buying the parts](#buying-the-parts)): dependencies, each a repository of its own. |
 
 ## Usage
 

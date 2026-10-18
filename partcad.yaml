@@ -76,21 +76,6 @@ dependencies:
     # shortcut as an assembly of its parts.
     cacheVersion: 18
 
-  # The stores the parts are bought at, each a repository of its own; every
-  # category names them as its suppliers (see "Buying the parts" in the README).
-  pick-a-brick:
-    desc: LEGO's own Pick a Brick shop.
-    type: git
-    url: https://github.com/partcad/svc-commerce-lego-pick-a-brick
-  bricklink:
-    desc: BrickLink, the LEGO marketplace.
-    type: git
-    url: https://github.com/partcad/svc-commerce-bricklink
-  brickowl:
-    desc: Brick Owl, the LEGO marketplace.
-    type: git
-    url: https://github.com/partcad/svc-commerce-brickowl
-
 repositories:
   ldraw_repo:
     type: basic

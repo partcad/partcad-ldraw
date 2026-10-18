@@ -82,8 +82,8 @@ import zipfile
 # library has since closed itself, and fetches a patched file again when the
 # copy a machine cached is older than its patch; v18 serves every part as
 # LEGO's, with its LDraw number as its SKU, and every category's suppliers -
-# the stores under //pub/universe/lego - and serves every shortcut as the
-# assembly of parts it is rather than as a part.
+# the LEGO stores the index registers at //pub/svc/commerce - and serves every
+# shortcut as the assembly of parts it is rather than as a part.
 CACHE_VERSION = 18
 
 _BASE = "https://library.ldraw.org"
@@ -1240,13 +1240,16 @@ _VENDOR = "lego"
 # shop, then the two marketplaces. PartCAD buys a part from the first of them
 # that has it, and a store that has not been set up - a marketplace without its
 # credentials - says quietly that it has nothing, which is what lets every part
-# name all three. Absolute rather than relative to the category
-# ("../../bricklink"), because PartCAD resolves one ".." of a reference and not
-# two.
+# name all three.
+#
+# They are the index's, registered with the other stores at //pub/svc/commerce,
+# and this package does not depend on them: it names them by where the index
+# puts them. So they are there wherever the library is used through the index,
+# and a PartCAD that cannot load one passes over it.
 _SUPPLIERS = (
-    "//pub/universe/lego/pick-a-brick:pick-a-brick",
-    "//pub/universe/lego/bricklink:bricklink",
-    "//pub/universe/lego/brickowl:brickowl",
+    "//pub/svc/commerce/lego-pick-a-brick:pick-a-brick",
+    "//pub/svc/commerce/bricklink:bricklink",
+    "//pub/svc/commerce/brickowl:brickowl",
 )
 
 # The categories whose files are not LEGO parts at all. 'Helper' is a light
