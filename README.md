@@ -641,8 +641,8 @@ names four stores as its suppliers, which live beside the library under
 The parts you own come first so that nothing on the shelf is bought again.
 A store that has not been given what it needs says, quietly, that it has
 nothing, which is what lets every part name all four. Each store's README says
-how to set it up; a package of models can name stores of its own as well, and
-they are asked first (see `//pub/examples/lego`).
+how to set it up; a package of models can name stores of its own as well (see
+`//pub/examples/lego`), which a PartCAD that reads them asks first.
 
 ```shell
 pc supply quote --provider //pub/universe/lego/pick-a-brick:pick-a-brick //pub/universe/lego/ldraw/Brick:3001#10
