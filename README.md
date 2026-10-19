@@ -238,8 +238,7 @@ the cylinder ends at.
 4. Check that the part builds, and how its volume and extent compare with an
    independent estimate; run the tests, which check the manifest (and, with
    `LDRAW_LIBRARY` set to an unpacked library, each patch against its file).
-5. Raise `CACHE_VERSION` in `ldraw_repo.py` and `cacheVersion` in
-   `partcad.yaml`.
+5. Raise `CACHE_VERSION` in `ldraw_repo.py`.
 
 ### How a patch reaches a build, and the cache
 
@@ -815,8 +814,9 @@ everything that failed without re-fetching what did not.
 
 ## Requirements
 
-Requires a PartCAD version that provides plugin-backed (`external`) packages and
-`partTypes` (`partcad: ">=0.7.146"` in `partcad.yaml`). Because parts are fetched
+Requires PartCAD 0.8.174 or newer (`partcad: ">=0.8.174"` in `partcad.yaml`):
+the first release whose assemblies take `turnZ` in their `map:`, which some
+shortcuts' ports need (see [Shortcuts](#shortcuts-are-assemblies)). Because parts are fetched
 on demand, first use of a part or category needs network access; afterwards the
 cache is used.
 
