@@ -1227,9 +1227,8 @@ def _catalog(category):
 # always does; where LDraw had to tell apart two moulds LEGO numbers the same,
 # it is the design ID with a letter after it (3942b). It is not what any one
 # store calls the part - LEGO sells elements, a design in a colour, and BrickLink
-# and Brick Owl number their catalogues their own way - so each store under
-# //pub/universe/lego translates it into its own catalogue (see the README,
-# "Buying the parts"). A part carries no colour, because the geometry has none:
+# and Brick Owl number their catalogues their own way - so each store translates
+# it into its own catalogue (see the README, "Buying the parts"). A part carries no colour, because the geometry has none:
 # the colour to buy is something a store is told.
 #
 # The SKU is not the part's name in every case. A part LDraw has moved to another
@@ -1237,10 +1236,9 @@ def _catalog(category):
 _VENDOR = "lego"
 
 # What the parts of every category are looked for at, in this order: LEGO's own
-# shop, then the two marketplaces. PartCAD buys a part from the first of them
-# that has it, and a store that has not been set up - a marketplace without its
-# credentials - says quietly that it has nothing, which is what lets every part
-# name all three.
+# shop, then BrickLink. PartCAD buys a part from the first of them that has it,
+# and a store that has not been set up - BrickLink without its credentials -
+# says quietly that it has nothing, which is what lets every part name both.
 #
 # They are the index's, registered with the other stores at //pub/svc/commerce,
 # and this package does not depend on them: it names them by where the index
@@ -1249,7 +1247,6 @@ _VENDOR = "lego"
 _SUPPLIERS = (
     "//pub/svc/commerce/lego-pick-a-brick:pick-a-brick",
     "//pub/svc/commerce/bricklink:bricklink",
-    "//pub/svc/commerce/brickowl:brickowl",
 )
 
 # The categories whose files are not LEGO parts at all. 'Helper' is a light

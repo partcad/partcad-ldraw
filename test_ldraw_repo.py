@@ -77,7 +77,6 @@ def test_part_config_tolerates_missing_metadata():
 _STORES = [
     "//pub/svc/commerce/lego-pick-a-brick:pick-a-brick",
     "//pub/svc/commerce/bricklink:bricklink",
-    "//pub/svc/commerce/brickowl:brickowl",
 ]
 
 
