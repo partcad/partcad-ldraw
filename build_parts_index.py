@@ -172,15 +172,33 @@ def _determinant(m):
     return m[0] * (m[4] * m[8] - m[5] * m[7]) - m[1] * (m[3] * m[8] - m[5] * m[6]) + m[2] * (m[3] * m[7] - m[4] * m[6])
 
 
+# How far a placement's rows may be from orthonormal and still be a rotation.
+# LDraw writes rotations to three or four digits - the spiral staircase 40243c01
+# turns its steps by .929 and .383 - and is off by up to 0.015 that way; what is
+# off by more is a scale or a shear (the forklift 4518ac01 squashes its rails to
+# 0.88 of their height), which an assembly's location cannot express.
+_ROTATION_TOLERANCE = 0.05
+
+
+def _is_rotation(m):
+    """Whether the matrix 'm', row by row, turns a part without mirroring, scaling or shearing it."""
+    rows = (m[0:3], m[3:6], m[6:9])
+    for i in range(3):
+        for j in range(3):
+            if abs(sum(a * b for a, b in zip(rows[i], rows[j])) - (i == j)) >= _ROTATION_TOLERANCE:
+                return False
+    return _determinant(m) > 0
+
+
 def shortcuts(ids, read):
     """{shortcut id: [[part id, [x, y, z], [a, ..., i]], ...]} for the parts of 'ids' that are other parts.
 
     'read(pid)' is the text of a part's file, or None. A shortcut is kept only
-    if every line that draws anything places another part of 'ids', unmirrored:
-    one with faces of its own, or with a primitive or a subpart in it, would
-    lose them as an assembly, and a mirrored part is not one any placement of
-    it can reproduce. Those stay parts. Positions and matrices are LDraw's, as
-    the file has them.
+    if every line that draws anything places another part of 'ids', turned and
+    nothing else: one with faces of its own, or with a primitive or a subpart in
+    it, would lose them as an assembly, and a part mirrored, scaled or sheared
+    is not one any placement of it can reproduce. Those stay parts. Positions
+    and matrices are LDraw's, as the file has them.
     """
     known = {pid.lower(): pid for pid in ids}
     found = {}
@@ -202,7 +220,7 @@ def shortcuts(ids, read):
             ref = " ".join(fields[14:]).replace("\\", "/").lower()
             part = known.get(ref[:-4]) if ref.endswith(".dat") else None
             matrix = [float(v) for v in fields[5:14]]
-            if part is None or part == pid or _determinant(matrix) <= 0:
+            if part is None or part == pid or not _is_rotation(matrix):
                 components = None
                 break
             components.append([part, [float(v) for v in fields[2:5]], matrix])
@@ -373,7 +391,11 @@ def refresh(path, library, primitives, plugin):
     os.environ["PARTCAD_LDRAW_CACHE"] = cache
     with zipfile.ZipFile(path) as z:
         meta = json.loads(z.read(plugin._INDEX_META))
-        members = {n: json.loads(z.read(n)) for n in z.namelist() if n != plugin._INDEX_META}
+        # The categories' entries are what is refreshed. Any other member - the
+        # shortcuts - is written back as it was.
+        names = {plugin.member_name(category) for category in meta["categories"]}
+        members = {n: json.loads(z.read(n)) for n in z.namelist() if n in names}
+        others = {n: z.read(n) for n in z.namelist() if n != plugin._INDEX_META and n not in names}
     memo = {}
     changed = kept = 0
     for member, parts in sorted(members.items()):
@@ -397,6 +419,8 @@ def refresh(path, library, primitives, plugin):
         z.writestr(plugin._INDEX_META, json.dumps(meta, separators=(",", ":")))
         for member, parts in members.items():
             z.writestr(member, json.dumps(parts, separators=(",", ":")))
+        for member, data in others.items():
+            z.writestr(member, data)
     print("%s: %d entries refreshed, %d left as they were" % (os.path.basename(path), changed, kept), file=sys.stderr)
 
 

@@ -2086,9 +2086,19 @@ def test_a_port_turned_about_its_axis_is_the_same_port():
 
 
 def test_a_shortcut_of_shortcuts_links_the_inner_one_as_an_assembly(_no_network):
-    # The IR receiver with its cable, which is a shortcut too.
+    # The plate with wheels and tyres, made of the plate with wheels, which is a shortcut too.
+    text = base64.b64decode(plugin.get("Plate/files/122c03.assy")).decode()
+    assert '- assembly: "122c01"' in text
+    assert '- part: "../Tyre:3641"' in text
+
+
+def test_a_shortcut_that_stretches_a_part_is_a_part_where_another_places_it(_no_network):
+    # The IR receiver's cable, u9190c01, stretches the segment it is drawn with
+    # along its length, which no location can, so it stays a part - and the IR
+    # receiver with that cable, 58123c01, links it as one.
+    assert "u9190c01" not in plugin._index().shortcuts()
     text = base64.b64decode(plugin.get("Electric/files/58123c01.assy")).decode()
-    assert '- assembly: "u9190c01"' in text
+    assert '- part: "u9190c01"' in text
     # LDraw places the cable at (0, 10, 40.4); PartCAD's frame is (x, -z, -y) * 0.4.
     assert "location: [[0.0, -16.16, -4.0], [0.0, 0.0, 1.0], 0]" in text
 
@@ -2120,12 +2130,17 @@ def test_a_placement_is_turned_into_partcad_s_frame():
     assert plugin._component_location([0, 0, 0], about_y) == [[0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 90.0]
 
 
-def test_the_builder_keeps_only_shortcuts_made_of_parts_unmirrored():
+def test_the_builder_keeps_only_shortcuts_made_of_parts_turned_and_nothing_else():
     builder = _builder()
     files = {
         "a1c01": "0 A\n0 !LDRAW_ORG Part\n"
         "1 16 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat\n1 16 0 -24 0 1 0 0 0 1 0 0 0 1 3003.dat\n",
         "b2": "0 B\n0 !LDRAW_ORG Shortcut\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat\n2 24 0 0 0 1 1 1\n",
+        # A turn written to three digits, as the spiral staircase 40243c01 writes its own.
+        "j10c01": "0 J\n0 !LDRAW_ORG Shortcut\n1 16 0 0 0 .929 0 -.383 0 1 0 .383 0 .929 3001.dat\n",
+        # Scaled, and sheared: no location an assembly gives a part makes either.
+        "h8c01": "0 H\n0 !LDRAW_ORG Shortcut\n1 16 0 0 0 1 0 0 0 0.88 0 0 0 1 3001.dat\n",
+        "i9c01": "0 I\n0 !LDRAW_ORG Shortcut\n1 16 0 0 0 1 0 0 0 1 0.5 0 0 1 3001.dat\n",
         # Faces of its own, a primitive, a mirrored part, and nothing at all.
         "c3c01": "0 C\n0 !LDRAW_ORG Shortcut\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat\n3 16 0 0 0 1 0 0 0 1 0\n",
         "d4c01": "0 D\n0 !LDRAW_ORG Shortcut\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 stud.dat\n",
@@ -2141,6 +2156,7 @@ def test_the_builder_keeps_only_shortcuts_made_of_parts_unmirrored():
             ["3003", [0.0, -24.0, 0.0], [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]],
         ],
         "b2": [["3001", [0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]]],
+        "j10c01": [["3001", [0.0, 0.0, 0.0], [0.929, 0.0, -0.383, 0.0, 1.0, 0.0, 0.383, 0.0, 0.929]]],
     }
 
 
@@ -2158,3 +2174,39 @@ def test_the_shortcuts_the_builder_writes_are_what_the_plugin_reads(tmp_path, mo
     index = plugin._Index(str(path))
     assert index.shortcuts() == {"a1c01": [["3001", [0, 0, 0], [1, 0, 0, 0, 1, 0, 0, 0, 1]]]}
     assert json.loads(zipfile.ZipFile(path).read("c/Brick.json")) == {"a1c01": ["A", -1, -1, None]}
+
+
+def test_a_refresh_leaves_the_shortcuts_as_they_were(tmp_path, monkeypatch):
+    """'--refresh' recomputes the categories' entries, and nothing else the index holds."""
+    builder = _builder()
+    import types
+    import zipfile
+
+    library = tmp_path / "ldraw"
+    (library / "parts").mkdir(parents=True)
+    (library / "p").mkdir()
+    (library / "p" / "stud.dat").write_text("0 Stud\n")
+    (library / "parts" / "3001.dat").write_text("0 Brick\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 stud.dat\n")
+    (library / "parts" / "a1c01.dat").write_text("0 A\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat\n")
+    shortcuts = json.dumps({"a1c01": [["3001", [0, 0, 0], [1, 0, 0, 0, 1, 0, 0, 0, 1]]]})
+    path = tmp_path / "index.zip"
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("index.json", json.dumps({"format": 1, "categories": {"Brick": ["3001", "a1c01"]}}))
+        z.writestr("c/Brick.json", json.dumps({"3001": ["Brick", -1, -1, None], "a1c01": ["A", -1, -1, None]}))
+        z.writestr("shortcuts.json", shortcuts)
+    implements = {"iface": {"a": 1}}
+    fake = types.SimpleNamespace(
+        _INDEX_META="index.json",
+        member_name=plugin.member_name,
+        _part_config=lambda pid, header: {"implements": implements},
+    )
+    monkeypatch.setenv("PARTCAD_LDRAW_CACHE", str(tmp_path / "cache"))
+
+    builder.refresh(str(path), str(library), {"stud.dat"}, fake)
+
+    with zipfile.ZipFile(path) as z:
+        assert z.read("shortcuts.json").decode() == shortcuts
+        assert json.loads(z.read("c/Brick.json")) == {
+            "3001": ["Brick", -1, -1, implements],
+            "a1c01": ["A", -1, -1, implements],
+        }

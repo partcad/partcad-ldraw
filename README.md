@@ -678,7 +678,7 @@ A *shortcut* in the LDraw library is a part drawn together with others, whose
 file does nothing but place them: a wheel with its tyre on (`41896c01`), a
 battery box as its case, two lids and switch (`58119`), a shock absorber with its
 spring (`76320-f2`). LEGO makes those as the separate parts, and sells them so,
-now and then assembled. So each of the 2,715 shortcuts is served here as what it
+now and then assembled. So each of the 2,698 shortcuts is served here as what it
 is - an **assembly** of its parts, each placed where the shortcut's file places
 it - and is sold as one, with its LDraw number as its SKU:
 
@@ -701,10 +701,12 @@ half turn undone - so that every port is the box's exactly, roll and all. A port
 `d43` - is named as its own part names it, or `<part>-<name>` where two of the
 parts share a name.
 
-Only a file that holds nothing but other parts of the library, none of them
-mirrored, is a shortcut here. One drawn with faces of its own, or with a part in
-it mirrored - which no placement of that part can reproduce - stays a part. A
-shortcut made of shortcuts (the IR receiver with its cable, `58123c01`) is an
+Only a file that holds nothing but other parts of the library, each of them
+turned and nothing else, is a shortcut here. One drawn with faces of its own, or
+with a part in it mirrored, scaled or sheared - which no placement of that part
+can reproduce - stays a part: the IR receiver's cable, `u9190c01`, stretches the
+segment it is drawn with along its length. A shortcut made of shortcuts (the
+plate with wheels and tyres, `122c03`, made of the plate with wheels) is an
 assembly of assemblies.
 
 ## Which numbers to name LEGO parts by

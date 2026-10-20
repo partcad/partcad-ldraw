@@ -1291,9 +1291,9 @@ def _suppliers(category):
 # Which files those are, and what each is made of, is read from the library
 # into the index by build_parts_index.py ('shortcuts.json'): a file LDraw types
 # a Shortcut, or numbers as one ('c' and two digits), that holds nothing but
-# other parts of the library, none of them mirrored. One drawn with faces of its
-# own, or with a part in it mirrored - which no placement of that part can
-# reproduce - stays a part.
+# other parts of the library, each of them turned and nothing else. One drawn
+# with faces of its own, or with a part in it mirrored, scaled or sheared -
+# which no placement of that part can reproduce - stays a part.
 #
 # The assembly has the ports its parts have. Each is named as the shortcut, as
 # the one part LDraw draws, names the port in the same place facing the same way
