@@ -67,7 +67,50 @@ def test_part_config_tolerates_missing_metadata():
         "type": ":ldraw",
         "dat": "zzz-not-a-part.dat",
         "parameters": {"dat": {"type": "string", "default": "zzz-not-a-part.dat"}},
+        "vendor": "lego",
+        "sku": "zzz-not-a-part",
     }
+
+
+# --- buying the parts ---------------------------------------------------------
+
+_STORES = [
+    "//pub/svc/commerce/lego-pick-a-brick:pick-a-brick",
+    "//pub/svc/commerce/bricklink:bricklink",
+]
+
+
+def test_a_part_is_ordered_from_lego_by_its_ldraw_number():
+    cfg = plugin._part_config("3001", ("Brick  2 x  4", None, None), "Brick")
+    assert (cfg["vendor"], cfg["sku"]) == ("lego", "3001")
+    # A mould LDraw tells apart and LEGO does not keeps LDraw's letter: the
+    # stores are what knows which of their items it is.
+    cfg = plugin._part_config("3942b", ("Cone  2 x  2 x  2 with Hollow Stud", None, None), "Cone")
+    assert cfg["sku"] == "3942b"
+
+
+def test_a_part_that_moved_is_ordered_as_the_part_it_moved_to(monkeypatch):
+    headers = {"3665": ("~Moved to 3665a", None, None), "3665a": ("Slope Brick 45  2 x  1 Inverted", None, None)}
+    monkeypatch.setattr(plugin, "_dat_header", lambda pid, category=None: headers.get(pid))
+    assert plugin._part_config("100", ("~Moved to 3665", None, None), "Moved")["sku"] == "3665a"
+
+
+def test_a_move_that_goes_round_in_a_circle_stops(monkeypatch):
+    headers = {"a": ("~Moved to b", None, None), "b": ("~Moved to a", None, None)}
+    monkeypatch.setattr(plugin, "_dat_header", lambda pid, category=None: headers.get(pid))
+    assert plugin._sku("a", "~Moved to b") in ("a", "b")
+
+
+def test_a_file_that_is_not_a_lego_part_is_not_for_sale():
+    cfg = plugin._part_config("light", ("~Light Source", None, None), "Helper")
+    assert "vendor" not in cfg and "sku" not in cfg
+
+
+def test_every_category_of_parts_names_the_lego_stores(_no_network):
+    assert list(plugin.get("Brick/meta")["suppliers"]) == _STORES
+    assert "suppliers" not in plugin.get("Helper/meta")
+    # The library root holds no parts, so it has nothing to buy.
+    assert "suppliers" not in plugin.get("meta")
 
 
 def test_sanitize_category_name():
@@ -1625,12 +1668,15 @@ def test_every_category_has_a_member_of_its_own(_no_network):
 
 
 def test_the_metadata_says_which_object_kinds_there_are(_no_network):
-    """So PartCAD stops asking after the seven kinds no category has ever had."""
+    """So PartCAD stops asking after the kinds a category does not have."""
     assert plugin.get("meta")["objectKinds"] == ["partType"]
-    assert plugin.get("Brick/objects/part")
-    assert plugin.get("Brick/meta")["objectKinds"] == ["part", "partType"]
-    for kind in plugin.get("Brick/meta")["objectKinds"]:
-        assert plugin.get("Brick/objects/" + kind)
+    assert plugin.get("Cone/objects/part")
+    assert plugin.get("Cone/meta")["objectKinds"] == ["part", "partType"]
+    # A category with shortcuts in it holds the assemblies they are.
+    assert plugin.get("Wheel/meta")["objectKinds"] == ["part", "partType", "assembly"]
+    for category in ("Cone", "Wheel"):
+        for kind in plugin.get(category + "/meta")["objectKinds"]:
+            assert plugin.get(category + "/objects/" + kind)
 
 
 def test_the_interfaces_come_from_the_index_too(_no_network):
@@ -1984,3 +2030,183 @@ def test_a_patched_part_carries_its_patch_in_its_cache_key(monkeypatch):
     assert "patches" not in plugin._part_config("3001", None)["parameters"]
     monkeypatch.setattr(plugin, "_patch_list", (manifest, {"x01.patch": "0 !PATCH ADD\n3 16 0 0 0 1 0 0 0 0 1\n"}))
     assert plugin._part_config("x1", None)["parameters"]["patches"]["default"] != first
+
+
+# --- shortcuts are assemblies -------------------------------------------------
+
+
+def test_a_shortcut_is_an_assembly_of_its_parts_sold_by_its_number(_no_network):
+    # The front wheel of the F1 car: a rim with a tyre on it.
+    assert plugin.get("Wheel/objects/part/41896c01") is None
+    assert "41896c01" not in plugin.get("Wheel/objects/part")
+    config = plugin.get("Wheel/objects/assembly/41896c01")
+    assert config == plugin.get("Wheel/objects/assembly")["41896c01"]
+    assert (config["type"], config["path"], config["vendor"], config["sku"]) == (
+        "assy",
+        "41896c01.assy",
+        "lego",
+        "41896c01",
+    )
+    assert config["desc"].startswith("Wheel Rim 26 x 43")
+    text = base64.b64decode(plugin.get("Wheel/files/41896c01.assy")).decode()
+    assert '- part: "41896"' in text and '- part: "../Tyre:41897"' in text
+
+
+def test_a_shortcut_keeps_the_ports_of_its_parts_under_their_names(_no_network):
+    mapped = plugin.get("Wheel/objects/assembly/41896c01")["map"]
+    assert mapped["a1"] == ["41896", AXLE_HOLE, "a1"]
+    assert mapped["h5"] == ["41896", PIN_HOLE, "h5"]
+    assert mapped["d43"] == ["41897", "//pub/universe/lego:tyre-bore", "d43"]
+
+
+def test_a_shortcut_keeps_the_names_the_part_ldraw_draws_gives_its_ports(_no_network):
+    # The battery box of the F1 car, which the car is pinned to by its end
+    # holes: they are its case's holes now, under the box's own names. The hole
+    # in its switch comes out turned half round its own axis, and is turned
+    # back, so that the port is the box's exactly, roll and all.
+    mapped = plugin.get("Electric/objects/assembly/58119")["map"]
+    own = plugin._indexed_implements("58119")[PIN_HOLE]
+    assert sorted(name for name in mapped if mapped[name] and name in own) == sorted(own)
+    assert mapped["h0"] == ["919", PIN_HOLE, "h0"]
+    assert mapped["h16"] == {"node": "920", "interface": PIN_HOLE, "instance": "h0", "turnZ": 180.0}
+    # And through a shortcut inside the shortcut: the shock absorber's lower
+    # holes are those of its lower half, which is a shortcut of its own.
+    mapped = plugin.get("Technic/objects/assembly/76320-f2")["map"]
+    assert mapped["h2"] == ["32183c02", PIN_HOLE, "h0"]
+
+
+def test_a_port_turned_about_its_axis_is_the_same_port():
+    quarter = plugin._frame([[1, 2, 3], [0, 0, 1], 90])
+    straight = plugin._frame([[1, 2, 3], [0, 0, 1], 0])
+    assert plugin._turn_onto(straight, quarter) == 90.0
+    assert plugin._turn_onto(quarter, straight) == -90.0
+    # Facing the other way, or somewhere else, it is another port.
+    assert plugin._turn_onto(straight, plugin._frame([[1, 2, 3], [1, 0, 0], 180])) is None
+    assert plugin._turn_onto(straight, plugin._frame([[1, 2, 4], [0, 0, 1], 0])) is None
+
+
+def test_a_shortcut_of_shortcuts_links_the_inner_one_as_an_assembly(_no_network):
+    # The plate with wheels and tyres, made of the plate with wheels, which is a shortcut too.
+    text = base64.b64decode(plugin.get("Plate/files/122c03.assy")).decode()
+    assert '- assembly: "122c01"' in text
+    assert '- part: "../Tyre:3641"' in text
+
+
+def test_a_shortcut_that_stretches_a_part_is_a_part_where_another_places_it(_no_network):
+    # The IR receiver's cable, u9190c01, stretches the segment it is drawn with
+    # along its length, which no location can, so it stays a part - and the IR
+    # receiver with that cable, 58123c01, links it as one.
+    assert "u9190c01" not in plugin._index().shortcuts()
+    text = base64.b64decode(plugin.get("Electric/files/58123c01.assy")).decode()
+    assert '- part: "u9190c01"' in text
+    # LDraw places the cable at (0, 10, 40.4); PartCAD's frame is (x, -z, -y) * 0.4.
+    assert "location: [[0.0, -16.16, -4.0], [0.0, 0.0, 1.0], 0]" in text
+
+
+def _shortcuts(monkeypatch, found):
+    monkeypatch.setattr(plugin._index(), "_shortcuts", found)
+
+
+def test_two_parts_with_one_port_name_are_told_apart(_no_network, monkeypatch):
+    identity = [1, 0, 0, 0, 1, 0, 0, 0, 1]
+    _shortcuts(monkeypatch, {"x1c01": [["3001", [0, 0, 0], identity], ["3001", [0, -24, 0], identity]]})
+    mapped = plugin._shortcut_map("x1c01")
+    # A 2 x 4 brick has a stud and an anti-stud called c0r0, and a 'map:' has
+    # one entry of each name.
+    assert mapped["3001-stud-c0r0"] == ["3001", STUD, "c0r0"]
+    assert mapped["3001-anti-stud-c0r0"] == ["3001", ANTI, "c0r0"]
+    assert mapped["3001-2-stud-c0r0"] == ["3001-2", STUD, "c0r0"]
+    assert "c0r0" not in mapped and "3001-c0r0" not in mapped
+    assert len(mapped) == 2 * sum(len(i) for i in plugin._indexed_implements("3001").values())
+
+
+def test_a_placement_is_turned_into_partcad_s_frame():
+    identity = [1, 0, 0, 0, 1, 0, 0, 0, 1]
+    assert plugin._component_location([10, -24, 20], identity) == [[4.0, -8.0, 9.6], [0.0, 0.0, 1.0], 0]
+    # A quarter turn about LDraw's Y, the vertical, that takes its X to -Z.
+    # In PartCAD's frame LDraw's X is X and its -Z is Y, so the same turn
+    # takes X to Y: a quarter turn about PartCAD's Z, the vertical there.
+    about_y = [0, 0, 1, 0, 1, 0, -1, 0, 0]
+    assert plugin._component_location([0, 0, 0], about_y) == [[0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 90.0]
+
+
+def test_the_builder_keeps_only_shortcuts_made_of_parts_turned_and_nothing_else():
+    builder = _builder()
+    files = {
+        "a1c01": "0 A\n0 !LDRAW_ORG Part\n"
+        "1 16 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat\n1 16 0 -24 0 1 0 0 0 1 0 0 0 1 3003.dat\n",
+        "b2": "0 B\n0 !LDRAW_ORG Shortcut\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat\n2 24 0 0 0 1 1 1\n",
+        # A turn written to three digits, as the spiral staircase 40243c01 writes its own.
+        "j10c01": "0 J\n0 !LDRAW_ORG Shortcut\n1 16 0 0 0 .929 0 -.383 0 1 0 .383 0 .929 3001.dat\n",
+        # Scaled, and sheared: no location an assembly gives a part makes either.
+        "h8c01": "0 H\n0 !LDRAW_ORG Shortcut\n1 16 0 0 0 1 0 0 0 0.88 0 0 0 1 3001.dat\n",
+        "i9c01": "0 I\n0 !LDRAW_ORG Shortcut\n1 16 0 0 0 1 0 0 0 1 0.5 0 0 1 3001.dat\n",
+        # Faces of its own, a primitive, a mirrored part, and nothing at all.
+        "c3c01": "0 C\n0 !LDRAW_ORG Shortcut\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat\n3 16 0 0 0 1 0 0 0 1 0\n",
+        "d4c01": "0 D\n0 !LDRAW_ORG Shortcut\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 stud.dat\n",
+        "e5c01": "0 E\n0 !LDRAW_ORG Shortcut\n1 16 0 0 0 -1 0 0 0 1 0 0 0 1 3001.dat\n",
+        "f6c01": "0 F\n0 !LDRAW_ORG Shortcut\n",
+        # A part that is neither typed nor numbered as a shortcut.
+        "g7": "0 G\n0 !LDRAW_ORG Part\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat\n",
+    }
+    found = builder.shortcuts(list(files) + ["3001", "3003"], files.get)
+    assert found == {
+        "a1c01": [
+            ["3001", [0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]],
+            ["3003", [0.0, -24.0, 0.0], [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]],
+        ],
+        "b2": [["3001", [0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]]],
+        "j10c01": [["3001", [0.0, 0.0, 0.0], [0.929, 0.0, -0.383, 0.0, 1.0, 0.0, 0.383, 0.0, 0.929]]],
+    }
+
+
+def test_the_shortcuts_the_builder_writes_are_what_the_plugin_reads(tmp_path, monkeypatch):
+    builder = _builder()
+    path = tmp_path / "index.zip"
+    import zipfile
+
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr(
+            "index.json", json.dumps({"format": builder.FORMAT, "strings": [], "categories": {"Brick": ["a1c01"]}})
+        )
+        z.writestr("c/Brick.json", json.dumps({"a1c01": ["A", -1, -1, None]}))
+    builder.write_shortcuts(str(path), {"a1c01": [["3001", [0, 0, 0], [1, 0, 0, 0, 1, 0, 0, 0, 1]]]})
+    index = plugin._Index(str(path))
+    assert index.shortcuts() == {"a1c01": [["3001", [0, 0, 0], [1, 0, 0, 0, 1, 0, 0, 0, 1]]]}
+    assert json.loads(zipfile.ZipFile(path).read("c/Brick.json")) == {"a1c01": ["A", -1, -1, None]}
+
+
+def test_a_refresh_leaves_the_shortcuts_as_they_were(tmp_path, monkeypatch):
+    """'--refresh' recomputes the categories' entries, and nothing else the index holds."""
+    builder = _builder()
+    import types
+    import zipfile
+
+    library = tmp_path / "ldraw"
+    (library / "parts").mkdir(parents=True)
+    (library / "p").mkdir()
+    (library / "p" / "stud.dat").write_text("0 Stud\n")
+    (library / "parts" / "3001.dat").write_text("0 Brick\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 stud.dat\n")
+    (library / "parts" / "a1c01.dat").write_text("0 A\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat\n")
+    shortcuts = json.dumps({"a1c01": [["3001", [0, 0, 0], [1, 0, 0, 0, 1, 0, 0, 0, 1]]]})
+    path = tmp_path / "index.zip"
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("index.json", json.dumps({"format": 1, "categories": {"Brick": ["3001", "a1c01"]}}))
+        z.writestr("c/Brick.json", json.dumps({"3001": ["Brick", -1, -1, None], "a1c01": ["A", -1, -1, None]}))
+        z.writestr("shortcuts.json", shortcuts)
+    implements = {"iface": {"a": 1}}
+    fake = types.SimpleNamespace(
+        _INDEX_META="index.json",
+        member_name=plugin.member_name,
+        _part_config=lambda pid, header: {"implements": implements},
+    )
+    monkeypatch.setenv("PARTCAD_LDRAW_CACHE", str(tmp_path / "cache"))
+
+    builder.refresh(str(path), str(library), {"stud.dat"}, fake)
+
+    with zipfile.ZipFile(path) as z:
+        assert z.read("shortcuts.json").decode() == shortcuts
+        assert json.loads(z.read("c/Brick.json")) == {
+            "3001": ["Brick", -1, -1, implements],
+            "a1c01": ["A", -1, -1, implements],
+        }

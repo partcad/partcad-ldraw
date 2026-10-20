@@ -80,8 +80,11 @@ import zipfile
 # it since its move to CC BY 4.0, which moved every line a patch names (64681
 # was refused again until then), drops the one for s/919s01.dat, whose gap the
 # library has since closed itself, and fetches a patched file again when the
-# copy a machine cached is older than its patch.
-CACHE_VERSION = 17
+# copy a machine cached is older than its patch; v18 serves every part as
+# LEGO's, with its LDraw number as its SKU, and every category's suppliers -
+# the LEGO stores the index registers at //pub/svc/commerce - and serves every
+# shortcut as the assembly of parts it is rather than as a part.
+CACHE_VERSION = 18
 
 _BASE = "https://library.ldraw.org"
 _CATEGORY_LIST_URL = _BASE + "/parts/category-list"
@@ -298,6 +301,7 @@ class _Index:
         self.categories = meta["categories"]
         self._parts = {}  # category -> {pid: entry}, read on demand
         self._category_of = None  # pid -> category, built on demand
+        self._shortcuts = None  # pid -> its parts, read on demand
 
     def _string(self, i):
         return self._strings[i] if 0 <= i < len(self._strings) else None
@@ -336,6 +340,20 @@ class _Index:
         """(description, author, license) out of an index entry."""
         desc, author, lic, _ = entry
         return (desc or None, self._string(author), self._string(lic))
+
+    def shortcuts(self):
+        """{shortcut id: [[part id, [x, y, z], [a, b, c, d, e, f, g, h, i]], ...]}.
+
+        What each shortcut is made of, where its file places each part - in
+        LDraw's own units and frame - and {} for an index built before there
+        was such a member (see build_parts_index.py --shortcuts).
+        """
+        if self._shortcuts is None:
+            try:
+                self._shortcuts = json.loads(self._zip.read(_SHORTCUTS_MEMBER))
+            except KeyError:
+                self._shortcuts = {}
+        return self._shortcuts
 
 
 def member_name(category):
@@ -1162,6 +1180,9 @@ def _part_config(pid, meta, category=None):
         config["author"] = author
     if lic:
         config["license"] = lic
+    if category not in _NOT_SOLD:
+        config["vendor"] = _VENDOR
+        config["sku"] = _sku(pid, desc)
     implements = _indexed_implements(pid, category)
     if implements is _NOT_INDEXED:
         # Not a part the index knows: work them out the long way, which reads
@@ -1187,14 +1208,337 @@ def _catalog(category):
     header, fetched concurrently; a part whose header could not be read is
     still listed (with just its type/dat).
     """
-    ids = _part_ids(category)
+    # A shortcut is an assembly here, not a part (see '_assemblies').
+    ids = [pid for pid in _part_ids(category) if _shortcut(pid) is None]
     if not ids:
         return {}
     if _index():
         return {pid: _part_config(pid, _dat_header(pid, category), category) for pid in ids}
     with concurrent.futures.ThreadPoolExecutor(max_workers=_HEADER_WORKERS) as pool:
         metas = list(pool.map(_dat_header, ids))
-    return {pid: _part_config(pid, meta) for pid, meta in zip(ids, metas)}
+    return {pid: _part_config(pid, meta, category) for pid, meta in zip(ids, metas)}
+
+
+# --- where a part is bought --------------------------------------------------
+#
+# A LEGO part is something to order rather than to make, so every part says so:
+# its vendor is LEGO and its SKU is its LDraw number. That is LEGO's own design
+# ID wherever LDraw knows it, which for the parts a store stocks it nearly
+# always does; where LDraw had to tell apart two moulds LEGO numbers the same,
+# it is the design ID with a letter after it (3942b). It is not what any one
+# store calls the part - LEGO sells elements, a design in a colour, and BrickLink
+# and Brick Owl number their catalogues their own way - so each store translates
+# it into its own catalogue (see the README, "Buying the parts"). A part carries no colour, because the geometry has none:
+# the colour to buy is something a store is told.
+#
+# The SKU is not the part's name in every case. A part LDraw has moved to another
+# number ("~Moved to 3665") is ordered as the part it moved to.
+_VENDOR = "lego"
+
+# What the parts of every category are looked for at, in this order: LEGO's own
+# shop, then BrickLink. PartCAD buys a part from the first of them that has it,
+# and a store that has not been set up - BrickLink without its credentials -
+# says quietly that it has nothing, which is what lets every part name both.
+#
+# They are the index's, registered with the other stores at //pub/svc/commerce,
+# and this package does not depend on them: it names them by where the index
+# puts them. So they are there wherever the library is used through the index,
+# and a PartCAD that cannot load one passes over it.
+_SUPPLIERS = (
+    "//pub/svc/commerce/lego-pick-a-brick:pick-a-brick",
+    "//pub/svc/commerce/bricklink:bricklink",
+)
+
+# The categories whose files are not LEGO parts at all. 'Helper' is a light
+# source for renderers.
+_NOT_SOLD = frozenset(["Helper"])
+
+# How many "~Moved to" hops are followed to the part that is sold.
+_MAX_MOVES = 4
+
+
+def _sku(pid, desc):
+    """What a part is ordered by: its LDraw number, or the number it moved to."""
+    seen = {pid}
+    while desc:
+        m = _MOVED_RE.match(desc.strip())
+        if not m or m.group(1) in seen or len(seen) > _MAX_MOVES:
+            break
+        pid = m.group(1)
+        seen.add(pid)
+        header = _dat_header(pid)
+        desc = header[0] if header else None
+    return pid
+
+
+def _suppliers(category):
+    """The 'suppliers' section of a category's metadata."""
+    if category in _NOT_SOLD:
+        return {}
+    return {name: {} for name in _SUPPLIERS}
+
+
+# --- shortcuts: one part to LDraw, several to LEGO ------------------------------
+#
+# A shortcut in the LDraw library is a part drawn together with others: a wheel
+# with its tyre on (41896c01), a motor with its cable. LEGO makes those as the
+# separate parts, and a store sells them so - now and then assembled. So a
+# shortcut is served here as what it is, an assembly of its parts, placed where
+# the shortcut's file places them, and sold as LEGO with the shortcut's number
+# as its SKU. PartCAD then orders it whole from a store that has it whole, and
+# as its parts ('pc supply quote -r') from one that sells the parts.
+#
+# Which files those are, and what each is made of, is read from the library
+# into the index by build_parts_index.py ('shortcuts.json'): a file LDraw types
+# a Shortcut, or numbers as one ('c' and two digits), that holds nothing but
+# other parts of the library, each of them turned and nothing else. One drawn
+# with faces of its own, or with a part in it mirrored, scaled or sheared -
+# which no placement of that part can reproduce - stays a part.
+#
+# The assembly has the ports its parts have. Each is named as the shortcut, as
+# the one part LDraw draws, names the port in the same place facing the same way
+# - the battery box 58119 keeps the 'h0' its end holes were joined by, though
+# the hole is its case's, and the hole in its switch, which comes out turned
+# half round its own axis, is mapped with the turn undone - and a port the
+# shortcut does not have is named as its own part names it (the tyre's 'd43'),
+# or '<part>-<name>' where two of the parts share the name -
+# '<part>-<interface>-<name>' where one part has a stud and an anti-stud of one
+# name, since a 'map:' has one entry of each name.
+_SHORTCUTS_MEMBER = "shortcuts.json"
+
+# LDraw's frame to PartCAD's, as the wrapper turns every part (see "Which way is
+# up" in the README): a point at (x, y, z) comes out at (x, -z, -y) * 0.4.
+_LDRAW_AXES = ((1.0, 0.0, 0.0), (0.0, 0.0, -1.0), (0.0, -1.0, 0.0))
+_LDU = 0.4
+
+
+def _shortcut(pid):
+    """What shortcut 'pid' is made of, as the index says, or None if it is not one."""
+    index = _index()
+    return index.shortcuts().get(pid) if index else None
+
+
+def _matrix_of(values):
+    return [values[0:3], values[3:6], values[6:9]]
+
+
+def _component_location(position, matrix):
+    """The PartCAD 'location:' of a part an LDraw file places at 'position', turned by 'matrix'.
+
+    The wrapper builds each part in PartCAD's frame, M v, from LDraw's v; the
+    shortcut draws the part at R v + p. So in PartCAD's frame the part is turned
+    by M R M^T and moved to M p - which is a rotation, because M is turned on
+    both sides of R.
+    """
+    m = _LDRAW_AXES
+    r = _matrix_of([float(v) for v in matrix])
+    turned = [
+        [sum(m[i][a] * r[a][b] * m[j][b] for a in range(3) for b in range(3)) for j in range(3)] for i in range(3)
+    ]
+    moved = [sum(m[i][a] * float(position[a]) for a in range(3)) * _LDU for i in range(3)]
+    axis, angle = _orientation_of_matrix(turned)
+    return [[round(v, 4) + 0.0 for v in moved], [v + 0.0 for v in axis], angle]
+
+
+def _shortcut_links(pid):
+    """[(node name, part id, kind, location)] of shortcut 'pid', in its file's order.
+
+    A node is named for the part, and the second and later of one part are
+    numbered: '41897', '41897-2'. 'kind' is 'assembly' for a part that is a
+    shortcut itself.
+    """
+    seen = {}
+    links = []
+    for component, position, matrix in _shortcut(pid) or []:
+        seen[component] = seen.get(component, 0) + 1
+        name = component if seen[component] == 1 else "%s-%d" % (component, seen[component])
+        kind = "assembly" if _shortcut(component) is not None else "part"
+        links.append((name, component, kind, _component_location(position, matrix)))
+    return links
+
+
+def _rotation(axis, angle):
+    """The 3x3 matrix of a turn by 'angle' degrees about 'axis'."""
+    w, x, y, z = _quaternion(axis, angle)
+    return (
+        (1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)),
+        (2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)),
+        (2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)),
+    )
+
+
+def _frame(location):
+    """(position, rotation matrix) of a location '[[x, y, z], axis, angle]', or None if it is not one."""
+    try:
+        position, axis, angle = location
+        return (tuple(float(v) for v in position), _rotation([float(v) for v in axis], float(angle)))
+    except (TypeError, ValueError):
+        return None
+
+
+def _placed(place, frame):
+    """'frame', in a part's own frame, where the part placed at 'place' puts it."""
+    turn, (position, rotation) = place[1], frame
+    moved = _matrix_apply(turn, position)
+    return (tuple(moved[i] + place[0][i] for i in range(3)), _matrix_product(turn, rotation))
+
+
+def _turn_onto(frame, own):
+    """The turn about its own Z, in degrees, that takes port 'frame' onto 'own', or None.
+
+    None unless the two are at one place and face one way: a port that is the
+    other turned about its axis - a hole entered from the same side - is the
+    same port, and anything else is another one.
+    """
+    if not all(abs(p - q) < 0.01 for p, q in zip(frame[0], own[0])):
+        return None
+    a, b = frame[1], own[1]
+    turn = [[sum(a[k][i] * b[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
+    if abs(turn[2][2] - 1.0) > 1e-4:
+        return None
+    angle = round(math.degrees(math.atan2(turn[1][0], turn[0][0])), 4) + 0.0
+    # Half a turn either way is one turn, and which way a rounding error sends
+    # it is not worth a difference in the configuration.
+    return 180.0 if angle == -180.0 else angle
+
+
+def _ports_of(component, kind):
+    """[(interface, instance, frame)] of a part or a shortcut, in its own frame."""
+    if kind == "assembly":
+        return [(port[2], port[0], port[5]) for port in _shortcut_ports(component)]
+    implements = _indexed_implements(component)
+    if implements is _NOT_INDEXED or not implements:
+        return []
+    return [
+        (interface, instance, _frame(instances[instance]) if isinstance(instances, dict) else None)
+        for interface, instances in sorted(implements.items())
+        for instance in sorted(instances)
+    ]
+
+
+def _position_key(frame):
+    return tuple(round(v, 2) + 0.0 for v in frame[0])
+
+
+def _shortcut_ports(pid):
+    """[(name, node, interface, instance, turn, frame)]: every port of shortcut 'pid''s parts.
+
+    A port is named as LDraw's own part 'pid' names the port at the same place
+    facing the same way, when it has one and the name is not one it gives two
+    ports of different interfaces (a 'map:' has one name for each) - so that a
+    model that joined the shortcut as a part joins the assembly by the same
+    names. 'turn' is then how far it is turned about its axis to be that port
+    exactly, and 'frame' is where it is. Any other port is named as its part
+    names it, or '<node>-<name>' where two of the parts share the name, or
+    '<node>-<interface>-<name>' where one part gives it to two interfaces.
+    """
+    entries = []
+    for node, component, kind, location in _shortcut_links(pid):
+        place = _frame(location)
+        for interface, instance, frame in _ports_of(component, kind):
+            entries.append([None, node, interface, instance, 0.0, _placed(place, frame) if frame else None])
+    own = _ports_of(pid, "part")
+    interfaces_named = {}
+    for interface, name, _ in own:
+        interfaces_named.setdefault(name, set()).add(interface)
+    at = {}
+    for interface, name, frame in own:
+        if frame and len(interfaces_named[name]) == 1:
+            at.setdefault((interface, _position_key(frame)), []).append((name, frame))
+    taken = set()
+    for entry in entries:
+        _, _, interface, _, _, frame = entry
+        if frame is None:
+            continue
+        candidates = []
+        for name, own_frame in at.get((interface, _position_key(frame)), []):
+            turn = _turn_onto(frame, own_frame) if name not in taken else None
+            if turn is not None:
+                candidates.append((abs(turn), name, turn, own_frame))
+        if candidates:
+            _, name, turn, own_frame = min(candidates)
+            entry[0], entry[4], entry[5] = name, 0.0 if abs(turn) < 1e-6 else turn, own_frame
+            taken.add(name)
+    unnamed = [entry for entry in entries if entry[0] is None]
+    shared = {}
+    for _, node, interface, instance, _, _ in unnamed:
+        for name in (instance, "%s-%s" % (node, instance)):
+            shared[name] = shared.get(name, 0) + 1
+    for entry in unnamed:
+        _, node, interface, instance, _, _ = entry
+        for name in (instance, "%s-%s" % (node, instance)):
+            if shared[name] == 1 and name not in taken:
+                break
+        else:
+            # A part with a stud and an anti-stud both called 'c0r0'.
+            name = "%s-%s-%s" % (node, interface.rsplit(":", 1)[-1], instance)
+        entry[0] = name
+    return [tuple(entry) for entry in entries]
+
+
+def _shortcut_map(pid):
+    """The 'map:' of shortcut 'pid': {name: [node, interface, instance]} for every port of its parts.
+
+    The long form, with 'turnZ', for a port that is turned about its axis to be
+    the one the shortcut has of its own.
+    """
+    mapped = {}
+    for name, node, interface, instance, turn, _ in _shortcut_ports(pid):
+        if turn:
+            mapped[name] = {"node": node, "interface": interface, "instance": instance, "turnZ": turn}
+        else:
+            mapped[name] = [node, interface, instance]
+    return mapped
+
+
+def _component_reference(component, category):
+    """How the shortcut's ASSY file names a part: by name in its own category, '../<Category>:<id>' elsewhere."""
+    index = _index()
+    other = index.category_of(component) if index else None
+    if other is None or other == category:
+        return component
+    return "../%s:%s" % (_sanitize(other), component)
+
+
+def _assy_text(pid, category):
+    """The ASSY file of shortcut 'pid': its parts, placed as its LDraw file places them."""
+    lines = [
+        "# %s, as LDraw draws it: generated by ldraw_repo.py from the library's" % pid,
+        "# shortcut file, one link per part it places.",
+        "links:",
+    ]
+    for node, component, kind, location in _shortcut_links(pid):
+        lines.append("  - %s: %s" % (kind, json.dumps(_component_reference(component, category))))
+        lines.append("    name: %s" % json.dumps(node))
+        lines.append("    location: %s" % json.dumps(location))
+    return "\n".join(lines) + "\n"
+
+
+def _assembly_config(pid, meta, category):
+    """The PartCAD config of shortcut 'pid' as an assembly."""
+    desc, author, lic = meta if meta else (None, None, None)
+    config = {"type": "assy", "path": pid + ".assy"}
+    if desc:
+        config["desc"] = desc
+    if author:
+        config["author"] = author
+    if lic:
+        config["license"] = lic
+    config["vendor"] = _VENDOR
+    config["sku"] = pid
+    mapped = _shortcut_map(pid)
+    if mapped:
+        config["map"] = mapped
+    return config
+
+
+def _assemblies(category):
+    """{shortcut id: config} for every shortcut in a category."""
+    return {
+        pid: _assembly_config(pid, _dat_header(pid, category), category)
+        for pid in _part_ids(category)
+        if _shortcut(pid) is not None
+    }
 
 
 # --- patches -----------------------------------------------------------------
@@ -1295,9 +1639,10 @@ def _ldraw_py_b64():
 # over, to be told nine times out of ten that there are none. Saying so once, in
 # the metadata it reads anyway, is what stops it asking.
 #
-# The categories hold the parts and the partType that renders them; the library
-# root holds only the partType (its children are the categories). Nothing here
-# has ever served a sketch, an assembly, a scene, a material, an interface, a
+# The categories hold the parts and the partType that renders them, and those
+# with shortcuts in them the assemblies the shortcuts are (see '_assemblies');
+# the library root holds only the partType (its children are the categories).
+# Nothing here has ever served a sketch, a scene, a material, an interface, a
 # provider or a piece of software, and get() answers {} for each of them.
 _ROOT_OBJECT_KINDS = ["partType"]
 _CATEGORY_OBJECT_KINDS = ["part", "partType"]
@@ -1332,14 +1677,23 @@ def get(key):
     if sub == "deps":
         return []
     if sub == "meta":
-        return {
+        kinds = list(_CATEGORY_OBJECT_KINDS)
+        if any(_shortcut(pid) is not None for pid in _part_ids(category)):
+            kinds.append("assembly")
+        meta = {
             "desc": "LDraw parts in the '%s' category." % category,
-            "objectKinds": list(_CATEGORY_OBJECT_KINDS),
+            "objectKinds": kinds,
         }
+        suppliers = _suppliers(category)
+        if suppliers:
+            meta["suppliers"] = suppliers
+        return meta
     if sub == "objects/part":
         return _catalog(category)
     if sub.startswith("objects/part/"):
         pid = sub[len("objects/part/") :]
+        if _shortcut(pid) is not None:
+            return None  # an assembly (see '_assemblies')
         header = _dat_header(pid, category)
         if header is not None:
             return _part_config(pid, header, category)
@@ -1350,6 +1704,13 @@ def get(key):
         if pid in _part_ids(category):
             return _part_config(pid, None, category)
         return None
+    if sub == "objects/assembly":
+        return _assemblies(category)
+    if sub.startswith("objects/assembly/"):
+        pid = sub[len("objects/assembly/") :]
+        if _shortcut(pid) is None or pid not in _part_ids(category):
+            return None
+        return _assembly_config(pid, _dat_header(pid, category), category)
     if sub == "objects/partType":
         return {"ldraw": dict(_PART_TYPE)}
     if sub.startswith("objects/partType/"):
@@ -1359,6 +1720,11 @@ def get(key):
         return {}
     if sub == "files/ldraw.py":
         return _ldraw_py_b64()
+    if sub.startswith("files/") and sub.endswith(".assy"):
+        pid = sub[len("files/") : -len(".assy")]
+        if _shortcut(pid) is None or pid not in _part_ids(category):
+            return None
+        return base64.b64encode(_assy_text(pid, category).encode("utf-8")).decode()
 
     return None
 

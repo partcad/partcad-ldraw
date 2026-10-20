@@ -10,8 +10,9 @@ and **cached on disk** under `~/.cache/partcad-ldraw/`.
 
 What *does* ship with the package is an index of names: `parts-index.zip`,
 which says which categories exist, which parts are in each, what every part is
-called (with its author and licence) and what it connects with. It is 20,569
-parts in about 1.1 MiB, built by
+called (with its author and licence), what it connects with, and which parts
+LDraw draws as several of LEGO's (see [Shortcuts](#shortcuts-are-assemblies)).
+It is 20,569 parts in about 1.25 MiB, built by
 [`build_parts_index.py`](build_parts_index.py) and committed.
 
 That index is what makes the package usable at all. PartCAD asks for a whole
@@ -237,8 +238,7 @@ the cylinder ends at.
 4. Check that the part builds, and how its volume and extent compare with an
    independent estimate; run the tests, which check the manifest (and, with
    `LDRAW_LIBRARY` set to an unpacked library, each patch against its file).
-5. Raise `CACHE_VERSION` in `ldraw_repo.py` and `cacheVersion` in
-   `partcad.yaml`.
+5. Raise `CACHE_VERSION` in `ldraw_repo.py`.
 
 ### How a patch reaches a build, and the cache
 
@@ -315,6 +315,13 @@ touched, so the listings and the archive are not needed:
 ```
 
 That is how the bush's axle hole (below) went in.
+
+What each shortcut is made of (see [Shortcuts](#shortcuts-are-assemblies)) is
+read again the same way, with nothing else in the index touched:
+
+```sh
+./build_parts_index.py --shortcuts path/to/ldraw
+```
 
 It takes names, authors and licences from
 [`complete.zip`](https://library.ldraw.org/library/updates/complete.zip) — one
@@ -622,12 +629,139 @@ out, which gives 47 parts an axle hole each and changes no port anything had.
 `lego-demo/` builds seven assemblies out of all this, and its `README.md`
 describes the interfaces in detail.
 
+## Buying the parts
+
+A LEGO part is something to order rather than to make, so every part here says
+so: `vendor: lego`, and its LDraw number as its `sku`. (A part LDraw has moved
+to another number is ordered as the one it moved to; the `Helper` category,
+which holds a renderer's light source, is not for sale.) And every category
+names two stores as its suppliers, in the order `pc supply` looks for a part at
+them:
+
+| Store | Provider | What it needs |
+| --- | --- | --- |
+| LEGO's [Pick a Brick](https://www.lego.com/pick-and-build/pick-a-brick) | `//pub/svc/commerce/lego-pick-a-brick:pick-a-brick` | Nothing |
+| [BrickLink](https://www.bricklink.com) | `//pub/svc/commerce/bricklink:bricklink` | An account's four OAuth values |
+
+The stores are not part of this package. Each is a repository of its own
+(`svc-commerce-lego-pick-a-brick`, `svc-commerce-bricklink`), registered by the
+PartCAD index at `//pub/svc/commerce` beside the other stores, and the parts
+name them there - so they are found wherever this library is used through the
+index. A PartCAD that cannot load one passes over it.
+
+A store that has not been given what it needs says, quietly, that it has
+nothing, which is what lets every part name both. Each store's README says
+how to set it up; a package of models can name stores of its own as well (see
+`//pub/examples/lego`), which a PartCAD that reads them asks first.
+
+```shell
+pc supply quote --provider //pub/svc/commerce/lego-pick-a-brick:pick-a-brick //pub/universe/lego/ldraw/Brick:3001#10
+pc supply find //pub/examples/lego:castle
+```
+
+No store sells by an LDraw number alone, and each of them works out what to buy
+for one from Rebrickable's catalogue downloads, which need no account: the LEGO
+elements - a design in a colour - a part has been made as, and which parts are
+moulds of one another. Where none of a part's own elements is on sale, the
+mould LEGO makes in its place is bought instead: the friction pin LDraw draws as
+`2780` is sold as `61332`, the 2L axle `3704` as `32062`, the 2 x 2 cone `3942b`
+as `3942c`. Only a mould - the same part made again - stands in for a part; one
+Rebrickable merely calls an *alternate* does not, because the pin without
+friction that is an alternate of `2780` does not hold an angle.
+
+A part has no colour, because the geometry has none, so a store quotes the
+cheapest colour it has unless it is told one (each store's `color`).
+
+### Shortcuts are assemblies
+
+A *shortcut* in the LDraw library is a part drawn together with others, whose
+file does nothing but place them: a wheel with its tyre on (`41896c01`), a
+battery box as its case, two lids and switch (`58119`), a shock absorber with its
+spring (`76320-f2`). LEGO makes those as the separate parts, and sells them so,
+now and then assembled. So each of the 2,698 shortcuts is served here as what it
+is - an **assembly** of its parts, each placed where the shortcut's file places
+it - and is sold as one, with its LDraw number as its SKU:
+
+```shell
+pc info -a //pub/universe/lego/ldraw/Wheel:41896c01
+pc supply quote //pub/universe/lego/ldraw/Wheel:41896c01            # whole, where a store sells it whole
+pc supply quote -r //pub/universe/lego/ldraw/Wheel:41896c01         # as a rim and a tyre
+```
+
+`pc supply` asks for an assembly that is for sale as itself, and `-r` asks for
+its parts instead, which is how Pick a Brick sells a wheel. A model links a
+shortcut as `assembly:` rather than `part:`, by the same name.
+
+It is joined by the same ports. The assembly's `map:` gives each port of its
+parts the name the shortcut, as the one part LDraw draws, gives the port in the
+same place facing the same way: the battery box keeps the `h0` its end holes
+were always joined by, though the hole is now its case's, and the hole in its
+switch, which comes out turned half round its own axis, is mapped with that
+half turn undone - so that every port is the box's exactly, roll and all. A port the shortcut never had - the tyre's bore,
+`d43` - is named as its own part names it, or `<part>-<name>` where two of the
+parts share a name.
+
+Only a file that holds nothing but other parts of the library, each of them
+turned and nothing else, is a shortcut here. One drawn with faces of its own, or
+with a part in it mirrored, scaled or sheared - which no placement of that part
+can reproduce - stays a part: the IR receiver's cable, `u9190c01`, stretches the
+segment it is drawn with along its length. A shortcut made of shortcuts (the
+plate with wheels and tyres, `122c03`, made of the plate with wheels) is an
+assembly of assemblies.
+
+## Which numbers to name LEGO parts by
+
+The parts here are named by their LDraw numbers. LEGO has numbers of its own,
+and Pick a Brick sells by them, so it is fair to ask whether LEGO packages in
+PartCAD should be named by LEGO's numbers instead. They should not, and the
+reason is what each numbering counts.
+
+* **An LDraw number** names one shape LDraw draws. It is LEGO's design ID where
+  LDraw knows it, and says what it adds to it: a letter for a mould LEGO did not
+  number apart (`3942a`, `3942b`, `3942c`), `p`/`pr` for a print, `c01` for a
+  shortcut, `-f1` for a pose of a flexible part. 15,634 parts, leaving out the
+  stickers, the obsolete parts and the files that only say a part moved.
+* **A LEGO design ID** names a mould, and LEGO gives the same shape new ones:
+  the 1 x 1 brick `3005` has been sold as designs 3005, 30071 and 35382, and the
+  friction pin is `61332` at Pick a Brick and `2780` everywhere else. A print
+  gets a design ID of its own that says nothing of the part it is printed on.
+  Of the 114,661 elements Rebrickable knows, 21,697 have no design ID at all.
+* **A LEGO element ID**, which is what Pick a Brick sells by, names a design in
+  a colour: `300121` is the 2 x 4 brick in Bright Red. It is a SKU, not a part:
+  the 1 x 1 brick has been 177 of them.
+* **BrickLink, Brick Owl and Rebrickable** number their catalogues their own way,
+  each close to LDraw's and none the same as it; Rebrickable records how the
+  others map to its own.
+
+So no numbering but LDraw's is one name per shape, and a PartCAD part is a
+shape. An element ID is a shape and a colour, and a colour belongs to a part as
+a parameter rather than in its name. A design ID is not stable from one mould
+to the next, and Pick a Brick knows only what is on sale today - about 17,000
+elements in a shop - so a library named by it would lose every part LEGO has
+stopped making: seven of the 31 parts of the LEGO F1 car in
+`//pub/examples/lego`. LEGO publishes no catalogue of its numbers either; the
+open record of them is Rebrickable's, which a library named by them would rest
+on anyway. And where the two numberings could agree, they already do: of the
+7,950 parts LDraw numbers without a suffix, 4,474 are exactly LEGO design IDs,
+and 5,011 once a mould letter is dropped.
+
+What is worth making standard instead is the other side: how a LEGO part says
+it is for sale. Here that is `vendor: lego` with the LDraw number as the SKU,
+and a store's job to translate - and any package that declares LEGO parts the
+same way can be bought at every store here. Two things would take it further.
+A colour parameter on every part, once PartCAD can key a shape's cache on its
+geometry and not on its colour, would let a model say what colour each brick is,
+and its quote stop being the cheapest colour. And PartCAD hands a store only a
+part's vendor and SKU when it asks whether it has it; were it to hand over the
+part's declaration too, the index could carry each part's Rebrickable, BrickLink
+and LEGO numbers, and the stores would not have to work them out.
+
 ## Layout
 
 | Path | Purpose |
 | --- | --- |
 | `partcad.yaml` | `//pub/universe/lego`; the `ldraw` external dependency (the library), the `ldraw_repo` repository, the `ldraw` partType, and the LEGO interfaces. |
-| `ldraw_repo.py` | Repository plugin: categories, paginated part lists, `.dat`-header metadata, the interfaces each part implements, the partType, and the wrapper file. |
+| `ldraw_repo.py` | Repository plugin: categories, paginated part lists, `.dat`-header metadata, the interfaces each part implements, the shortcuts as assemblies, the partType, and the wrapper file. |
 | `ldraw.py` | The `:ldraw` partType wrapper: fetch + recursively mesh a `.dat`. |
 | `patches/` | The maintained list of patches to LDraw files (see [Patches](#patches)). |
 | `lego-demo/` | Assemblies built purely out of those interfaces. |
@@ -682,8 +816,9 @@ everything that failed without re-fetching what did not.
 
 ## Requirements
 
-Requires a PartCAD version that provides plugin-backed (`external`) packages and
-`partTypes` (`partcad: ">=0.7.146"` in `partcad.yaml`). Because parts are fetched
+Requires PartCAD 0.8.174 or newer (`partcad: ">=0.8.174"` in `partcad.yaml`):
+the first release whose assemblies take `turnZ` in their `map:`, which some
+shortcuts' ports need (see [Shortcuts](#shortcuts-are-assemblies)). Because parts are fetched
 on demand, first use of a part or category needs network access; afterwards the
 cache is used.
 
