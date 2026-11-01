@@ -317,7 +317,9 @@ touched, so the listings and the archive are not needed:
 That is how the bush's axle hole (below) went in.
 
 What each shortcut is made of (see [Shortcuts](#shortcuts-are-assemblies)) is
-read again the same way, with nothing else in the index touched:
+read again the same way, with nothing else in the index touched - and LDraw's
+colour table with it, from the library's `LDConfig.ldr` (see
+[Colours](#colours)):
 
 ```sh
 ./build_parts_index.py --shortcuts path/to/ldraw
@@ -670,7 +672,9 @@ Rebrickable merely calls an *alternate* does not, because the pin without
 friction that is an alternate of `2780` does not hold an angle.
 
 A part has no colour, because the geometry has none, so a store quotes the
-cheapest colour it has unless it is told one (each store's `color`).
+cheapest colour it has unless it is told one (each store's `color`). A model
+does say what colour each part of it is drawn in (see [Colours](#colours)), on
+the link that places it, but a store is not told that yet.
 
 ### Shortcuts are assemblies
 
@@ -692,6 +696,13 @@ pc supply quote -r //pub/universe/lego/ldraw/Wheel:41896c01         # as a rim a
 its parts instead, which is how Pick a Brick sells a wheel. A model links a
 shortcut as `assembly:` rather than `part:`, by the same name.
 
+And it is drawn in the colours the shortcut's file draws its parts in: the
+tyre of `41896c01` is rubber black whatever colour the wheel is, and the lids of
+the battery box are dark grey and its switch orange. A part the file draws in
+LDraw's `16` - the colour of whatever places it - is drawn in the colour the
+model places the shortcut in, the rim of that wheel among them (see
+[Colours](#colours)).
+
 It is joined by the same ports. The assembly's `map:` gives each port of its
 parts the name the shortcut, as the one part LDraw draws, gives the port in the
 same place facing the same way: the battery box keeps the `h0` its end holes
@@ -708,6 +719,49 @@ can reproduce - stays a part: the IR receiver's cable, `u9190c01`, stretches the
 segment it is drawn with along its length. A shortcut made of shortcuts (the
 plate with wheels and tyres, `122c03`, made of the plate with wheels) is an
 assembly of assemblies.
+
+## Colours
+
+LDraw draws nearly every part in colour `16`, which is not a colour at all but
+"whatever colour places me": a `.dat` file says what shape a part is, and the
+model that places it says what colour. PartCAD says it the same way, on the link
+of an ASSY file that places the part (`color:`, which needs a PartCAD that
+reads it - an older one draws every part in its default goldenrod):
+
+```yaml
+links:
+  - part: //pub/universe/lego/ldraw/Brick:3001
+    name: base
+    color: "#B40000" # LDraw 4, Red
+  - assembly: //pub/universe/lego/ldraw/Wheel:41896c01
+    name: wheel
+    color: "#969696" # LDraw 71, Light_Bluish_Grey
+    location: [[40, 0, 0], [0, 0, 1], 0]
+```
+
+Nothing is built again for a colour: the same brick placed in four colours is
+one mesh, drawn four times.
+
+What does have colours of its own is a shortcut. Its file places some of its
+parts in colours of their own, and each of those is placed in that colour here,
+so the wheel above is drawn with a grey rim and a black tyre - see
+[Shortcuts](#shortcuts-are-assemblies).
+
+The colours are LDraw's own, as the library's `LDConfig.ldr` defines them:
+each code's value, with its alpha where it is not opaque, and its name. The
+index carries the table (`colors.json`, 320 colours), so that a shortcut's
+colours are read without the network, and `ldraw_repo.py` writes LDraw's name
+beside every colour it puts in a shortcut's file. A model is free to use any
+colour at all; these are the ones LEGO's parts come in.
+
+A part LDraw draws in several colours without being a shortcut here is drawn
+in one: the colour its link gives it. The Power Functions XL motor `58121`, IR
+receiver `58123` and IR remote `58122` are such parts. LDraw types each of them
+a shortcut, but each draws something no placement of a part can: the motor and
+the receiver a stub of cable that is a subpart rather than a part, stretched
+along its length, and the remote one of its two buttons mirrored. So each stays
+one part, meshed into one shape, and PartCAD has no way yet for one part's
+shape to be in several colours.
 
 ## Which numbers to name LEGO parts by
 
@@ -749,9 +803,10 @@ What is worth making standard instead is the other side: how a LEGO part says
 it is for sale. Here that is `vendor: lego` with the LDraw number as the SKU,
 and a store's job to translate - and any package that declares LEGO parts the
 same way can be bought at every store here. Two things would take it further.
-A colour parameter on every part, once PartCAD can key a shape's cache on its
-geometry and not on its colour, would let a model say what colour each brick is,
-and its quote stop being the cheapest colour. And PartCAD hands a store only a
+A model already says what colour each brick is (see [Colours](#colours)), on
+the link that places it, which keeps a shape's cache keyed on its geometry
+alone; handing that colour to a store would let its quote stop being the
+cheapest colour. And PartCAD hands a store only a
 part's vendor and SKU when it asks whether it has it; were it to hand over the
 part's declaration too, the index could carry each part's Rebrickable, BrickLink
 and LEGO numbers, and the stores would not have to work them out.
@@ -821,6 +876,11 @@ the first release whose assemblies take `turnZ` in their `map:`, which some
 shortcuts' ports need (see [Shortcuts](#shortcuts-are-assemblies)). Because parts are fetched
 on demand, first use of a part or category needs network access; afterwards the
 cache is used.
+
+The colours a shortcut places its parts in (see [Colours](#colours)) are drawn
+by a PartCAD that reads `color:` on an ASSY link (partcad/partcad#889). An older
+one reads the same files and draws every part in its default colour, which is
+why that is not a requirement.
 
 ## Licensing
 

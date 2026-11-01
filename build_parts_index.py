@@ -65,10 +65,12 @@ patch is added, and when the library is updated.
     ./build_parts_index.py --shortcuts LIBRARY
 
 The fourth writes what each shortcut is made of - every part the library draws
-as other parts, a wheel with its tyre on - into the index ('shortcuts.json'),
-read from LIBRARY, and leaves everything else in it as it is. The plugin serves
-those as assemblies rather than parts. A full rebuild does the same from the
-archive.
+as other parts, a wheel with its tyre on, and the colour each of them is drawn
+in - into the index ('shortcuts.json'), read from LIBRARY, and leaves everything
+else in it as it is. The plugin serves those as assemblies rather than parts. It
+writes LDraw's colour table beside it ('colors.json'), read from the library's
+'LDConfig.ldr', which is what turns the colour a shortcut draws a part in into
+one PartCAD draws it in. A full rebuild does the same from the archive.
 
 Run it when the LDraw library publishes an update; commit the result. The
 list pages are cached on disk between runs like every other fetch, so a second
@@ -90,6 +92,8 @@ import zipfile
 ARCHIVE_URL = "https://library.ldraw.org/library/updates/complete.zip"
 FORMAT = 3  # a zip: 'index.json' plus one member per category
 SHORTCUTS_MEMBER = "shortcuts.json"  # what each shortcut is made of; see 'shortcuts'
+COLORS_MEMBER = "colors.json"  # LDraw's colour table; see 'colors'
+CONFIG_FILE = "LDConfig.ldr"  # where the library states it, at its root
 
 _AUTHOR_LINE = re.compile(r"^0\s+Author:\s*(.+?)\s*$")
 _LICENSE_LINE = re.compile(r"^0\s+!LICENSE\s+(.+?)\s*$")
@@ -191,14 +195,17 @@ def _is_rotation(m):
 
 
 def shortcuts(ids, read):
-    """{shortcut id: [[part id, [x, y, z], [a, ..., i]], ...]} for the parts of 'ids' that are other parts.
+    """{shortcut id: [[part id, [x, y, z], [a, ..., i], colour], ...]} for the parts of 'ids' that are other parts.
 
     'read(pid)' is the text of a part's file, or None. A shortcut is kept only
     if every line that draws anything places another part of 'ids', turned and
     nothing else: one with faces of its own, or with a primitive or a subpart in
     it, would lose them as an assembly, and a part mirrored, scaled or sheared
     is not one any placement of it can reproduce. Those stay parts. Positions
-    and matrices are LDraw's, as the file has them.
+    and matrices are LDraw's, as the file has them, and so is the colour: the
+    code as the line writes it, '16' for a part drawn in whatever colour the
+    shortcut itself is placed in, and '256' for a tyre that is black whatever
+    the wheel is (see 'colors' for what each code is).
     """
     known = {pid.lower(): pid for pid in ids}
     found = {}
@@ -223,21 +230,71 @@ def shortcuts(ids, read):
             if part is None or part == pid or not _is_rotation(matrix):
                 components = None
                 break
-            components.append([part, [float(v) for v in fields[2:5]], matrix])
+            components.append([part, [float(v) for v in fields[2:5]], matrix, fields[1]])
         if components:
             found[pid] = components
     return found
 
 
-def write_shortcuts(path, found):
-    """Put 'found' into the index at 'path' as its shortcuts member, keeping every other member."""
+# One colour of LDConfig.ldr: '0 !COLOUR <name> CODE <n> VALUE #RRGGBB EDGE #RRGGBB'
+# and what else it says - an ALPHA, a finish, and for a glitter or a speckle a
+# MATERIAL clause with a VALUE of its own, which is the glitter's and not the
+# colour's.
+_COLOUR_LINE = re.compile(r"^0\s+!COLOUR\s+(\S+)\s+CODE\s+(\d+)\s+VALUE\s+#([0-9A-Fa-f]{6})\b(.*)$")
+_ALPHA = re.compile(r"\bALPHA\s+(\d+)\b")
+
+# The two codes that are not colours: 16 is whatever colour the line placing
+# the part is drawn in, and 24 the edge colour of that. LDConfig.ldr defines
+# both, with values a renderer shows only for a part nothing has coloured yet,
+# and the plugin draws such a part in whatever its link says instead.
+_NOT_COLORS = ("16", "24")
+
+
+def colors(text):
+    """{code: [name, "#RRGGBB" or "#RRGGBBAA"]} for every colour the text of an LDConfig.ldr defines.
+
+    The value is the colour's own, in upper case, with its ALPHA as a fourth
+    pair of digits where it has one that is not opaque (the IR lens of the Power
+    Functions parts, 32, is black at 245) - which is how PartCAD writes a
+    colour. Codes 16 and 24 are left out: they say which colour to take, not
+    what it is.
+    """
+    found = {}
+    for line in text.splitlines():
+        match = _COLOUR_LINE.match(line.strip())
+        if match is None:
+            continue
+        name, code, value, rest = match.groups()
+        if code in _NOT_COLORS:
+            continue
+        color = "#" + value.upper()
+        alpha = _ALPHA.search(rest.split("MATERIAL")[0])
+        if alpha is not None and int(alpha.group(1)) < 255:
+            color += "%02X" % int(alpha.group(1))
+        found[code] = [name, color]
+    return found
+
+
+def write_member(path, member, value):
+    """Put 'value' into the index at 'path' as JSON under 'member', keeping every other member."""
     with zipfile.ZipFile(path) as z:
-        members = {n: z.read(n) for n in z.namelist() if n != SHORTCUTS_MEMBER}
+        members = {n: z.read(n) for n in z.namelist() if n != member}
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         for name, data in members.items():
             z.writestr(name, data)
-        z.writestr(SHORTCUTS_MEMBER, json.dumps(dict(sorted(found.items())), separators=(",", ":")))
+        z.writestr(member, json.dumps(value, separators=(",", ":")))
+
+
+def write_shortcuts(path, found):
+    """Put 'found' into the index at 'path' as its shortcuts member, keeping every other member."""
+    write_member(path, SHORTCUTS_MEMBER, dict(sorted(found.items())))
     print("%s: %d shortcuts" % (os.path.basename(path), len(found)), file=sys.stderr)
+
+
+def write_colors(path, found):
+    """Put 'found' into the index at 'path' as its colours member, keeping every other member."""
+    write_member(path, COLORS_MEMBER, dict(sorted(found.items(), key=lambda item: int(item[0]))))
+    print("%s: %d colours" % (os.path.basename(path), len(found)), file=sys.stderr)
 
 
 def _indexed_ids(path):
@@ -475,7 +532,7 @@ def main():
         "--shortcuts",
         metavar="LIBRARY",
         default=None,
-        help="an unpacked 'ldraw' directory: write what each shortcut is made of into the index",
+        help="an unpacked 'ldraw' directory: write what each shortcut is made of, and LDraw's colours, into the index",
     )
     parser.add_argument(
         "--patch-users",
@@ -496,6 +553,8 @@ def main():
                 return f.read()
 
         write_shortcuts(args.output, shortcuts(_indexed_ids(args.output), read))
+        with open(os.path.join(args.shortcuts, CONFIG_FILE), encoding="utf-8") as f:
+            write_colors(args.output, colors(f.read()))
         return
 
     if args.patch_users:
@@ -541,6 +600,8 @@ def main():
             return f.read()
 
     write_shortcuts(args.output, shortcuts(_indexed_ids(args.output), read))
+    with zipfile.ZipFile(archive) as z:
+        write_colors(args.output, colors(z.read("ldraw/" + CONFIG_FILE).decode("utf-8")))
 
     shutil.rmtree(cache, ignore_errors=True)
     parts = sum(len(p) for p in index["categories"].values())

@@ -2134,7 +2134,7 @@ def test_the_builder_keeps_only_shortcuts_made_of_parts_turned_and_nothing_else(
     builder = _builder()
     files = {
         "a1c01": "0 A\n0 !LDRAW_ORG Part\n"
-        "1 16 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat\n1 16 0 -24 0 1 0 0 0 1 0 0 0 1 3003.dat\n",
+        "1 16 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat\n1 4 0 -24 0 1 0 0 0 1 0 0 0 1 3003.dat\n",
         "b2": "0 B\n0 !LDRAW_ORG Shortcut\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat\n2 24 0 0 0 1 1 1\n",
         # A turn written to three digits, as the spiral staircase 40243c01 writes its own.
         "j10c01": "0 J\n0 !LDRAW_ORG Shortcut\n1 16 0 0 0 .929 0 -.383 0 1 0 .383 0 .929 3001.dat\n",
@@ -2150,14 +2150,114 @@ def test_the_builder_keeps_only_shortcuts_made_of_parts_turned_and_nothing_else(
         "g7": "0 G\n0 !LDRAW_ORG Part\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat\n",
     }
     found = builder.shortcuts(list(files) + ["3001", "3003"], files.get)
+    # Each part with the colour its line draws it in, as the line writes it.
     assert found == {
         "a1c01": [
-            ["3001", [0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]],
-            ["3003", [0.0, -24.0, 0.0], [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]],
+            ["3001", [0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0], "16"],
+            ["3003", [0.0, -24.0, 0.0], [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0], "4"],
         ],
-        "b2": [["3001", [0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]]],
-        "j10c01": [["3001", [0.0, 0.0, 0.0], [0.929, 0.0, -0.383, 0.0, 1.0, 0.0, 0.383, 0.0, 0.929]]],
+        "b2": [["3001", [0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0], "16"]],
+        "j10c01": [["3001", [0.0, 0.0, 0.0], [0.929, 0.0, -0.383, 0.0, 1.0, 0.0, 0.383, 0.0, 0.929], "16"]],
     }
+
+
+# --- colours --------------------------------------------------------------------
+
+_LDCONFIG = """\
+0 LDraw.org Configuration File
+0 Name: LDConfig.ldr
+0 // LDraw Solid Colours
+0                              // LEGOID  26 - Black
+0 !COLOUR Black                                                 CODE     0   VALUE #1B2A34   EDGE #808080
+0 !COLOUR Red                                                   CODE     4   VALUE #b40000   EDGE #333333
+0 !COLOUR Trans_Black_IR_Lens                                   CODE    32   VALUE #000000   EDGE #333333   ALPHA 245
+0 !COLOUR Trans_Clear                                           CODE    47   VALUE #FCFCFC   EDGE #C3C3C3   ALPHA 255
+0 !COLOUR Rubber_Black                                          CODE   256 VALUE #1B2A34   EDGE #808080   RUBBER
+0 !COLOUR Glitter_Trans_Clear  CODE 117 VALUE #EEEEEE EDGE #BABABA ALPHA 128 MATERIAL GLITTER VALUE #FFFFFF SIZE 1
+0 !COLOUR Speckle_Black_Silver CODE 132 VALUE #000000 EDGE #595959 MATERIAL SPECKLE VALUE #595959 ALPHA 12 FRACTION 0.4
+0 !COLOUR Main_Colour                                           CODE  16   VALUE #FFFF80   EDGE #333333
+0 !COLOUR Edge_Colour                                           CODE  24   VALUE #7F7F7F   EDGE #333333
+"""
+
+
+def test_the_builder_reads_ldraw_s_colours_as_partcad_writes_a_colour():
+    assert _builder().colors(_LDCONFIG) == {
+        "0": ["Black", "#1B2A34"],
+        "4": ["Red", "#B40000"],
+        # A colour that is not opaque has its alpha as a fourth pair of digits,
+        # and one that says it is opaque is written as one that says nothing.
+        "32": ["Trans_Black_IR_Lens", "#000000F5"],
+        "47": ["Trans_Clear", "#FCFCFC"],
+        "256": ["Rubber_Black", "#1B2A34"],
+        # The glitter's VALUE is the glitter's, and its alpha is the colour's;
+        # the speckle's ALPHA is the speckle's, and the colour is opaque.
+        "117": ["Glitter_Trans_Clear", "#EEEEEE80"],
+        "132": ["Speckle_Black_Silver", "#000000"],
+        # 16 and 24 are not colours, but which colour to take.
+    }
+
+
+def test_the_colours_the_builder_writes_are_what_the_plugin_reads(tmp_path):
+    builder = _builder()
+    path = tmp_path / "index.zip"
+    import zipfile
+
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("index.json", json.dumps({"format": builder.FORMAT, "strings": [], "categories": {}}))
+        z.writestr("shortcuts.json", "{}")
+    builder.write_colors(str(path), builder.colors(_LDCONFIG))
+    index = plugin._Index(str(path))
+    assert index.colors()["256"] == ["Rubber_Black", "#1B2A34"]
+    # In the order of their codes, and beside what was there.
+    assert list(index.colors()) == ["0", "4", "32", "47", "117", "132", "256"]
+    assert index.shortcuts() == {}
+
+
+def test_the_index_has_ldraw_s_colours(_no_network):
+    colors = plugin._index().colors()
+    assert colors["0"] == ["Black", "#1B2A34"]
+    assert colors["256"][0] == "Rubber_Black"
+    assert colors["32"][1].startswith("#000000") and len(colors["32"][1]) == 9
+    assert "16" not in colors and "24" not in colors
+
+
+def test_a_colour_code_is_a_partcad_colour(_no_network):
+    assert plugin._color("4") == ("#B40000", "Red")
+    assert plugin._color(4) == ("#B40000", "Red")
+    # A direct colour is the colour it spells, and is named by its code.
+    assert plugin._color("0x2913728") == ("#913728", "0x2913728")
+    # Whatever places the part, and what nobody said: no colour of its own.
+    for code in ("16", "24", None, "999999"):
+        assert plugin._color(code) == (None, None)
+
+
+def test_a_shortcut_draws_each_part_in_the_colour_its_file_does(_no_network):
+    # The F1 car's front wheel: the rim is the wheel's colour (16), whatever the
+    # car places it in, and the tyre is rubber black whatever the wheel is.
+    links = _assy_links("Wheel/files/41896c01.assy")
+    assert [(link["name"], link.get("color")) for link in links] == [
+        ("41896", None),
+        ("41897", plugin._index().colors()["256"][1]),
+    ]
+    # And the battery box: a dark grey lid at each end, an orange switch.
+    links = _assy_links("Electric/files/58119.assy")
+    grey, orange = plugin._color("72")[0], plugin._color("25")[0]
+    assert [link.get("color") for link in links] == [None, grey, grey, orange]
+    # The colour is named beside it, which the file says nothing else about.
+    text = base64.b64decode(plugin.get("Electric/files/58119.assy")).decode()
+    assert '    color: "%s" # LDraw 25, Orange\n' % orange in text
+
+
+def test_a_shortcut_from_an_index_without_colours_is_drawn_in_its_own(_no_network, monkeypatch):
+    identity = [1, 0, 0, 0, 1, 0, 0, 0, 1]
+    _shortcuts(monkeypatch, {"x1c01": [["3001", [0, 0, 0], identity], ["3001", [0, -24, 0], identity, "16"]]})
+    assert plugin._shortcut_colors("x1c01") == [(None, None, None), (None, None, "16")]
+
+
+def _assy_links(key):
+    import yaml
+
+    return yaml.safe_load(base64.b64decode(plugin.get(key)).decode())["links"]
 
 
 def test_the_shortcuts_the_builder_writes_are_what_the_plugin_reads(tmp_path, monkeypatch):

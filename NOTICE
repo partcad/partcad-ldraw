@@ -19,5 +19,10 @@ demand from the LDraw Parts Library at build time:
     the exact license and author of each part are recorded in that part's `.dat`
     header and are surfaced by this package.
 
+The index this package ships (`parts-index.zip`) carries what it needs from that
+library to answer without the network: each part's name, author and license,
+what each shortcut is made of, and LDraw's colour table - each colour's name and
+value, as the library's `LDConfig.ldr` defines it (LDraw.org).
+
 LDraw is a trademark of the Estate of James Jessiman. This package is not
 affiliated with or endorsed by the LDraw.org team.

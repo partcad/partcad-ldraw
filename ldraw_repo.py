@@ -302,6 +302,7 @@ class _Index:
         self._parts = {}  # category -> {pid: entry}, read on demand
         self._category_of = None  # pid -> category, built on demand
         self._shortcuts = None  # pid -> its parts, read on demand
+        self._colors = None  # LDraw colour code -> [name, colour], read on demand
 
     def _string(self, i):
         return self._strings[i] if 0 <= i < len(self._strings) else None
@@ -342,11 +343,14 @@ class _Index:
         return (desc or None, self._string(author), self._string(lic))
 
     def shortcuts(self):
-        """{shortcut id: [[part id, [x, y, z], [a, b, c, d, e, f, g, h, i]], ...]}.
+        """{shortcut id: [[part id, [x, y, z], [a, b, c, d, e, f, g, h, i], colour], ...]}.
 
         What each shortcut is made of, where its file places each part - in
-        LDraw's own units and frame - and {} for an index built before there
-        was such a member (see build_parts_index.py --shortcuts).
+        LDraw's own units and frame - and the LDraw colour code it draws the
+        part in, as the file writes it; {} for an index built before there was
+        such a member (see build_parts_index.py --shortcuts). An index built
+        before the colour was kept has none, and a part is then drawn in the
+        colour of the shortcut, as a '16' is.
         """
         if self._shortcuts is None:
             try:
@@ -354,6 +358,18 @@ class _Index:
             except KeyError:
                 self._shortcuts = {}
         return self._shortcuts
+
+    def colors(self):
+        """{LDraw colour code: [name, "#RRGGBB" or "#RRGGBBAA"]}, as the library's LDConfig.ldr defines them.
+
+        {} for an index built before there was such a member.
+        """
+        if self._colors is None:
+            try:
+                self._colors = json.loads(self._zip.read(_COLORS_MEMBER))
+            except KeyError:
+                self._colors = {}
+        return self._colors
 
 
 def member_name(category):
@@ -1278,6 +1294,44 @@ def _suppliers(category):
     return {name: {} for name in _SUPPLIERS}
 
 
+# --- colours -------------------------------------------------------------------
+#
+# A part has no colour of its own here - LDraw draws nearly every part in '16',
+# the colour of whatever places it - and a model says what colour each of its
+# parts is, on the link that places it ('color:', which needs a PartCAD that
+# reads it; an older one draws everything in its default colour). What does
+# have colours of its own is a shortcut: its file draws the tyre on a wheel in
+# rubber black (256) and the rim in '16', whatever colour the wheel is. So each
+# part of a shortcut that the shortcut's file draws in a colour is placed in
+# that colour, and the others in none, which leaves them to be drawn in the
+# colour the model places the shortcut in - which is what '16' means.
+#
+# The colours are LDraw's own, as the library's LDConfig.ldr defines them, read
+# into the index by build_parts_index.py ('colors.json'). A direct colour,
+# '0x2RRGGBB', is that colour. A code the table does not have is drawn as a '16'.
+_COLORS_MEMBER = "colors.json"
+_INHERITED_COLORS = ("16", "24")
+_DIRECT_COLOR = re.compile(r"^0x2([0-9A-Fa-f]{6})$")
+
+
+def _color(code):
+    """(PartCAD colour, LDraw's name for it) of LDraw colour 'code'; (None, None) for whatever places the part.
+
+    A direct colour has no name, and is named by its code.
+    """
+    if code is None:
+        return None, None
+    code = str(code)
+    if code in _INHERITED_COLORS:
+        return None, None
+    direct = _DIRECT_COLOR.match(code)
+    if direct:
+        return "#" + direct.group(1).upper(), code
+    index = _index()
+    known = index.colors().get(code) if index else None
+    return (known[1], known[0]) if known else (None, None)
+
+
 # --- shortcuts: one part to LDraw, several to LEGO ------------------------------
 #
 # A shortcut in the LDraw library is a part drawn together with others: a wheel
@@ -1349,12 +1403,24 @@ def _shortcut_links(pid):
     """
     seen = {}
     links = []
-    for component, position, matrix in _shortcut(pid) or []:
+    for component, position, matrix, *_color_code in _shortcut(pid) or []:
         seen[component] = seen.get(component, 0) + 1
         name = component if seen[component] == 1 else "%s-%d" % (component, seen[component])
         kind = "assembly" if _shortcut(component) is not None else "part"
         links.append((name, component, kind, _component_location(position, matrix)))
     return links
+
+
+def _shortcut_colors(pid):
+    """(colour, name, code) of each part of shortcut 'pid', in its file's order; colour None for the shortcut's own.
+
+    See '_color'.
+    """
+    colors = []
+    for entry in _shortcut(pid) or []:
+        code = entry[3] if len(entry) > 3 else None
+        colors.append(_color(code) + (code,))
+    return colors
 
 
 def _rotation(axis, angle):
@@ -1501,15 +1567,19 @@ def _component_reference(component, category):
 
 
 def _assy_text(pid, category):
-    """The ASSY file of shortcut 'pid': its parts, placed as its LDraw file places them."""
+    """The ASSY file of shortcut 'pid': its parts, placed and coloured as its LDraw file draws them."""
     lines = [
         "# %s, as LDraw draws it: generated by ldraw_repo.py from the library's" % pid,
         "# shortcut file, one link per part it places.",
         "links:",
     ]
-    for node, component, kind, location in _shortcut_links(pid):
+    for (node, component, kind, location), (color, color_name, code) in zip(
+        _shortcut_links(pid), _shortcut_colors(pid), strict=True
+    ):
         lines.append("  - %s: %s" % (kind, json.dumps(_component_reference(component, category))))
         lines.append("    name: %s" % json.dumps(node))
+        if color is not None:
+            lines.append("    color: %s # LDraw %s, %s" % (json.dumps(color), code, color_name))
         lines.append("    location: %s" % json.dumps(location))
     return "\n".join(lines) + "\n"
 
