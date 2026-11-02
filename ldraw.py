@@ -2352,7 +2352,7 @@ def _face_codes(solid, tris, colors):
                     grid.setdefault((x, y, z), []).append(number)
 
     def holding(p):
-        """The code of the triangle 'p' lies on: of several, one it is inside, the nearest, then one in a code of its own.
+        """The code of the triangle 'p' lies on: one it is inside, then the nearest, then one in a code of its own.
 
         A print drawn over its part's body is two triangles holding one face,
         and the print's code - not the body's 16 - is what the face is drawn in.
