@@ -2352,7 +2352,7 @@ def _face_codes(solid, tris, colors):
                     grid.setdefault((x, y, z), []).append(number)
 
     def holding(p):
-        """The code of the triangle 'p' lies on: of several, the nearest, and of two as near, one in a code of its own.
+        """The code of the triangle 'p' lies on: of several, one it is inside, the nearest, then one in a code of its own.
 
         A print drawn over its part's body is two triangles holding one face,
         and the print's code - not the body's 16 - is what the face is drawn in.
@@ -2363,7 +2363,10 @@ def _face_codes(solid, tris, colors):
             off = abs(sum(n[k] * (p[k] - a[k]) for k in range(3)))
             if off > reach or not _inside_triangle(p, a, b, c, n, reach):
                 continue
-            rank = (round(off, 6), code == "16")
+            # A triangle the centre is inside before one it is only beside: a
+            # narrow face along the edge of another colour is its own colour.
+            beside = not _inside_triangle(p, a, b, c, n)
+            rank = (beside, round(off, 6), code == "16")
             if best is None or rank < best[0]:
                 best = (rank, code)
         return best[1] if best is not None else None
@@ -2773,12 +2776,15 @@ def _finished(solid, tris, colors, cmf):
 
 
 def _cmf_solids(shape, faces):
-    """What each solid of 'shape' is made of, where every face of it that says agrees: one entry per solid, or None.
+    """What each solid of 'shape' is made of, where every face of it says so and agrees: one entry per solid, or None.
 
     A material is a solid's, not a face's (docs/design/cmf.md in PartCAD), and
-    LDraw states it per triangle, with the code. A solid whose faces state one
-    material is made of it; one whose faces state two - which a part LEGO moulds
-    in one go does not - or none is left for the part's own 'material'.
+    LDraw states it per triangle, with the code. A solid every face of which
+    states one material is made of it. One with a face in 16 is left for the
+    part's own 'material', as a part in 16 throughout is: that face is the
+    part's colour, which this file does not know - a print on a transparent
+    tile is ABS on a body that is not. So is one whose faces state two, which a
+    part LEGO moulds in one go does not.
     """
     from OCP.TopAbs import TopAbs_FACE, TopAbs_SOLID
     from OCP.TopExp import TopExp
@@ -2795,9 +2801,8 @@ def _cmf_solids(shape, faces):
         materials = set()
         for k in range(1, own.Extent() + 1):
             entry = faces[every.FindIndex(own.FindKey(k)) - 1]
-            if entry is not None and entry.get("material"):
-                materials.add(entry["material"])
-        result.append({"material": materials.pop()} if len(materials) == 1 else None)
+            materials.add(entry.get("material") if entry is not None else None)
+        result.append({"material": materials.pop()} if len(materials) == 1 and None not in materials else None)
     return result
 
 

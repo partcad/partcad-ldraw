@@ -1757,8 +1757,30 @@ def test_each_face_says_the_colour_its_triangle_was_drawn_in():
     assert stated[0]["color"] == "4" and stated[0]["material"] == "abs"
     assert stated[0]["rgba"][:3] == [180, 0, 0]  # LDraw's Red, #B40000
     assert _faces(solid) == len(cmf["faces"]) == 6
-    # The one solid is made of what its faces that say say it is made of.
+    # Its other faces are the part's own colour, which says what it is made of:
+    # one red face does not make the solid ABS.
+    assert "solids" not in cmf
+
+
+def test_a_solid_every_face_of_which_says_one_material_is_made_of_it():
+    pytest.importorskip("OCP")
+    cmf = {}
+    ldraw._build_shape(_box((0, 0, 0), (10, 10, 10)), False, ["4"] * 12, cmf)
     assert cmf["solids"] == [{"material": "abs"}]
+
+
+def test_a_narrow_face_along_another_colour_is_its_own_colour():
+    """Within the match's reach of the coloured face beside it, but inside its own triangle."""
+    pytest.importorskip("OCP")
+    tris = _box((0, 0, 0), (10, 10, 10))[2:]
+    # One plane: a strip 0.2 LDU wide in the part's own colour, the rest in Red.
+    strip = _box((0, 0, 0), (0.2, 10, 10))[:2] + _box((0.2, 0, 0), (10, 10, 10))[:2]
+    cmf = {}
+    solid = ldraw._build_shape(strip + tris, False, ["16", "16", "4", "4"] + ["16"] * len(tris), cmf)
+
+    # The strip is not joined into the red face: seven faces, one of them red.
+    assert _faces(solid) == 7
+    assert [face["color"] for face in cmf["faces"] if face is not None] == ["4"]
 
 
 def test_two_colours_in_one_plane_stay_two_faces():
