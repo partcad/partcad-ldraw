@@ -538,7 +538,7 @@ def _xform(m, t, p):
     return (r[0] + t[0], r[1] + t[1], r[2] + t[2])
 
 
-def _mesh(text, m, t, tris, cache, invert=False, uncertified=None):
+def _mesh(text, m, t, tris, cache, invert=False, uncertified=None, colors=None, color="16"):
     """Mesh one LDraw file into 'tris', resolving BFC winding as it goes.
 
     Reading the vertices in the order they are written and leaving it at that
@@ -568,6 +568,12 @@ def _mesh(text, m, t, tris, cache, invert=False, uncertified=None):
     those rings in it is still the kernel's business and sometimes it does not.
 
     The specification is https://www.ldraw.org/article/415.html.
+
+    'colors', when it is given, is kept in step with 'tris': the LDraw colour
+    code each triangle is drawn in. Code 16 is "the colour of whatever places
+    me", so a reference passes its own colour down to a subfile that draws in
+    16, and 'color' is that colour; at the top of a part it is 16 itself, which
+    is left for the part's own 'color' to say (see '_cmf').
     """
     # A mirrored placement turns everything drawn beneath it inside out.
     mirrored = _det(m) < 0.0
@@ -623,13 +629,25 @@ def _mesh(text, m, t, tris, cache, invert=False, uncertified=None):
                 # part, and skipping it quietly returns a wrong shape that
                 # looks like a right one - and gets cached as such.
                 raise LDrawSubfileMissing(subname)
-            _mesh(subtext, nm, nt, tris, cache, invert ^ invertnext, uncertified)
+            _mesh(
+                subtext,
+                nm,
+                nt,
+                tris,
+                cache,
+                invert ^ invertnext,
+                uncertified,
+                colors,
+                color if f[1] == "16" else f[1],
+            )
         elif code == "3" and len(f) >= 11:
             v = list(map(float, f[2:11]))
             p1, p2, p3 = v[0:3], v[3:6], v[6:9]
             if flip:
                 p2, p3 = p3, p2
             tris.append((_xform(m, t, p1), _xform(m, t, p2), _xform(m, t, p3)))
+            if colors is not None:
+                colors.append(color if f[1] == "16" else f[1])
         elif code == "4" and len(f) >= 14:
             v = list(map(float, f[2:14]))
             p1, p2, p3, p4 = v[0:3], v[3:6], v[6:9], v[9:12]
@@ -640,6 +658,8 @@ def _mesh(text, m, t, tris, cache, invert=False, uncertified=None):
                 p2, p4 = p4, p2
             tris.append((_xform(m, t, p1), _xform(m, t, p2), _xform(m, t, p3)))
             tris.append((_xform(m, t, p1), _xform(m, t, p3), _xform(m, t, p4)))
+            if colors is not None:
+                colors.extend([color if f[1] == "16" else f[1]] * 2)
         # INVERTNEXT reaches exactly one subfile reference. Clearing it after
         # every operational line, and not only after a type 1, is what keeps a
         # stray one from leaking into a later reference.
@@ -2230,7 +2250,172 @@ def _manifold(tris):
     return all(n == 2 for n in count.values())
 
 
-def _merge_coplanar(shape):
+# How far a face's centre may lie off the plane of the triangle it was cut
+# from and still be that triangle's, in millimetres: the mesh is welded at a
+# fraction of an LDU, and a face is never moved further than that.
+_FACE_ON_TRIANGLE_MM = 0.02
+
+_COLOR_TABLE = None
+
+# What a part's faces are said to be in: LDraw's codes, read the way the
+# package that declares LEGO's colours says they are.
+_CONVENTION = "//pub/universe/lego:ldraw"
+
+# The colour table, as ldraw_repo.py serves this file: written in place of this
+# line, because PartCAD materializes the served wrapper into a directory of its
+# own and 'ldraw_colors.json' does not go with it (as '_EMBEDDED_PATCHES').
+_EMBEDDED_COLORS = None
+
+
+def _color_table():
+    """What each LDraw colour code is: its colour, material and finish, as 'build_colors.py' wrote them."""
+    global _COLOR_TABLE
+    if _COLOR_TABLE is None and _EMBEDDED_COLORS is not None:
+        _COLOR_TABLE = _EMBEDDED_COLORS
+    if _COLOR_TABLE is None:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ldraw_colors.json")
+        try:
+            with open(path, encoding="utf-8") as stream:
+                _COLOR_TABLE = json.load(stream)
+        except (OSError, ValueError):
+            _COLOR_TABLE = {}
+    return _COLOR_TABLE
+
+
+class _FaceCodes:
+    """The colour code each face of a solid is drawn in, by the face itself."""
+
+    def __init__(self):
+        from OCP.TopTools import TopTools_IndexedMapOfShape
+
+        self.faces = TopTools_IndexedMapOfShape()
+        self.codes = []
+
+    def set(self, face, code):
+        index = self.faces.Add(face)
+        while len(self.codes) < index:
+            self.codes.append(None)
+        self.codes[index - 1] = code
+
+    def get(self, face):
+        return self.codes[self.faces.FindIndex(face) - 1] if self.faces.Contains(face) else None
+
+
+def _face_codes(solid, tris, colors):
+    """'_FaceCodes' of every face of 'solid', each found on the triangle of 'tris' it was cut from.
+
+    Every face of a part is one of LDraw's triangles or a piece of one, so the
+    centre of a face lies on its triangle, and the triangle says the colour. A
+    face no triangle holds - a cap closing a hole the library left open - is
+    drawn in nothing of its own, which is the part's colour. Found through a
+    grid of the triangles' boxes, so that a part of a hundred thousand
+    triangles asks each face about a handful of them.
+    """
+    from OCP.BRepGProp import BRepGProp
+    from OCP.GProp import GProp_GProps
+    from OCP.TopAbs import TopAbs_FACE
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopoDS import TopoDS
+
+    placed = []
+    for (a, b, c), code in zip(tris, colors):
+        a, b, c = _scaled(a), _scaled(b), _scaled(c)
+        normal = _normal(a, b, c)
+        if normal is None:
+            continue
+        placed.append((a, b, c, normal, code))
+    codes = _FaceCodes()
+    if not placed:
+        return codes
+    lo = [min(min(t[i][k] for i in range(3)) for t in placed) for k in range(3)]
+    hi = [max(max(t[i][k] for i in range(3)) for t in placed) for k in range(3)]
+    cell = max(max(hi[k] - lo[k] for k in range(3)) / 48.0, 0.5)
+
+    def key(value, k):
+        return int((value - lo[k]) // cell)
+
+    grid = {}
+    for number, (a, b, c, _normal_, _code) in enumerate(placed):
+        span = [range(key(min(a[k], b[k], c[k]), k), key(max(a[k], b[k], c[k]), k) + 1) for k in range(3)]
+        for x in span[0]:
+            for y in span[1]:
+                for z in span[2]:
+                    grid.setdefault((x, y, z), []).append(number)
+
+    def holding(p):
+        for number in grid.get(tuple(key(p[k], k) for k in range(3)), ()):
+            a, b, c, n, code = placed[number]
+            if abs(sum(n[k] * (p[k] - a[k]) for k in range(3))) > _FACE_ON_TRIANGLE_MM:
+                continue
+            if _inside_triangle(p, a, b, c, n):
+                return code
+        return None
+
+    explorer = TopExp_Explorer(solid, TopAbs_FACE)
+    while explorer.More():
+        face = TopoDS.Face_s(explorer.Current())
+        explorer.Next()
+        props = GProp_GProps()
+        BRepGProp.SurfaceProperties_s(face, props)
+        centre = props.CentreOfMass()
+        codes.set(face, holding((centre.X(), centre.Y(), centre.Z())))
+    return codes
+
+
+def _inside_triangle(p, a, b, c, n):
+    """Whether 'p', on the plane of 'abc' (normal 'n'), lies within it, its edges included."""
+    for u, v in ((a, b), (b, c), (c, a)):
+        edge = [v[k] - u[k] for k in range(3)]
+        to = [p[k] - u[k] for k in range(3)]
+        cross = (
+            edge[1] * to[2] - edge[2] * to[1],
+            edge[2] * to[0] - edge[0] * to[2],
+            edge[0] * to[1] - edge[1] * to[0],
+        )
+        if sum(cross[k] * n[k] for k in range(3)) < -1e-9:
+            return False
+    return True
+
+
+def _cmf(shape, codes):
+    """What each face of 'shape' is drawn in, as 'wrapper_part_type' takes it: one entry per face, or None.
+
+    In LDraw's terms, for PartCAD's 'ldraw' convention to look up among the
+    package's colours, materials and finishes by their 'ids: {ldraw: ...}': the
+    code a colour declaration answers to, the material and the finish the code
+    implies (see 'build_colors.py'), and the code's value to draw it in where
+    nothing claims it. Code 16 is the part's own colour, which the face does
+    not state; a direct colour ('0x2RRGGBB') is its value and nothing more.
+    """
+    from OCP.TopAbs import TopAbs_FACE
+    from OCP.TopExp import TopExp
+    from OCP.TopTools import TopTools_IndexedMapOfShape
+
+    table = _color_table()
+    faces = TopTools_IndexedMapOfShape()
+    TopExp.MapShapes_s(shape, TopAbs_FACE, faces)
+    result = []
+    for index in range(1, faces.Extent() + 1):
+        code = codes.get(faces.FindKey(index))
+        if code is None or code == "16":
+            result.append(None)
+        elif code in table:
+            entry = table[code]
+            result.append(
+                {
+                    key: value
+                    for key, value in entry.items()
+                    if value is not None and key in ("color", "material", "finish", "rgba")
+                }
+            )
+        elif re.match(r"^0x2[0-9A-Fa-f]{6}$", code):
+            result.append({"color": code, "rgba": list(bytes.fromhex(code[3:])) + [1.0]})
+        else:
+            result.append({"color": code})
+    return result
+
+
+def _merge_coplanar(shape, codes=None):
     """'shape' with each run of faces in one plane joined into one face, or 'shape' itself.
 
     Every face a part is built from is one of LDraw's triangles, so the flat
@@ -2250,6 +2435,11 @@ def _merge_coplanar(shape):
     twice - is left as the faces it was, as is a joined face the kernel does
     not take. And the whole is checked as the part was: if it is not valid
     solids or does not enclose the same volume, the part is served as built.
+
+    'codes' (a '_FaceCodes') says which colour each face is drawn in, and a run
+    is joined only within one: two colours side by side in one plane - a print
+    on a tile, a stripe on a panel - stay two faces, so each can be drawn in
+    its own. A joined face is given its run's colour.
     """
     from OCP.BRep import BRep_Builder, BRep_Tool
     from OCP.BRepAdaptor import BRepAdaptor_Surface
@@ -2399,6 +2589,8 @@ def _merge_coplanar(shape):
                 for j in across[i]:
                     if run[j] is not None or planes[j] is None:
                         continue
+                    if codes is not None and codes.get(faces[j]) != codes.get(faces[seed]):
+                        continue
                     n = planes[j][0]
                     if n[0] * nx + n[1] * ny + n[2] * nz <= 0.5:
                         continue
@@ -2420,6 +2612,8 @@ def _merge_coplanar(shape):
                 for i in members:
                     builder.Add(out, faces[i])
             else:
+                if codes is not None:
+                    codes.set(face, codes.get(faces[members[0]]))
                 builder.Add(out, face)
                 fewer += len(members) - 1
         out.Closed(BRep_Tool.IsClosed_s(forward))
@@ -2455,7 +2649,7 @@ def _merge_coplanar(shape):
     return result
 
 
-def _build_shape(tris, uncertified=False):
+def _build_shape(tris, uncertified=False, colors=None, cmf=None):
     """The part's solid, or LDrawNotSolid saying why there is none. Never a shell.
 
     Two ways to it, the cheaper first. A mesh that closes edge to edge is sewn
@@ -2468,6 +2662,10 @@ def _build_shape(tris, uncertified=False):
     There used to be a third way, an STL import of the raw mesh, and it is
     gone on purpose. What it returned was a shell, which renders like the part
     and makes every boolean taken against it meaningless.
+
+    'colors' is the colour code of each of 'tris' ('_mesh'); given it and a
+    'cmf' dict, what each face of the solid is drawn in is put in 'cmf' as
+    'wrapper_part_type' takes it (see '_cmf').
     """
     # Pin pyexpat before importing OCP (see wrapper_import_mesh.py).
     import pyexpat  # noqa: F401
@@ -2489,7 +2687,7 @@ def _build_shape(tris, uncertified=False):
         except Exception:
             solid = None
         if solid is not None and not _solid_problems(solid):
-            return _merge_coplanar(solid)
+            return _finished(solid, tris, colors, cmf)
 
     mended = _weld(list(tris), _WELD_LDU)
     if uncertified:
@@ -2529,7 +2727,58 @@ def _build_shape(tris, uncertified=False):
     found = _solid_problems(solid)
     if found:
         raise LDrawNotSolid("what was built is %s" % ", ".join(found))
-    return _merge_coplanar(solid)
+    return _finished(solid, tris, colors, cmf)
+
+
+def _finished(solid, tris, colors, cmf):
+    """'solid' with its coplanar faces joined, and - when 'cmf' is asked for - what each face is drawn in."""
+    if cmf is None or not colors or all(code == "16" for code in colors):
+        # One colour, the part's own: nothing for a face to say, and the part is
+        # joined and served as it always was.
+        return _merge_coplanar(solid)
+    codes = _face_codes(solid, tris, colors)
+    merged = _merge_coplanar(solid, codes)
+    faces = _cmf(merged, codes)
+    if any(entry is not None for entry in faces):
+        # The package's own convention (see 'cmfConventions:' in partcad.yaml),
+        # by reference: the parts are built in its categories, below the package
+        # that declares LEGO's colours, and naming it is what puts those in
+        # scope wherever the part is.
+        cmf["convention"] = _CONVENTION
+        cmf["faces"] = faces
+        solids = _cmf_solids(merged, faces)
+        if any(entry is not None for entry in solids):
+            cmf["solids"] = solids
+    return merged
+
+
+def _cmf_solids(shape, faces):
+    """What each solid of 'shape' is made of, where every face of it that says agrees: one entry per solid, or None.
+
+    A material is a solid's, not a face's (docs/design/cmf.md in PartCAD), and
+    LDraw states it per triangle, with the code. A solid whose faces state one
+    material is made of it; one whose faces state two - which a part LEGO moulds
+    in one go does not - or none is left for the part's own 'material'.
+    """
+    from OCP.TopAbs import TopAbs_FACE, TopAbs_SOLID
+    from OCP.TopExp import TopExp
+    from OCP.TopTools import TopTools_IndexedMapOfShape
+
+    every = TopTools_IndexedMapOfShape()
+    TopExp.MapShapes_s(shape, TopAbs_FACE, every)
+    solids = TopTools_IndexedMapOfShape()
+    TopExp.MapShapes_s(shape, TopAbs_SOLID, solids)
+    result = []
+    for index in range(1, solids.Extent() + 1):
+        own = TopTools_IndexedMapOfShape()
+        TopExp.MapShapes_s(solids.FindKey(index), TopAbs_FACE, own)
+        materials = set()
+        for k in range(1, own.Extent() + 1):
+            entry = faces[every.FindIndex(own.FindKey(k)) - 1]
+            if entry is not None and entry.get("material"):
+                materials.add(entry["material"])
+        result.append({"material": materials.pop()} if len(materials) == 1 else None)
+    return result
 
 
 if __name__ == "__partcad_part__":
@@ -2549,14 +2798,20 @@ if __name__ == "__partcad_part__":
                 }
         else:
             tris = []
+            colors = []
             uncertified = []
             try:
-                _mesh(text, _IDENT, (0, 0, 0), tris, cache, uncertified=uncertified)
+                _mesh(text, _IDENT, (0, 0, 0), tris, cache, uncertified=uncertified, colors=colors)
             except LDrawSubfileMissing as e:
                 tris = None
                 output = {"exception": "%s (needed by %s)" % (e, dat)}
             if tris is not None:
                 try:
-                    output = {"shape": _build_shape(tris, bool(uncertified))}
+                    cmf = {}
+                    output = {"shape": _build_shape(tris, bool(uncertified), colors, cmf)}
+                    # What each face is drawn in, in LDraw's codes, for PartCAD to
+                    # convert through the package's colours ('ids: {ldraw: ...}').
+                    if cmf:
+                        output["cmf"] = cmf
                 except LDrawNotSolid as e:
                     output = {"exception": "LDraw part is not a solid: %s (%s)" % (dat, e)}

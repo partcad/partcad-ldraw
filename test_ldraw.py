@@ -1706,3 +1706,89 @@ def test_each_shipped_patch_fits_the_library_it_was_written_against():
         assert ldraw._content_hash(text) == entry["sha256"], entry["file"]
         with open(os.path.join(_here, "patches", *entry["patch"].split("/")), encoding="latin-1") as f:
             assert ldraw._apply_patch(text, f.read()) != text
+
+
+# What a part is drawn in. LDraw draws each triangle in a colour code, and 16
+# is "the colour of whatever places me": a subfile drawn in 16 takes the colour
+# its reference gives it, and the part's own 16 is left for the part's 'color'
+# parameter to say. Each face of the solid is the colour of the triangle it was
+# cut from, and faces in one plane are joined only within one colour.
+
+
+def _coloured(text, subfiles=None):
+    files = subfiles or {}
+    ldraw._ldraw_fetch = lambda name, cache: files.get(name.replace("\\", "/").lower())
+    tris, colors = [], []
+    ldraw._mesh(text, ldraw._IDENT, (0, 0, 0), tris, "/nonexistent", colors=colors)
+    return tris, colors
+
+
+def test_a_triangle_is_drawn_in_its_code_and_16_in_its_parent_s():
+    _tris, colors = _coloured(
+        "1 2 0 0 0 1 0 0 0 1 0 0 0 1 sub.dat\n3 16 0 0 0 1 0 0 0 1 0\n",
+        {"sub.dat": "3 16 0 0 0 1 0 0 0 0 1\n3 4 0 0 0 0 1 0 0 0 1\n"},
+    )
+    # The subfile's 16 is the reference's 2; its own 4 stays 4; the part's own 16 stays 16.
+    assert colors == ["2", "4", "16"]
+
+
+def _faces(solid):
+    from OCP.TopAbs import TopAbs_FACE
+    from OCP.TopExp import TopExp
+    from OCP.TopTools import TopTools_IndexedMapOfShape
+
+    faces = TopTools_IndexedMapOfShape()
+    TopExp.MapShapes_s(solid, TopAbs_FACE, faces)
+    return faces.Extent()
+
+
+def test_each_face_says_the_colour_its_triangle_was_drawn_in():
+    pytest.importorskip("OCP")
+    tris = _box((0, 0, 0), (10, 10, 10))
+    # The first face's two triangles in Red (LDraw 4); the rest in the part's own.
+    colors = ["4", "4"] + ["16"] * 10
+    cmf = {}
+    solid = ldraw._build_shape(tris, False, colors, cmf)
+
+    assert cmf["convention"] == "//pub/universe/lego:ldraw"
+    stated = [face for face in cmf["faces"] if face is not None]
+    # One face - its two triangles joined - in Red, ABS.
+    assert len(stated) == 1
+    assert stated[0]["color"] == "4" and stated[0]["material"] == "abs"
+    assert stated[0]["rgba"][:3] == [180, 0, 0]  # LDraw's Red, #B40000
+    assert _faces(solid) == len(cmf["faces"]) == 6
+    # The one solid is made of what its faces that say say it is made of.
+    assert cmf["solids"] == [{"material": "abs"}]
+
+
+def test_two_colours_in_one_plane_stay_two_faces():
+    """A print on a tile: one plane, two colours, so two faces rather than one."""
+    pytest.importorskip("OCP")
+    tris = _box((0, 0, 0), (10, 10, 10))[2:]
+    halves = _box((0, 0, 0), (5, 10, 10))[:2] + _box((5, 0, 0), (10, 10, 10))[:2]
+    colors = ["4", "4", "15", "15"] + ["16"] * len(tris)
+    cmf = {}
+    ldraw._build_shape(halves + tris, False, colors, cmf)
+
+    stated = sorted(face["color"] for face in cmf["faces"] if face is not None)
+    assert stated == ["15", "4"]
+
+
+def test_a_part_drawn_in_its_own_colour_says_nothing():
+    """The library's usual part: 16 throughout, which is the part's own 'color' to say."""
+    pytest.importorskip("OCP")
+    cmf = {}
+    ldraw._build_shape(_box((0, 0, 0), (10, 10, 10)), False, ["16"] * 12, cmf)
+    assert cmf == {}
+
+
+def test_a_rubber_code_is_lego_s_colour_in_rubber():
+    table = ldraw._color_table()
+    assert table["256"]["color"] == "0" and table["256"]["material"] == "rubber"
+    assert {key: table["71"][key] for key in ("color", "material", "finish", "rgba")} == {
+        "color": "71",
+        "material": "abs",
+        "finish": None,
+        "rgba": [150, 150, 150, 1.0],
+    }
+    assert table["71"]["names"]["color"] == "Medium Stone Grey"

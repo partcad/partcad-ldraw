@@ -65,8 +65,9 @@ patch is added, and when the library is updated.
     ./build_parts_index.py --shortcuts LIBRARY
 
 The fourth writes what each shortcut is made of - every part the library draws
-as other parts, a wheel with its tyre on - into the index ('shortcuts.json'),
-read from LIBRARY, and leaves everything else in it as it is. The plugin serves
+as other parts, a wheel with its tyre on, and the colour each of them is drawn
+in - into the index ('shortcuts.json'), read from LIBRARY, and leaves everything
+else in it as it is. The plugin serves
 those as assemblies rather than parts. A full rebuild does the same from the
 archive.
 
@@ -191,14 +192,17 @@ def _is_rotation(m):
 
 
 def shortcuts(ids, read):
-    """{shortcut id: [[part id, [x, y, z], [a, ..., i]], ...]} for the parts of 'ids' that are other parts.
+    """{shortcut id: [[part id, [x, y, z], [a, ..., i], colour], ...]} for the parts of 'ids' that are other parts.
 
     'read(pid)' is the text of a part's file, or None. A shortcut is kept only
     if every line that draws anything places another part of 'ids', turned and
     nothing else: one with faces of its own, or with a primitive or a subpart in
     it, would lose them as an assembly, and a part mirrored, scaled or sheared
     is not one any placement of it can reproduce. Those stay parts. Positions
-    and matrices are LDraw's, as the file has them.
+    and matrices are LDraw's, as the file has them, and so is the colour: the
+    code as the line writes it, '16' for a part drawn in whatever colour the
+    shortcut itself is placed in, and '256' for a tyre that is LEGO's black in
+    rubber whatever the wheel is (see build_colors.py for what each code is).
     """
     known = {pid.lower(): pid for pid in ids}
     found = {}
@@ -223,7 +227,7 @@ def shortcuts(ids, read):
             if part is None or part == pid or not _is_rotation(matrix):
                 components = None
                 break
-            components.append([part, [float(v) for v in fields[2:5]], matrix])
+            components.append([part, [float(v) for v in fields[2:5]], matrix, fields[1]])
         if components:
             found[pid] = components
     return found

@@ -709,6 +709,64 @@ segment it is drawn with along its length. A shortcut made of shortcuts (the
 plate with wheels and tyres, `122c03`, made of the plate with wheels) is an
 assembly of assemblies.
 
+## Colours
+
+LEGO sells an *element*: a design in a colour. So a part here is named in the
+colour it is wanted in, by the colours this package declares - LEGO's own, as
+LDraw's colour table (`LDConfig.ldr`) records them, named as LEGO names them:
+
+```shell
+pc list colors //pub/universe/lego
+```
+
+and a model links a part in one with `params:`, as an `enrich` names one:
+
+```yaml
+links:
+  - part: //pub/universe/lego/ldraw/Brick:3001
+    params:
+      color: "//pub/universe/lego:Bright Red"
+```
+
+A model would rather write `:red` than that, and declares an alias of its own
+for each colour it uses:
+
+```yaml
+colors:
+  red:
+    type: alias
+    source: "//pub/universe/lego:Bright Red"
+```
+
+Each of LEGO's 185 colours is declared with `ids` for LEGO and LDraw
+(`ids: {lego: "194", ldraw: "71"}` for Medium Stone Grey) and LDraw's value as
+its `display`, and with LDraw's name as an alias where that names nothing else
+(`Light Bluish Grey`). A colour LDraw draws and LEGO has no id for is declared
+too, under LDraw's name, as `manufacturable: false`: it draws, and claims
+nothing. The materials and finishes LDraw's codes imply are declared beside
+them: ABS, Polycarbonate (the transparent colours), Rubber and Fabric;
+Chrome, Pearlescent, Metallic, Matte Metallic, Glitter and Speckle. An LDraw
+code is all three at once: `256` is Black in Rubber, `334` a chrome gold.
+
+**A part is drawn in the colours its file gives it.** LDraw draws a triangle in
+a code, and in `16` where it takes the colour of whatever places it - which is
+nearly every triangle of nearly every part, and is the part's own `color`. A
+part that draws some of itself in fixed colours - the XL motor (`58121`) in dark
+grey, orange and black, a printed tile, a minifig's face - says so of each face
+of its solid, and those faces are drawn in LEGO's colours however the part is
+named; its `16` faces are drawn in its `color`. Faces in one plane are joined
+into one only within one colour, so a print on a tile stays the faces it is.
+What a part says is read by the `ldraw` convention this package declares
+(`cmfConventions:`), which looks LDraw's codes up among the colours here by their
+`ids: {ldraw: ...}`; `build_colors.py` writes the table the part type reads
+(`ldraw_colors.json`) and the declarations from `LDConfig.ldr`, and is run again
+when LDraw publishes a new one.
+
+**A shortcut draws its parts in the colours its file does.** The wheel
+`41896c01` draws its rim in `16` and its tyre in `256`, so the tyre is linked
+as Black in Rubber whatever colour the wheel is, and the rim takes the wheel's
+`color`: an assembly passes its colour on to every link that says none.
+
 ## Which numbers to name LEGO parts by
 
 The parts here are named by their LDraw numbers. LEGO has numbers of its own,

@@ -1310,14 +1310,11 @@ def test_every_helper_is_defined_before_the_dispatch():
     import ast
 
     tree = ast.parse(open(os.path.join(_here, "ldraw_repo.py")).read())
-    last_def = max(
-        node.lineno for node in tree.body if isinstance(node, (ast.FunctionDef, ast.ClassDef, ast.Assign))
-    )
+    last_def = max(node.lineno for node in tree.body if isinstance(node, (ast.FunctionDef, ast.ClassDef, ast.Assign)))
     dispatch = [node for node in tree.body if isinstance(node, ast.If)]
     assert dispatch, "the __name__ dispatch went missing"
     assert dispatch[-1].lineno > last_def, (
-        "the __name__ dispatch must come after every definition: runpy.run_path "
-        "executes this file top to bottom"
+        "the __name__ dispatch must come after every definition: runpy.run_path " "executes this file top to bottom"
     )
 
 
@@ -1696,9 +1693,7 @@ def test_a_part_the_index_says_has_no_interfaces_is_not_re_derived(monkeypatch):
     """
     plugin._index_loaded = None
     monkeypatch.setattr(plugin, "_index", lambda: _fake_index({"Misc": {"x1": ["Some Part", -1, -1, None]}}))
-    monkeypatch.setattr(
-        plugin, "_lego_implements", lambda *a: (_ for _ in ()).throw(AssertionError("re-derived"))
-    )
+    monkeypatch.setattr(plugin, "_lego_implements", lambda *a: (_ for _ in ()).throw(AssertionError("re-derived")))
     try:
         assert "implements" not in plugin._part_config("x1", ("Some Part", None, None))
     finally:
@@ -1787,9 +1782,7 @@ def test_a_listing_with_no_first_page_is_empty(monkeypatch):
 
 
 def _builder():
-    spec = importlib.util.spec_from_file_location(
-        "build_parts_index", os.path.join(_here, "build_parts_index.py")
-    )
+    spec = importlib.util.spec_from_file_location("build_parts_index", os.path.join(_here, "build_parts_index.py"))
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -2052,6 +2045,31 @@ def test_a_shortcut_is_an_assembly_of_its_parts_sold_by_its_number(_no_network):
     assert '- part: "41896"' in text and '- part: "../Tyre:41897"' in text
 
 
+def test_a_shortcut_links_a_part_its_file_draws_in_a_colour_in_that_colour(_no_network):
+    """The F1 car's front wheel: the rim in the wheel's own colour, the tyre in LEGO's black in rubber."""
+    text = base64.b64decode(plugin.get("Wheel/files/41896c01.assy")).decode()
+    rim, tyre = text.split("  - ")[1:]
+    # The rim is drawn in 16: it says nothing, and takes the colour the wheel is placed in.
+    assert "params:" not in rim
+    assert 'color: "//pub/universe/lego:Black"' in tyre
+    assert 'material: "//pub/universe/lego:Rubber"' in tyre
+
+
+def test_a_colour_s_name_is_escaped_where_a_reference_reserves_its_characters():
+    assert plugin._reference("Copper, Diffuse") == "//pub/universe/lego:Copper%2C Diffuse"
+    assert plugin._reference("Transparent Light Blue with Glitter 2%") == (
+        "//pub/universe/lego:Transparent Light Blue with Glitter 2%25"
+    )
+
+
+def test_the_served_wrapper_carries_the_colour_table():
+    """PartCAD materializes 'ldraw.py' on its own, so the table goes inside it, as the patches do."""
+    source = plugin._ldraw_py_source()
+    assert "\n_EMBEDDED_COLORS = None\n" not in source
+    table = eval(source.split("\n_EMBEDDED_COLORS = ", 1)[1].split("\n", 1)[0])
+    assert table["256"] == {"color": "0", "material": "rubber", "finish": None, "rgba": [27, 42, 52, 1.0]}
+
+
 def test_a_shortcut_keeps_the_ports_of_its_parts_under_their_names(_no_network):
     mapped = plugin.get("Wheel/objects/assembly/41896c01")["map"]
     assert mapped["a1"] == ["41896", AXLE_HOLE, "a1"]
@@ -2152,11 +2170,11 @@ def test_the_builder_keeps_only_shortcuts_made_of_parts_turned_and_nothing_else(
     found = builder.shortcuts(list(files) + ["3001", "3003"], files.get)
     assert found == {
         "a1c01": [
-            ["3001", [0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]],
-            ["3003", [0.0, -24.0, 0.0], [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]],
+            ["3001", [0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0], "16"],
+            ["3003", [0.0, -24.0, 0.0], [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0], "16"],
         ],
-        "b2": [["3001", [0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]]],
-        "j10c01": [["3001", [0.0, 0.0, 0.0], [0.929, 0.0, -0.383, 0.0, 1.0, 0.0, 0.383, 0.0, 0.929]]],
+        "b2": [["3001", [0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0], "16"]],
+        "j10c01": [["3001", [0.0, 0.0, 0.0], [0.929, 0.0, -0.383, 0.0, 1.0, 0.0, 0.383, 0.0, 0.929], "16"]],
     }
 
 
