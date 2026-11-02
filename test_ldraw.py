@@ -1774,6 +1774,52 @@ def test_two_colours_in_one_plane_stay_two_faces():
     assert stated == ["15", "4"]
 
 
+def _codes_of(solid, tris, colors):
+    from OCP.TopAbs import TopAbs_FACE
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopoDS import TopoDS
+
+    codes = ldraw._face_codes(solid, tris, colors)
+    found = []
+    explorer = TopExp_Explorer(solid, TopAbs_FACE)
+    while explorer.More():
+        found.append(codes.get(TopoDS.Face_s(explorer.Current())))
+        explorer.Next()
+    return found
+
+
+def test_a_face_the_mesh_repairs_moved_is_still_its_triangle_s():
+    """Welding and the T-junction repairs move a face by up to a fifth of an LDU from what LDraw drew."""
+    pytest.importorskip("OCP")
+    tris = _box((0, 0, 0), (10, 10, 10))
+    solid = ldraw._build_shape(tris, False, ["16"] * 12, {})
+    # The first face's triangles as drawn, 0.15 LDU (0.06 mm) off the face built from them.
+    drawn = [tuple((v[0], v[1] - 0.15, v[2]) for v in t) for t in tris[:2]] + tris[2:]
+
+    assert _codes_of(solid, drawn, ["4", "4"] + ["16"] * 10).count("4") == 1
+
+
+def test_a_print_drawn_over_its_body_is_the_colour_of_the_print():
+    """Two triangles hold the face: the body's, in 16, and the print's, in a code of its own."""
+    pytest.importorskip("OCP")
+    tris = _box((0, 0, 0), (10, 10, 10))
+    solid = ldraw._build_shape(tris, False, ["16"] * 12, {})
+    # The print, on the first face, listed after the body it is drawn over.
+    printed = tris + tris[:2]
+
+    assert _codes_of(solid, printed, ["16"] * 12 + ["4", "4"]).count("4") == 1
+
+
+def test_a_sandbox_that_does_not_say_where_the_wrapper_is_finds_no_table_rather_than_fails(monkeypatch, tmp_path):
+    """No '__file__' and nothing embedded: looked for as '_read_patch_files' looks, and the part is built in 16."""
+    monkeypatch.setattr(ldraw, "_COLOR_TABLE", None)
+    monkeypatch.setattr(ldraw, "_EMBEDDED_COLORS", None)
+    monkeypatch.delitem(ldraw.__dict__, "__file__")
+    monkeypatch.chdir(tmp_path)
+
+    assert ldraw._color_table() == {}
+
+
 def test_a_part_drawn_in_its_own_colour_says_nothing():
     """The library's usual part: 16 throughout, which is the part's own 'color' to say."""
     pytest.importorskip("OCP")

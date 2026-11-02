@@ -2250,10 +2250,14 @@ def _manifold(tris):
     return all(n == 2 for n in count.values())
 
 
-# How far a face's centre may lie off the plane of the triangle it was cut
-# from and still be that triangle's, in millimetres: the mesh is welded at a
-# fraction of an LDU, and a face is never moved further than that.
-_FACE_ON_TRIANGLE_MM = 0.02
+# How far a face's centre may lie from the triangle it was cut from - off its
+# plane, or past its edges - and still be that triangle's, in millimetres. The
+# solid is built from the triangles welded (_WELD_LDU) and then repaired, and a
+# T-junction split or an edge laid onto a face bends a triangle by as much as
+# _TJUNCTION_LDU: a face can sit that far from what LDraw drew. The surfaces
+# of one part are a whole LDU (0.4 mm) apart and more, so this reaches no
+# neighbour; where two triangles hold a face all the same, the nearer wins.
+_FACE_ON_TRIANGLE_MM = (_WELD_LDU + _TJUNCTION_LDU) * _LDU_MM
 
 _COLOR_TABLE = None
 
@@ -2273,7 +2277,9 @@ def _color_table():
     if _COLOR_TABLE is None and _EMBEDDED_COLORS is not None:
         _COLOR_TABLE = _EMBEDDED_COLORS
     if _COLOR_TABLE is None:
-        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ldraw_colors.json")
+        # As '_read_patch_files': the sandbox does not always define '__file__'.
+        here = os.path.dirname(os.path.abspath(globals().get("__file__") or "."))
+        path = os.path.join(here, "ldraw_colors.json")
         try:
             with open(path, encoding="utf-8") as stream:
                 _COLOR_TABLE = json.load(stream)
@@ -2334,22 +2340,33 @@ def _face_codes(solid, tris, colors):
     def key(value, k):
         return int((value - lo[k]) // cell)
 
+    reach = _FACE_ON_TRIANGLE_MM
     grid = {}
     for number, (a, b, c, _normal_, _code) in enumerate(placed):
-        span = [range(key(min(a[k], b[k], c[k]), k), key(max(a[k], b[k], c[k]), k) + 1) for k in range(3)]
+        span = [
+            range(key(min(a[k], b[k], c[k]) - reach, k), key(max(a[k], b[k], c[k]) + reach, k) + 1) for k in range(3)
+        ]
         for x in span[0]:
             for y in span[1]:
                 for z in span[2]:
                     grid.setdefault((x, y, z), []).append(number)
 
     def holding(p):
+        """The code of the triangle 'p' lies on: of several, the nearest, and of two as near, one in a code of its own.
+
+        A print drawn over its part's body is two triangles holding one face,
+        and the print's code - not the body's 16 - is what the face is drawn in.
+        """
+        best = None
         for number in grid.get(tuple(key(p[k], k) for k in range(3)), ()):
             a, b, c, n, code = placed[number]
-            if abs(sum(n[k] * (p[k] - a[k]) for k in range(3))) > _FACE_ON_TRIANGLE_MM:
+            off = abs(sum(n[k] * (p[k] - a[k]) for k in range(3)))
+            if off > reach or not _inside_triangle(p, a, b, c, n, reach):
                 continue
-            if _inside_triangle(p, a, b, c, n):
-                return code
-        return None
+            rank = (round(off, 6), code == "16")
+            if best is None or rank < best[0]:
+                best = (rank, code)
+        return best[1] if best is not None else None
 
     explorer = TopExp_Explorer(solid, TopAbs_FACE)
     while explorer.More():
@@ -2362,8 +2379,8 @@ def _face_codes(solid, tris, colors):
     return codes
 
 
-def _inside_triangle(p, a, b, c, n):
-    """Whether 'p', on the plane of 'abc' (normal 'n'), lies within it, its edges included."""
+def _inside_triangle(p, a, b, c, n, margin=0.0):
+    """Whether 'p', on the plane of 'abc' (unit normal 'n'), lies within it or within 'margin' of its edges."""
     for u, v in ((a, b), (b, c), (c, a)):
         edge = [v[k] - u[k] for k in range(3)]
         to = [p[k] - u[k] for k in range(3)]
@@ -2372,7 +2389,10 @@ def _inside_triangle(p, a, b, c, n):
             edge[2] * to[0] - edge[0] * to[2],
             edge[0] * to[1] - edge[1] * to[0],
         )
-        if sum(cross[k] * n[k] for k in range(3)) < -1e-9:
+        # The cross product along the normal is the edge's length times how far
+        # inside it 'p' is.
+        length = sum(e * e for e in edge) ** 0.5
+        if sum(cross[k] * n[k] for k in range(3)) < -1e-9 - margin * length:
             return False
     return True
 
