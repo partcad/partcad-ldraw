@@ -83,8 +83,13 @@ import zipfile
 # copy a machine cached is older than its patch; v18 serves every part as
 # LEGO's, with its LDraw number as its SKU, and every category's suppliers -
 # the LEGO stores the index registers at //pub/svc/commerce - and serves every
-# shortcut as the assembly of parts it is rather than as a part.
-CACHE_VERSION = 18
+# shortcut as the assembly of parts it is rather than as a part; v19 serves
+# the ldraw.py that says what each face of a part is drawn in - LDraw's colour
+# codes, which the package's colours, materials and finishes claim through
+# 'ids: {ldraw: ...}' - and joins faces in one plane only within one colour,
+# and every shortcut with the colour its file draws each part in on that
+# part's link ('params:').
+CACHE_VERSION = 19
 
 _BASE = "https://library.ldraw.org"
 _CATEGORY_LIST_URL = _BASE + "/parts/category-list"
@@ -1150,8 +1155,7 @@ def _warn_metadata_unavailable(pid):
     print(
         "ldraw: %s.dat: header unavailable and not in the shipped index, so "
         "this part is served with no description and no interfaces (studs, "
-        "anti-studs, Technic ports). It has them; they could not be read."
-        % pid,
+        "anti-studs, Technic ports). It has them; they could not be read." % pid,
         file=sys.stderr,
     )
 
@@ -1349,7 +1353,7 @@ def _shortcut_links(pid):
     """
     seen = {}
     links = []
-    for component, position, matrix in _shortcut(pid) or []:
+    for component, position, matrix, *_code in _shortcut(pid) or []:
         seen[component] = seen.get(component, 0) + 1
         name = component if seen[component] == 1 else "%s-%d" % (component, seen[component])
         kind = "assembly" if _shortcut(component) is not None else "part"
@@ -1507,11 +1511,71 @@ def _assy_text(pid, category):
         "# shortcut file, one link per part it places.",
         "links:",
     ]
-    for node, component, kind, location in _shortcut_links(pid):
+    for (node, component, kind, location), params in zip(_shortcut_links(pid), _shortcut_params(pid)):
         lines.append("  - %s: %s" % (kind, json.dumps(_component_reference(component, category))))
         lines.append("    name: %s" % json.dumps(node))
         lines.append("    location: %s" % json.dumps(location))
+        if params:
+            lines.append("    params:")
+            for key in ("color", "material", "finish"):
+                if key in params:
+                    lines.append("      %s: %s" % (key, json.dumps(params[key])))
     return "\n".join(lines) + "\n"
+
+
+# --- colours -------------------------------------------------------------------
+#
+# A part LDraw draws in '16' is drawn in the colour of whatever places it, and
+# nearly every part is drawn in 16 throughout: what colour it is, a model says,
+# by the 'color' it names the part with. A shortcut's file is such a model: it
+# draws the rim of a wheel in 16 - the colour the wheel is placed in, which
+# PartCAD passes on to every link that says none - and the tyre in 256, LEGO's
+# black in rubber, whatever colour the wheel is. So a part the file draws in a
+# code is linked with the colour, material and finish that code is (see
+# build_colors.py and 'ldraw_colors.json'), by the package's own declarations.
+# The shortcut is sold as LEGO's, with its own SKU, so the colours its links
+# set are its vendor's, and it stays a thing to be bought.
+_COLORS_FILE = "ldraw_colors.json"
+_PACKAGE = "//pub/universe/lego"
+_INHERITED_CODES = ("16", "24")
+# What a reference has to percent-encode in a name, as PartCAD writes it
+# ('partcad_utils.utils.RESERVED_IN_NAMES'): two LEGO colours have a comma in
+# their names, and six a percent sign.
+_RESERVED_IN_NAMES = ":;,=#%*?[]"
+_color_table = None
+
+
+def _colors():
+    """{LDraw code: what it is}, as build_colors.py wrote it; {} where it was never written."""
+    global _color_table
+    if _color_table is None:
+        try:
+            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), _COLORS_FILE), encoding="utf-8") as f:
+                _color_table = json.load(f)
+        except (OSError, ValueError):
+            _color_table = {}
+    return _color_table
+
+
+def _reference(name):
+    """The reference to the package's declaration called 'name'."""
+    return "%s:%s" % (_PACKAGE, "".join("%%%02X" % ord(c) if c in _RESERVED_IN_NAMES else c for c in name))
+
+
+def _code_params(code):
+    """The link 'params:' that draw a part in LDraw colour 'code', or {} for the colour that places it."""
+    if code is None or str(code) in _INHERITED_CODES:
+        return {}
+    known = _colors().get(str(code))
+    if not known:
+        return {}
+    names = known.get("names") or {}
+    return {key: _reference(name) for key, name in names.items() if name}
+
+
+def _shortcut_params(pid):
+    """The 'params:' of each link of shortcut 'pid', in its file's order (see '_shortcut_links')."""
+    return [_code_params(entry[3] if len(entry) > 3 else None) for entry in _shortcut(pid) or []]
 
 
 def _assembly_config(pid, meta, category):
@@ -1554,6 +1618,7 @@ _PATCH_DIR = "patches"
 _PATCH_MANIFEST = "manifest.json"
 _PATCH_PARAMETER = "patches"
 _EMBED_RE = re.compile(r"^_EMBEDDED_PATCHES = None$", re.MULTILINE)
+_EMBED_COLORS_RE = re.compile(r"^_EMBEDDED_COLORS = None$", re.MULTILINE)
 _patch_list = None
 
 
@@ -1616,6 +1681,11 @@ def _ldraw_py_source():
     """
     with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ldraw.py"), "r", encoding="utf-8") as f:
         source = f.read()
+    # The colour table goes the same way (see ldraw.py's '_EMBEDDED_COLORS'),
+    # without the declarations' names, which only this side reads.
+    table = {code: {k: v for k, v in entry.items() if k != "names"} for code, entry in sorted(_colors().items())}
+    if table:
+        source, _ = _EMBED_COLORS_RE.subn(lambda _: "_EMBEDDED_COLORS = %r" % (table,), source, count=1)
     manifest, files = _patches()
     if manifest is None:
         return source
@@ -1969,6 +2039,8 @@ _GEOMETRY_SECONDS = 60.0
 def _geometry_deadline():
     """When the geometry read for one part has to stop, whatever is left."""
     return time.monotonic() + _GEOMETRY_SECONDS
+
+
 # What a reference has to look like to be worth fetching: an LDraw part id, or a
 # subpart of one. Everything else is a primitive, and a leaf.
 #
@@ -2750,11 +2822,9 @@ _LDU_PLANE = 0.05  # two planes this close together are the same plane
 
 # The stud primitives that outgrow that envelope: Duplo's and Scala's, the big
 # technic ones, and the flanged tubes whose fillet reaches past the tube's wall.
-_OUTSIZE_STUDS = frozenset(
-    """stud4f1n stud4f2n stud4f2s stud4f2w stud4f3n stud4f3s stud4f4n stud4f4s stud4f5n stud5
+_OUTSIZE_STUDS = frozenset("""stud4f1n stud4f2n stud4f2s stud4f2w stud4f3n stud4f3s stud4f4n stud4f4s stud4f5n stud5
        stud7 stud7a stud8 stud8a stud8s2 stud11 stud14 stud16 stud19 stud20 stud24 stud25
-       stud27 stud27a stud28 stud28a""".split()
-)
+       stud27 stud27a stud28 stud28a""".split())
 
 # "<sixteenths>-<sixteenths><shape>[<size>]": LDraw's circular primitives, drawn
 # around their own Y with the radius their name gives. A ring or a cone is as
@@ -2807,9 +2877,7 @@ def _placed_box(points, composed, position):
     for point in points:
         moved = _matrix_apply(composed, point)
         placed.append(tuple(moved[i] + position[i] for i in range(3)))
-    return tuple(
-        value for i in range(3) for value in (min(p[i] for p in placed), max(p[i] for p in placed))
-    )
+    return tuple(value for i in range(3) for value in (min(p[i] for p in placed), max(p[i] for p in placed)))
 
 
 def _span_corners(span):
@@ -2890,7 +2958,6 @@ def _base_holds_none_of(pid, plane, cells, deadline=None):
     if abs(standing - plane) > _LDU_PLANE:
         return False
     return all(abs(x) > reach_x + _LDU_PLANE or abs(z) > reach_z + _LDU_PLANE for x, z in cells)
-
 
 
 # --- headgear ----------------------------------------------------------------

@@ -19,5 +19,11 @@ demand from the LDraw Parts Library at build time:
     the exact license and author of each part are recorded in that part's `.dat`
     header and are surfaced by this package.
 
+The colour table - the 'colors:', 'materials:' and 'finishes:' sections of
+`partcad.yaml` and `ldraw_colors.json`, written by `build_colors.py` - is
+derived from the library's colour configuration, `LDConfig.ldr`, by LDraw.org,
+licensed under CC BY 4.0: the colours' LDraw names, codes and values, and the
+LEGO colour ids and names it records.
+
 LDraw is a trademark of the Estate of James Jessiman. This package is not
 affiliated with or endorsed by the LDraw.org team.

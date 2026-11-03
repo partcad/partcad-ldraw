@@ -1,0 +1,5154 @@
+{
+ "0": {
+  "color": "0",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Black",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   27,
+   42,
+   52,
+   1.0
+  ]
+ },
+ "1": {
+  "color": "1",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Bright Blue",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   30,
+   90,
+   168,
+   1.0
+  ]
+ },
+ "10": {
+  "color": "10",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Bright Green",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   88,
+   171,
+   65,
+   1.0
+  ]
+ },
+ "100": {
+  "color": "100",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Light Red",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   249,
+   183,
+   165,
+   1.0
+  ]
+ },
+ "10002": {
+  "color": "2",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Dark Green",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   0,
+   133,
+   43,
+   1.0
+  ]
+ },
+ "10003": {
+  "color": "3",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Bright Bluish Green",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   6,
+   157,
+   159,
+   1.0
+  ]
+ },
+ "10005": {
+  "color": "5",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Bright Purple",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   211,
+   53,
+   157,
+   1.0
+  ]
+ },
+ "10008": {
+  "color": "8",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Dark Grey",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   84,
+   89,
+   85,
+   1.0
+  ]
+ },
+ "10010": {
+  "color": "10",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Bright Green",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   88,
+   171,
+   65,
+   1.0
+  ]
+ },
+ "10015": {
+  "color": "10015",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Lemon",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   255,
+   242,
+   48,
+   1.0
+  ]
+ },
+ "10017": {
+  "color": "10017",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Rose",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   255,
+   148,
+   148,
+   1.0
+  ]
+ },
+ "10019": {
+  "color": "19",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Brick Yellow",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   215,
+   186,
+   140,
+   1.0
+  ]
+ },
+ "10022": {
+  "color": "10022",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Medium Reddish Violet",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   208,
+   80,
+   152,
+   1.0
+  ]
+ },
+ "10026": {
+  "color": "26",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Bright Reddish Violet",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   144,
+   31,
+   118,
+   1.0
+  ]
+ },
+ "10028": {
+  "color": "28",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Sand Yellow",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   137,
+   125,
+   98,
+   1.0
+  ]
+ },
+ "10029": {
+  "color": "29",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Light Purple",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   255,
+   158,
+   205,
+   1.0
+  ]
+ },
+ "10030": {
+  "color": "30",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Medium Lavender",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   160,
+   110,
+   185,
+   1.0
+  ]
+ },
+ "10031": {
+  "color": "31",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Lavender",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   205,
+   164,
+   222,
+   1.0
+  ]
+ },
+ "10035": {
+  "color": "35",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Transparent Bright Green",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   86,
+   230,
+   70,
+   0.502
+  ]
+ },
+ "10036": {
+  "color": "36",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Transparent Red",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   201,
+   26,
+   9,
+   0.502
+  ]
+ },
+ "10043": {
+  "color": "43",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Transparent Light Blue",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   174,
+   233,
+   239,
+   0.502
+  ]
+ },
+ "10045": {
+  "color": "10045",
+  "finish": "metallic",
+  "material": "abs",
+  "names": {
+   "color": "Cyan Metallic Ink",
+   "finish": "Metallic",
+   "material": "ABS"
+  },
+  "rgba": [
+   151,
+   203,
+   217,
+   1.0
+  ]
+ },
+ "10046": {
+  "color": "10046",
+  "finish": "metallic",
+  "material": "abs",
+  "names": {
+   "color": "Metallic Pink",
+   "finish": "Metallic",
+   "material": "ABS"
+  },
+  "rgba": [
+   173,
+   101,
+   154,
+   1.0
+  ]
+ },
+ "10047": {
+  "color": "10047",
+  "finish": null,
+  "material": "polycarbonate",
+  "names": {
+   "color": "Trans Sticker",
+   "finish": null,
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   255,
+   255,
+   255,
+   0.0627
+  ]
+ },
+ "10049": {
+  "color": "10049",
+  "finish": "metallic",
+  "material": "abs",
+  "names": {
+   "color": "Magenta Metallic Ink",
+   "finish": "Metallic",
+   "material": "ABS"
+  },
+  "rgba": [
+   254,
+   204,
+   207,
+   1.0
+  ]
+ },
+ "10057": {
+  "color": "57",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Trans Bright Orange",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   240,
+   143,
+   28,
+   0.502
+  ]
+ },
+ "10070": {
+  "color": "70",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Reddish Brown",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   95,
+   49,
+   9,
+   1.0
+  ]
+ },
+ "10072": {
+  "color": "72",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Dark Stone Grey",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   100,
+   100,
+   100,
+   1.0
+  ]
+ },
+ "10073": {
+  "color": "73",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Medium Blue",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   115,
+   150,
+   200,
+   1.0
+  ]
+ },
+ "10078": {
+  "color": "78",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Light Nougat",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   255,
+   201,
+   149,
+   1.0
+  ]
+ },
+ "10079": {
+  "color": "79",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Nature",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   238,
+   238,
+   238,
+   0.9412
+  ]
+ },
+ "10084": {
+  "color": "84",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Medium Nougat",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   170,
+   125,
+   85,
+   1.0
+  ]
+ },
+ "10085": {
+  "color": "85",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Medium Lilac",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   68,
+   26,
+   145,
+   1.0
+  ]
+ },
+ "10092": {
+  "color": "92",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Nougat",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   187,
+   128,
+   90,
+   1.0
+  ]
+ },
+ "10135": {
+  "color": "135",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Silver",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   160,
+   160,
+   160,
+   1.0
+  ]
+ },
+ "10137": {
+  "color": "137",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Sand Blue Metallic",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   91,
+   117,
+   144,
+   1.0
+  ]
+ },
+ "10147": {
+  "color": "147",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Metallic Sand Yellow",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   131,
+   114,
+   79,
+   1.0
+  ]
+ },
+ "10148": {
+  "color": "148",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Metallic Dark Grey",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   72,
+   77,
+   72,
+   1.0
+  ]
+ },
+ "10150": {
+  "color": "150",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Metallic Light Grey",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   152,
+   155,
+   153,
+   1.0
+  ]
+ },
+ "10151": {
+  "color": "151",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Light Stone Grey",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   200,
+   200,
+   200,
+   1.0
+  ]
+ },
+ "10189": {
+  "color": "189",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Reddish Gold",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   172,
+   130,
+   71,
+   1.0
+  ]
+ },
+ "10191": {
+  "color": "191",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Flame Yellowish Orange",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   252,
+   172,
+   0,
+   1.0
+  ]
+ },
+ "10200": {
+  "color": "200",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Lemon Metallic",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   112,
+   130,
+   36,
+   1.0
+  ]
+ },
+ "10212": {
+  "color": "212",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Light Royal Blue",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   157,
+   195,
+   247,
+   1.0
+  ]
+ },
+ "10226": {
+  "color": "226",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Cool Yellow",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   255,
+   236,
+   108,
+   1.0
+  ]
+ },
+ "10288": {
+  "color": "288",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Earth Green",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   0,
+   69,
+   26,
+   1.0
+  ]
+ },
+ "10297": {
+  "color": "297",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Warm Gold",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   170,
+   127,
+   46,
+   1.0
+  ]
+ },
+ "10308": {
+  "color": "308",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Dark Brown",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   53,
+   33,
+   0,
+   1.0
+  ]
+ },
+ "10320": {
+  "color": "320",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "New Dark Red",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   114,
+   0,
+   18,
+   1.0
+  ]
+ },
+ "10321": {
+  "color": "321",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Dark Azur",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   70,
+   155,
+   195,
+   1.0
+  ]
+ },
+ "10322": {
+  "color": "322",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Medium Azur",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   104,
+   195,
+   226,
+   1.0
+  ]
+ },
+ "10323": {
+  "color": "323",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Aqua",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   211,
+   242,
+   234,
+   1.0
+  ]
+ },
+ "10326": {
+  "color": "326",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Spring Yellowish Green",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   226,
+   249,
+   154,
+   1.0
+  ]
+ },
+ "10330": {
+  "color": "330",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Olive Green",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   119,
+   119,
+   78,
+   1.0
+  ]
+ },
+ "10351": {
+  "color": "10351",
+  "finish": "glitter",
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Bright Green with Glitter 2%",
+   "finish": "Glitter",
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   86,
+   230,
+   70,
+   0.502
+  ]
+ },
+ "10366": {
+  "color": "10366",
+  "finish": "glitter",
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Blue Opal (LEGO 366)",
+   "finish": "Glitter",
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   0,
+   32,
+   160,
+   0.7843
+  ]
+ },
+ "10375": {
+  "color": "10375",
+  "finish": null,
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Black",
+   "finish": null,
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   33,
+   33,
+   33,
+   0.502
+  ]
+ },
+ "10378": {
+  "color": "378",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Sand Green",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   112,
+   142,
+   124,
+   1.0
+  ]
+ },
+ "10484": {
+  "color": "484",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Dark Orange",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   145,
+   80,
+   28,
+   1.0
+  ]
+ },
+ "11": {
+  "color": "11",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Medium Bluish Green",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   0,
+   170,
+   164,
+   1.0
+  ]
+ },
+ "110": {
+  "color": "110",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Bright Bluish Violet",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   38,
+   70,
+   154,
+   1.0
+  ]
+ },
+ "11015": {
+  "color": "11015",
+  "finish": null,
+  "material": "polycarbonate",
+  "names": {
+   "color": "Trans White",
+   "finish": null,
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   244,
+   244,
+   244,
+   0.6824
+  ]
+ },
+ "11019": {
+  "color": "11019",
+  "finish": null,
+  "material": "polycarbonate",
+  "names": {
+   "color": "Trans Tan",
+   "finish": null,
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   215,
+   186,
+   140,
+   0.502
+  ]
+ },
+ "112": {
+  "color": "112",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Medium Bluish Violet",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   72,
+   97,
+   172,
+   1.0
+  ]
+ },
+ "114": {
+  "color": "114",
+  "finish": "glitter",
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Medium Reddish-Violet w. Glitter 2%",
+   "finish": "Glitter",
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   223,
+   102,
+   149,
+   0.502
+  ]
+ },
+ "115": {
+  "color": "115",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Medium Yellowish Green",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   183,
+   212,
+   37,
+   1.0
+  ]
+ },
+ "117": {
+  "color": "117",
+  "finish": "glitter",
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Glitter",
+   "finish": "Glitter",
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   238,
+   238,
+   238,
+   0.502
+  ]
+ },
+ "118": {
+  "color": "118",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Light Bluish Green",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   156,
+   214,
+   204,
+   1.0
+  ]
+ },
+ "12": {
+  "color": "12",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Medium Red",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   240,
+   109,
+   97,
+   1.0
+  ]
+ },
+ "120": {
+  "color": "120",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Light Yellowish Green",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   222,
+   234,
+   146,
+   1.0
+  ]
+ },
+ "121": {
+  "color": "121",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Medium Yellowish Orange",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   248,
+   154,
+   57,
+   1.0
+  ]
+ },
+ "123": {
+  "color": "123",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Bright Reddish Orange",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   238,
+   84,
+   52,
+   1.0
+  ]
+ },
+ "125": {
+  "color": "125",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Light Orange",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   249,
+   167,
+   119,
+   1.0
+  ]
+ },
+ "128": {
+  "color": "128",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Dark Nougat",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   173,
+   97,
+   64,
+   1.0
+  ]
+ },
+ "129": {
+  "color": "129",
+  "finish": "glitter",
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Bright Bluish Violet w. Glitter 2%",
+   "finish": "Glitter",
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   100,
+   0,
+   97,
+   0.502
+  ]
+ },
+ "13": {
+  "color": "13",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Light Reddish Violet",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   246,
+   169,
+   187,
+   1.0
+  ]
+ },
+ "132": {
+  "color": "132",
+  "finish": "speckle",
+  "material": "abs",
+  "names": {
+   "color": "Cool Silver, Diffuse",
+   "finish": "Speckle",
+   "material": "ABS"
+  },
+  "rgba": [
+   0,
+   0,
+   0,
+   1.0
+  ]
+ },
+ "133": {
+  "color": "133",
+  "finish": "speckle",
+  "material": "abs",
+  "names": {
+   "color": "Warm Gold Diffuse",
+   "finish": "Speckle",
+   "material": "ABS"
+  },
+  "rgba": [
+   0,
+   0,
+   0,
+   1.0
+  ]
+ },
+ "134": {
+  "color": "134",
+  "finish": "pearlescent",
+  "material": "abs",
+  "names": {
+   "color": "Copper",
+   "finish": "Pearlescent",
+   "material": "ABS"
+  },
+  "rgba": [
+   118,
+   77,
+   59,
+   1.0
+  ]
+ },
+ "135": {
+  "color": "135",
+  "finish": "pearlescent",
+  "material": "abs",
+  "names": {
+   "color": "Silver",
+   "finish": "Pearlescent",
+   "material": "ABS"
+  },
+  "rgba": [
+   160,
+   160,
+   160,
+   1.0
+  ]
+ },
+ "137": {
+  "color": "137",
+  "finish": "pearlescent",
+  "material": "abs",
+  "names": {
+   "color": "Sand Blue Metallic",
+   "finish": "Pearlescent",
+   "material": "ABS"
+  },
+  "rgba": [
+   91,
+   117,
+   144,
+   1.0
+  ]
+ },
+ "14": {
+  "color": "14",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Bright Yellow",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   250,
+   200,
+   10,
+   1.0
+  ]
+ },
+ "142": {
+  "color": "142",
+  "finish": "pearlescent",
+  "material": "abs",
+  "names": {
+   "color": "Gold",
+   "finish": "Pearlescent",
+   "material": "ABS"
+  },
+  "rgba": [
+   222,
+   172,
+   102,
+   1.0
+  ]
+ },
+ "147": {
+  "color": "147",
+  "finish": "pearlescent",
+  "material": "abs",
+  "names": {
+   "color": "Metallic Sand Yellow",
+   "finish": "Pearlescent",
+   "material": "ABS"
+  },
+  "rgba": [
+   131,
+   114,
+   79,
+   1.0
+  ]
+ },
+ "148": {
+  "color": "148",
+  "finish": "pearlescent",
+  "material": "abs",
+  "names": {
+   "color": "Metallic Dark Grey",
+   "finish": "Pearlescent",
+   "material": "ABS"
+  },
+  "rgba": [
+   72,
+   77,
+   72,
+   1.0
+  ]
+ },
+ "15": {
+  "color": "15",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "White",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   244,
+   244,
+   244,
+   1.0
+  ]
+ },
+ "150": {
+  "color": "150",
+  "finish": "pearlescent",
+  "material": "abs",
+  "names": {
+   "color": "Metallic Light Grey",
+   "finish": "Pearlescent",
+   "material": "ABS"
+  },
+  "rgba": [
+   152,
+   155,
+   153,
+   1.0
+  ]
+ },
+ "151": {
+  "color": "151",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Light Stone Grey",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   200,
+   200,
+   200,
+   1.0
+  ]
+ },
+ "158": {
+  "color": "158",
+  "finish": null,
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Fluorescent Red",
+   "finish": null,
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   241,
+   142,
+   187,
+   0.502
+  ]
+ },
+ "16": {
+  "color": "16",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Main Colour",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   255,
+   255,
+   128,
+   1.0
+  ]
+ },
+ "17": {
+  "color": "17",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Light Green",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   173,
+   217,
+   168,
+   1.0
+  ]
+ },
+ "176": {
+  "color": "176",
+  "finish": "pearlescent",
+  "material": "abs",
+  "names": {
+   "color": "Red Flip-flop",
+   "finish": "Pearlescent",
+   "material": "ABS"
+  },
+  "rgba": [
+   148,
+   81,
+   72,
+   1.0
+  ]
+ },
+ "178": {
+  "color": "178",
+  "finish": "pearlescent",
+  "material": "abs",
+  "names": {
+   "color": "Yellow Flip-flop",
+   "finish": "Pearlescent",
+   "material": "ABS"
+  },
+  "rgba": [
+   171,
+   103,
+   58,
+   1.0
+  ]
+ },
+ "179": {
+  "color": "179",
+  "finish": "pearlescent",
+  "material": "abs",
+  "names": {
+   "color": "Silver Flip-flop",
+   "finish": "Pearlescent",
+   "material": "ABS"
+  },
+  "rgba": [
+   137,
+   135,
+   136,
+   1.0
+  ]
+ },
+ "18": {
+  "color": "18",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Light Yellow",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   255,
+   214,
+   127,
+   1.0
+  ]
+ },
+ "180": {
+  "color": "180",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Curry",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   221,
+   152,
+   46,
+   1.0
+  ]
+ },
+ "183": {
+  "color": "183",
+  "finish": "pearlescent",
+  "material": "abs",
+  "names": {
+   "color": "Metallic White",
+   "finish": "Pearlescent",
+   "material": "ABS"
+  },
+  "rgba": [
+   246,
+   242,
+   223,
+   1.0
+  ]
+ },
+ "184": {
+  "color": "184",
+  "finish": "pearlescent",
+  "material": "abs",
+  "names": {
+   "color": "Metallic Bright Red",
+   "finish": "Pearlescent",
+   "material": "ABS"
+  },
+  "rgba": [
+   214,
+   0,
+   38,
+   1.0
+  ]
+ },
+ "185": {
+  "color": "185",
+  "finish": "pearlescent",
+  "material": "abs",
+  "names": {
+   "color": "Metallic Bright Blue",
+   "finish": "Pearlescent",
+   "material": "ABS"
+  },
+  "rgba": [
+   0,
+   89,
+   163,
+   1.0
+  ]
+ },
+ "186": {
+  "color": "186",
+  "finish": "pearlescent",
+  "material": "abs",
+  "names": {
+   "color": "Metallic Dark Green",
+   "finish": "Pearlescent",
+   "material": "ABS"
+  },
+  "rgba": [
+   0,
+   142,
+   60,
+   1.0
+  ]
+ },
+ "187": {
+  "color": "187",
+  "finish": "pearlescent",
+  "material": "abs",
+  "names": {
+   "color": "Metallic Earth Orange",
+   "finish": "Pearlescent",
+   "material": "ABS"
+  },
+  "rgba": [
+   87,
+   57,
+   44,
+   1.0
+  ]
+ },
+ "189": {
+  "color": "189",
+  "finish": "pearlescent",
+  "material": "abs",
+  "names": {
+   "color": "Reddish Gold",
+   "finish": "Pearlescent",
+   "material": "ABS"
+  },
+  "rgba": [
+   172,
+   130,
+   71,
+   1.0
+  ]
+ },
+ "19": {
+  "color": "19",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Brick Yellow",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   215,
+   186,
+   140,
+   1.0
+  ]
+ },
+ "191": {
+  "color": "191",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Flame Yellowish Orange",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   252,
+   172,
+   0,
+   1.0
+  ]
+ },
+ "2": {
+  "color": "2",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Dark Green",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   0,
+   133,
+   43,
+   1.0
+  ]
+ },
+ "20": {
+  "color": "20",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Light Bluish Violet",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   175,
+   190,
+   214,
+   1.0
+  ]
+ },
+ "200": {
+  "color": "200",
+  "finish": "pearlescent",
+  "material": "abs",
+  "names": {
+   "color": "Lemon Metallic",
+   "finish": "Pearlescent",
+   "material": "ABS"
+  },
+  "rgba": [
+   112,
+   130,
+   36,
+   1.0
+  ]
+ },
+ "20000": {
+  "color": "20000",
+  "finish": null,
+  "material": "fabric",
+  "names": {
+   "color": "Canvas Black",
+   "finish": null,
+   "material": "Fabric"
+  },
+  "rgba": [
+   27,
+   42,
+   52,
+   1.0
+  ]
+ },
+ "20001": {
+  "color": "20001",
+  "finish": null,
+  "material": "fabric",
+  "names": {
+   "color": "Canvas Blue",
+   "finish": null,
+   "material": "Fabric"
+  },
+  "rgba": [
+   30,
+   90,
+   168,
+   1.0
+  ]
+ },
+ "20002": {
+  "color": "20002",
+  "finish": null,
+  "material": "fabric",
+  "names": {
+   "color": "Canvas Green",
+   "finish": null,
+   "material": "Fabric"
+  },
+  "rgba": [
+   0,
+   133,
+   43,
+   1.0
+  ]
+ },
+ "20004": {
+  "color": "20004",
+  "finish": null,
+  "material": "fabric",
+  "names": {
+   "color": "Canvas Red",
+   "finish": null,
+   "material": "Fabric"
+  },
+  "rgba": [
+   180,
+   0,
+   0,
+   1.0
+  ]
+ },
+ "20006": {
+  "color": "20006",
+  "finish": null,
+  "material": "fabric",
+  "names": {
+   "color": "Canvas Brown",
+   "finish": null,
+   "material": "Fabric"
+  },
+  "rgba": [
+   84,
+   51,
+   36,
+   1.0
+  ]
+ },
+ "20007": {
+  "color": "20007",
+  "finish": null,
+  "material": "fabric",
+  "names": {
+   "color": "Canvas Light Grey",
+   "finish": null,
+   "material": "Fabric"
+  },
+  "rgba": [
+   138,
+   146,
+   141,
+   1.0
+  ]
+ },
+ "20010": {
+  "color": "20010",
+  "finish": null,
+  "material": "fabric",
+  "names": {
+   "color": "Canvas Bright Green",
+   "finish": null,
+   "material": "Fabric"
+  },
+  "rgba": [
+   88,
+   171,
+   65,
+   1.0
+  ]
+ },
+ "20014": {
+  "color": "20014",
+  "finish": null,
+  "material": "fabric",
+  "names": {
+   "color": "Canvas Yellow",
+   "finish": null,
+   "material": "Fabric"
+  },
+  "rgba": [
+   250,
+   200,
+   10,
+   1.0
+  ]
+ },
+ "20015": {
+  "color": "20015",
+  "finish": null,
+  "material": "fabric",
+  "names": {
+   "color": "Canvas White",
+   "finish": null,
+   "material": "Fabric"
+  },
+  "rgba": [
+   244,
+   244,
+   244,
+   1.0
+  ]
+ },
+ "20019": {
+  "color": "20019",
+  "finish": null,
+  "material": "fabric",
+  "names": {
+   "color": "Canvas Tan",
+   "finish": null,
+   "material": "Fabric"
+  },
+  "rgba": [
+   215,
+   186,
+   140,
+   1.0
+  ]
+ },
+ "20022": {
+  "color": "20022",
+  "finish": null,
+  "material": "fabric",
+  "names": {
+   "color": "Canvas Purple",
+   "finish": null,
+   "material": "Fabric"
+  },
+  "rgba": [
+   103,
+   31,
+   129,
+   1.0
+  ]
+ },
+ "20028": {
+  "color": "20028",
+  "finish": null,
+  "material": "fabric",
+  "names": {
+   "color": "Canvas Dark Tan",
+   "finish": null,
+   "material": "Fabric"
+  },
+  "rgba": [
+   137,
+   125,
+   98,
+   1.0
+  ]
+ },
+ "20070": {
+  "color": "20070",
+  "finish": null,
+  "material": "fabric",
+  "names": {
+   "color": "Canvas Reddish Brown",
+   "finish": null,
+   "material": "Fabric"
+  },
+  "rgba": [
+   95,
+   49,
+   9,
+   1.0
+  ]
+ },
+ "20071": {
+  "color": "20071",
+  "finish": null,
+  "material": "fabric",
+  "names": {
+   "color": "Canvas Light Bluish Grey",
+   "finish": null,
+   "material": "Fabric"
+  },
+  "rgba": [
+   150,
+   150,
+   150,
+   1.0
+  ]
+ },
+ "20072": {
+  "color": "20072",
+  "finish": null,
+  "material": "fabric",
+  "names": {
+   "color": "Canvas Dark Bluish Grey",
+   "finish": null,
+   "material": "Fabric"
+  },
+  "rgba": [
+   100,
+   100,
+   100,
+   1.0
+  ]
+ },
+ "20086": {
+  "color": "20086",
+  "finish": null,
+  "material": "fabric",
+  "names": {
+   "color": "Canvas Light Brown",
+   "finish": null,
+   "material": "Fabric"
+  },
+  "rgba": [
+   123,
+   93,
+   65,
+   1.0
+  ]
+ },
+ "20288": {
+  "color": "20288",
+  "finish": null,
+  "material": "fabric",
+  "names": {
+   "color": "Canvas Dark Green",
+   "finish": null,
+   "material": "Fabric"
+  },
+  "rgba": [
+   0,
+   69,
+   26,
+   1.0
+  ]
+ },
+ "20320": {
+  "color": "20320",
+  "finish": null,
+  "material": "fabric",
+  "names": {
+   "color": "Canvas Dark Red",
+   "finish": null,
+   "material": "Fabric"
+  },
+  "rgba": [
+   114,
+   0,
+   18,
+   1.0
+  ]
+ },
+ "20335": {
+  "color": "20335",
+  "finish": null,
+  "material": "fabric",
+  "names": {
+   "color": "Canvas Sand Red",
+   "finish": null,
+   "material": "Fabric"
+  },
+  "rgba": [
+   136,
+   96,
+   94,
+   1.0
+  ]
+ },
+ "20500": {
+  "color": "20500",
+  "finish": null,
+  "material": "fabric",
+  "names": {
+   "color": "Canvas Cream",
+   "finish": null,
+   "material": "Fabric"
+  },
+  "rgba": [
+   248,
+   243,
+   228,
+   1.0
+  ]
+ },
+ "21": {
+  "color": "21",
+  "finish": null,
+  "material": "polycarbonate",
+  "names": {
+   "color": "Phosphorescent White",
+   "finish": null,
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   224,
+   255,
+   176,
+   0.9608
+  ]
+ },
+ "212": {
+  "color": "212",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Light Royal Blue",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   157,
+   195,
+   247,
+   1.0
+  ]
+ },
+ "213": {
+  "color": "213",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Medium Royal Blue (LEGO 213)",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   71,
+   111,
+   182,
+   1.0
+  ]
+ },
+ "216": {
+  "color": "216",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Rust",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   135,
+   43,
+   23,
+   1.0
+  ]
+ },
+ "218": {
+  "color": "218",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Reddish Lilac",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   142,
+   85,
+   151,
+   1.0
+  ]
+ },
+ "219": {
+  "color": "219",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Lilac",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   86,
+   78,
+   157,
+   1.0
+  ]
+ },
+ "22": {
+  "color": "22",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Bright Violet",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   103,
+   31,
+   129,
+   1.0
+  ]
+ },
+ "220": {
+  "color": "220",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Light Lilac",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   145,
+   149,
+   202,
+   1.0
+  ]
+ },
+ "225": {
+  "color": "225",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Warm Yellowish Orange",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   250,
+   169,
+   100,
+   1.0
+  ]
+ },
+ "226": {
+  "color": "226",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Cool Yellow",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   255,
+   236,
+   108,
+   1.0
+  ]
+ },
+ "227": {
+  "color": "227",
+  "finish": null,
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Bright Yellowish Green",
+   "finish": null,
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   181,
+   217,
+   108,
+   0.502
+  ]
+ },
+ "23": {
+  "color": "23",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Dark Royal Blue",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   14,
+   62,
+   154,
+   1.0
+  ]
+ },
+ "231": {
+  "color": "231",
+  "finish": null,
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Flame Yellowish Orange",
+   "finish": null,
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   252,
+   183,
+   109,
+   0.502
+  ]
+ },
+ "232": {
+  "color": "232",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Dove Blue",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   119,
+   201,
+   216,
+   1.0
+  ]
+ },
+ "234": {
+  "color": "234",
+  "finish": null,
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Fire Yellow",
+   "finish": null,
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   251,
+   232,
+   144,
+   0.502
+  ]
+ },
+ "24": {
+  "color": "24",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Edge Colour",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   127,
+   127,
+   127,
+   1.0
+  ]
+ },
+ "25": {
+  "color": "25",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Bright Orange",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   214,
+   121,
+   35,
+   1.0
+  ]
+ },
+ "256": {
+  "color": "0",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Black",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   27,
+   42,
+   52,
+   1.0
+  ]
+ },
+ "26": {
+  "color": "26",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Bright Reddish Violet",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   144,
+   31,
+   118,
+   1.0
+  ]
+ },
+ "27": {
+  "color": "27",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Bright Yellowish Green",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   165,
+   202,
+   24,
+   1.0
+  ]
+ },
+ "272": {
+  "color": "272",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Earth Blue",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   25,
+   50,
+   90,
+   1.0
+  ]
+ },
+ "273": {
+  "color": "1",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Bright Blue",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   30,
+   90,
+   168,
+   1.0
+  ]
+ },
+ "28": {
+  "color": "28",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Sand Yellow",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   137,
+   125,
+   98,
+   1.0
+  ]
+ },
+ "284": {
+  "color": "284",
+  "finish": null,
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Reddish Lilac",
+   "finish": null,
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   194,
+   129,
+   165,
+   0.502
+  ]
+ },
+ "285": {
+  "color": "285",
+  "finish": null,
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Light Green",
+   "finish": null,
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   125,
+   194,
+   145,
+   0.502
+  ]
+ },
+ "288": {
+  "color": "288",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Earth Green",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   0,
+   69,
+   26,
+   1.0
+  ]
+ },
+ "29": {
+  "color": "29",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Light Purple",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   255,
+   158,
+   205,
+   1.0
+  ]
+ },
+ "293": {
+  "color": "293",
+  "finish": null,
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Light Royal Blue",
+   "finish": null,
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   107,
+   171,
+   228,
+   0.502
+  ]
+ },
+ "294": {
+  "color": "294",
+  "finish": null,
+  "material": "polycarbonate",
+  "names": {
+   "color": "Phosphorescent Green",
+   "finish": null,
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   189,
+   198,
+   173,
+   0.7843
+  ]
+ },
+ "295": {
+  "color": "295",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Flamingo Pink",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   255,
+   148,
+   194,
+   1.0
+  ]
+ },
+ "296": {
+  "color": "296",
+  "finish": "pearlescent",
+  "material": "abs",
+  "names": {
+   "color": "Cool Silver",
+   "finish": "Pearlescent",
+   "material": "ABS"
+  },
+  "rgba": [
+   173,
+   173,
+   173,
+   1.0
+  ]
+ },
+ "297": {
+  "color": "297",
+  "finish": "pearlescent",
+  "material": "abs",
+  "names": {
+   "color": "Warm Gold",
+   "finish": "Pearlescent",
+   "material": "ABS"
+  },
+  "rgba": [
+   170,
+   127,
+   46,
+   1.0
+  ]
+ },
+ "3": {
+  "color": "3",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Bright Bluish Green",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   6,
+   157,
+   159,
+   1.0
+  ]
+ },
+ "30": {
+  "color": "30",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Medium Lavender",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   160,
+   110,
+   185,
+   1.0
+  ]
+ },
+ "300": {
+  "color": "300",
+  "finish": "metallic",
+  "material": "abs",
+  "names": {
+   "color": "Copper Drum Lacq / Copper Ink",
+   "finish": "Metallic",
+   "material": "ABS"
+  },
+  "rgba": [
+   194,
+   127,
+   83,
+   1.0
+  ]
+ },
+ "30000": {
+  "color": "30000",
+  "finish": null,
+  "material": "polycarbonate",
+  "names": {
+   "color": "Modulex Clear",
+   "finish": null,
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   252,
+   252,
+   252,
+   0.502
+  ]
+ },
+ "30001": {
+  "color": "30001",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex White",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   244,
+   244,
+   244,
+   1.0
+  ]
+ },
+ "30002": {
+  "color": "30002",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Light Grey",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   138,
+   146,
+   141,
+   1.0
+  ]
+ },
+ "30003": {
+  "color": "30003",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Black",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   52,
+   67,
+   77,
+   1.0
+  ]
+ },
+ "30004": {
+  "color": "30004",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Terracotta",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   210,
+   119,
+   68,
+   1.0
+  ]
+ },
+ "30005": {
+  "color": "30005",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Buff",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   215,
+   186,
+   140,
+   1.0
+  ]
+ },
+ "30006": {
+  "color": "30006",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Ochre Yellow",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   254,
+   213,
+   87,
+   1.0
+  ]
+ },
+ "30007": {
+  "color": "30007",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Olive Green",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   124,
+   144,
+   81,
+   1.0
+  ]
+ },
+ "30008": {
+  "color": "30008",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Teal Blue",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   70,
+   112,
+   131,
+   1.0
+  ]
+ },
+ "30009": {
+  "color": "30009",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Brown",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   144,
+   116,
+   80,
+   1.0
+  ]
+ },
+ "30010": {
+  "color": "30010",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Strong Red",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   180,
+   0,
+   0,
+   1.0
+  ]
+ },
+ "30011": {
+  "color": "30011",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Pastel Blue",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   171,
+   217,
+   255,
+   1.0
+  ]
+ },
+ "30012": {
+  "color": "30012",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Orange",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   216,
+   109,
+   44,
+   1.0
+  ]
+ },
+ "30013": {
+  "color": "30013",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Red",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   198,
+   81,
+   39,
+   1.0
+  ]
+ },
+ "30014": {
+  "color": "30014",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Pastel Green",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   120,
+   252,
+   120,
+   1.0
+  ]
+ },
+ "30015": {
+  "color": "30015",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Lemon",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   255,
+   242,
+   48,
+   1.0
+  ]
+ },
+ "30016": {
+  "color": "30016",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Pink",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   247,
+   133,
+   177,
+   1.0
+  ]
+ },
+ "30032": {
+  "color": "30032",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Light Bluish Grey",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   175,
+   181,
+   199,
+   1.0
+  ]
+ },
+ "30033": {
+  "color": "30033",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Pink Red",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   244,
+   92,
+   64,
+   1.0
+  ]
+ },
+ "30034": {
+  "color": "30034",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Aqua Green",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   39,
+   134,
+   126,
+   1.0
+  ]
+ },
+ "30035": {
+  "color": "30035",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Light Yellow",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   255,
+   227,
+   113,
+   1.0
+  ]
+ },
+ "30037": {
+  "color": "30037",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Violet",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   189,
+   125,
+   133,
+   1.0
+  ]
+ },
+ "30038": {
+  "color": "30038",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Medium Blue",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   97,
+   175,
+   255,
+   1.0
+  ]
+ },
+ "30039": {
+  "color": "30039",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Light Orange",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   247,
+   173,
+   99,
+   1.0
+  ]
+ },
+ "30040": {
+  "color": "30040",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Charcoal Grey",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   89,
+   93,
+   96,
+   1.0
+  ]
+ },
+ "30054": {
+  "color": "30054",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Dark Brown",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   51,
+   0,
+   0,
+   1.0
+  ]
+ },
+ "30080": {
+  "color": "30080",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Foil White",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   244,
+   244,
+   244,
+   1.0
+  ]
+ },
+ "30081": {
+  "color": "30081",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Foil Black",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   52,
+   67,
+   77,
+   1.0
+  ]
+ },
+ "30082": {
+  "color": "30082",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Foil Dark Grey",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   89,
+   93,
+   96,
+   1.0
+  ]
+ },
+ "30083": {
+  "color": "30083",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Foil Light Grey",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   156,
+   156,
+   156,
+   1.0
+  ]
+ },
+ "30084": {
+  "color": "30084",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Foil Dark Green",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   0,
+   100,
+   0,
+   1.0
+  ]
+ },
+ "30085": {
+  "color": "30085",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Foil Light Green",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   125,
+   181,
+   56,
+   1.0
+  ]
+ },
+ "30086": {
+  "color": "30086",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Foil Dark Blue",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   0,
+   87,
+   166,
+   1.0
+  ]
+ },
+ "30087": {
+  "color": "30087",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Foil Light Blue",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   104,
+   174,
+   206,
+   1.0
+  ]
+ },
+ "30088": {
+  "color": "30088",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Foil Violet",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   75,
+   0,
+   130,
+   1.0
+  ]
+ },
+ "30089": {
+  "color": "30089",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Foil Dark Red",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   139,
+   0,
+   0,
+   1.0
+  ]
+ },
+ "30090": {
+  "color": "30090",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Foil Yellow",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   254,
+   213,
+   87,
+   1.0
+  ]
+ },
+ "30091": {
+  "color": "30091",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Foil Orange",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   247,
+   173,
+   99,
+   1.0
+  ]
+ },
+ "302": {
+  "color": "302",
+  "finish": "glitter",
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Light Blue with Glitter 2%",
+   "finish": "Glitter",
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   174,
+   233,
+   239,
+   0.502
+  ]
+ },
+ "308": {
+  "color": "308",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Dark Brown",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   53,
+   33,
+   0,
+   1.0
+  ]
+ },
+ "31": {
+  "color": "31",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Lavender",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   205,
+   164,
+   222,
+   1.0
+  ]
+ },
+ "31000": {
+  "color": "31000",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Dark Grey",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   107,
+   90,
+   90,
+   1.0
+  ]
+ },
+ "31001": {
+  "color": "31001",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Blue",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   0,
+   87,
+   166,
+   1.0
+  ]
+ },
+ "31002": {
+  "color": "31002",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Modulex Very Light Grey",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   217,
+   213,
+   204,
+   1.0
+  ]
+ },
+ "313": {
+  "color": "313",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Pastel Blue",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   171,
+   217,
+   255,
+   1.0
+  ]
+ },
+ "315": {
+  "color": "315",
+  "finish": "pearlescent",
+  "material": "abs",
+  "names": {
+   "color": "Silver Metallic",
+   "finish": "Pearlescent",
+   "material": "ABS"
+  },
+  "rgba": [
+   140,
+   140,
+   140,
+   1.0
+  ]
+ },
+ "316": {
+  "color": "316",
+  "finish": "pearlescent",
+  "material": "abs",
+  "names": {
+   "color": "Titanium Metallic",
+   "finish": "Pearlescent",
+   "material": "ABS"
+  },
+  "rgba": [
+   62,
+   60,
+   57,
+   1.0
+  ]
+ },
+ "32": {
+  "color": "32",
+  "finish": null,
+  "material": "polycarbonate",
+  "names": {
+   "color": "Trans Black IR",
+   "finish": null,
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   0,
+   0,
+   0,
+   0.9608
+  ]
+ },
+ "320": {
+  "color": "320",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "New Dark Red",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   114,
+   0,
+   18,
+   1.0
+  ]
+ },
+ "321": {
+  "color": "321",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Dark Azur",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   70,
+   155,
+   195,
+   1.0
+  ]
+ },
+ "322": {
+  "color": "322",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Medium Azur",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   104,
+   195,
+   226,
+   1.0
+  ]
+ },
+ "323": {
+  "color": "323",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Aqua",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   211,
+   242,
+   234,
+   1.0
+  ]
+ },
+ "324": {
+  "color": "4",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Bright Red",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   180,
+   0,
+   0,
+   1.0
+  ]
+ },
+ "326": {
+  "color": "326",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Spring Yellowish Green",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   226,
+   249,
+   154,
+   1.0
+  ]
+ },
+ "329": {
+  "color": "329",
+  "finish": null,
+  "material": "polycarbonate",
+  "names": {
+   "color": "White Glow",
+   "finish": null,
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   245,
+   243,
+   215,
+   0.9608
+  ]
+ },
+ "33": {
+  "color": "33",
+  "finish": null,
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Blue",
+   "finish": null,
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   0,
+   32,
+   160,
+   0.502
+  ]
+ },
+ "330": {
+  "color": "330",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Olive Green",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   119,
+   119,
+   78,
+   1.0
+  ]
+ },
+ "332": {
+  "color": "332",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Fluorescent Red Ink",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   208,
+   109,
+   79,
+   1.0
+  ]
+ },
+ "333": {
+  "color": "333",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Fluorescent Green Ink",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   219,
+   234,
+   122,
+   1.0
+  ]
+ },
+ "334": {
+  "color": "334",
+  "finish": "chrome",
+  "material": "abs",
+  "names": {
+   "color": "Metalized Gold",
+   "finish": "Chrome",
+   "material": "ABS"
+  },
+  "rgba": [
+   223,
+   193,
+   118,
+   1.0
+  ]
+ },
+ "335": {
+  "color": "335",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Sand Red",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   136,
+   96,
+   94,
+   1.0
+  ]
+ },
+ "339": {
+  "color": "339",
+  "finish": "glitter",
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Fluorescent Green with Glitter 2%",
+   "finish": "Glitter",
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   192,
+   255,
+   0,
+   0.502
+  ]
+ },
+ "34": {
+  "color": "34",
+  "finish": null,
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Green",
+   "finish": null,
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   35,
+   120,
+   65,
+   0.502
+  ]
+ },
+ "341": {
+  "color": "341",
+  "finish": "glitter",
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Bright Orange with Glitter 2%",
+   "finish": "Glitter",
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   240,
+   143,
+   28,
+   0.502
+  ]
+ },
+ "342": {
+  "color": "342",
+  "finish": "pearlescent",
+  "material": "abs",
+  "names": {
+   "color": "Conductive Black",
+   "finish": "Pearlescent",
+   "material": "ABS"
+  },
+  "rgba": [
+   62,
+   60,
+   57,
+   1.0
+  ]
+ },
+ "346": {
+  "color": "346",
+  "finish": "pearlescent",
+  "material": "abs",
+  "names": {
+   "color": "Copper Metallic",
+   "finish": "Pearlescent",
+   "material": "ABS"
+  },
+  "rgba": [
+   128,
+   61,
+   7,
+   1.0
+  ]
+ },
+ "35": {
+  "color": "35",
+  "finish": null,
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Bright Green",
+   "finish": null,
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   86,
+   230,
+   70,
+   0.502
+  ]
+ },
+ "350": {
+  "color": "25",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Bright Orange",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   214,
+   121,
+   35,
+   1.0
+  ]
+ },
+ "351": {
+  "color": "351",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Pink",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   247,
+   133,
+   177,
+   1.0
+  ]
+ },
+ "353": {
+  "color": "353",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Vibrant Coral",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   255,
+   109,
+   119,
+   1.0
+  ]
+ },
+ "36": {
+  "color": "36",
+  "finish": null,
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Red",
+   "finish": null,
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   201,
+   26,
+   9,
+   0.502
+  ]
+ },
+ "360": {
+  "color": "360",
+  "finish": "glitter",
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Clear Opal",
+   "finish": "Glitter",
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   252,
+   252,
+   252,
+   0.9412
+  ]
+ },
+ "362": {
+  "color": "362",
+  "finish": "glitter",
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Blue Opal (LEGO 362)",
+   "finish": "Glitter",
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   174,
+   233,
+   239,
+   0.7843
+  ]
+ },
+ "363": {
+  "color": "363",
+  "finish": "glitter",
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Brown Opal",
+   "finish": "Glitter",
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   99,
+   95,
+   82,
+   0.7843
+  ]
+ },
+ "364": {
+  "color": "364",
+  "finish": "glitter",
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Medium Reddish Violet Opal",
+   "finish": "Glitter",
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   223,
+   102,
+   149,
+   0.7843
+  ]
+ },
+ "365": {
+  "color": "365",
+  "finish": "glitter",
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Violet Opal",
+   "finish": "Glitter",
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   103,
+   31,
+   129,
+   0.7843
+  ]
+ },
+ "366": {
+  "color": "366",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Light Orange Brown",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   216,
+   109,
+   44,
+   1.0
+  ]
+ },
+ "367": {
+  "color": "367",
+  "finish": "glitter",
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Green Opal",
+   "finish": "Glitter",
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   86,
+   230,
+   70,
+   0.7843
+  ]
+ },
+ "368": {
+  "color": "368",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Vibrant Yellow",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   237,
+   255,
+   33,
+   1.0
+  ]
+ },
+ "37": {
+  "color": "37",
+  "finish": null,
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Medium Reddish Violet",
+   "finish": null,
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   223,
+   102,
+   149,
+   0.502
+  ]
+ },
+ "370": {
+  "color": "370",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Medium Brown",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   117,
+   89,
+   69,
+   1.0
+  ]
+ },
+ "371": {
+  "color": "371",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Warm Tan",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   204,
+   163,
+   115,
+   1.0
+  ]
+ },
+ "373": {
+  "color": "373",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Sand Violet",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   117,
+   101,
+   125,
+   1.0
+  ]
+ },
+ "375": {
+  "color": "7",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Grey",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   138,
+   146,
+   141,
+   1.0
+  ]
+ },
+ "376": {
+  "color": "376",
+  "finish": "glitter",
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Yellow Opalescence",
+   "finish": "Glitter",
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   245,
+   205,
+   47,
+   0.7843
+  ]
+ },
+ "378": {
+  "color": "378",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Sand Green",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   112,
+   142,
+   124,
+   1.0
+  ]
+ },
+ "379": {
+  "color": "379",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Sand Blue",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   112,
+   129,
+   154,
+   1.0
+  ]
+ },
+ "38": {
+  "color": "38",
+  "finish": null,
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Fluorescent Reddish Orange",
+   "finish": null,
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   255,
+   128,
+   13,
+   0.502
+  ]
+ },
+ "383": {
+  "color": "383",
+  "finish": "chrome",
+  "material": "abs",
+  "names": {
+   "color": "Metalized Silver",
+   "finish": "Chrome",
+   "material": "ABS"
+  },
+  "rgba": [
+   206,
+   206,
+   206,
+   1.0
+  ]
+ },
+ "39": {
+  "color": "39",
+  "finish": null,
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Light Bluish Green",
+   "finish": null,
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   193,
+   223,
+   240,
+   0.502
+  ]
+ },
+ "4": {
+  "color": "4",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Bright Red",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   180,
+   0,
+   0,
+   1.0
+  ]
+ },
+ "40": {
+  "color": "40",
+  "finish": null,
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Brown",
+   "finish": null,
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   99,
+   95,
+   82,
+   0.502
+  ]
+ },
+ "402": {
+  "color": "402",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Reddish Orange",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   202,
+   76,
+   11,
+   1.0
+  ]
+ },
+ "406": {
+  "color": "272",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Earth Blue",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   25,
+   50,
+   90,
+   1.0
+  ]
+ },
+ "41": {
+  "color": "41",
+  "finish": null,
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Fluorescent Blue",
+   "finish": null,
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   85,
+   154,
+   183,
+   0.502
+  ]
+ },
+ "42": {
+  "color": "42",
+  "finish": null,
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Fluorescent Green",
+   "finish": null,
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   192,
+   255,
+   0,
+   0.502
+  ]
+ },
+ "422": {
+  "color": "422",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Sienna Brown",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   145,
+   92,
+   60,
+   1.0
+  ]
+ },
+ "423": {
+  "color": "423",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Umber Brown",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   84,
+   63,
+   51,
+   1.0
+  ]
+ },
+ "424": {
+  "color": "424",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Ochre Yellow",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   221,
+   158,
+   71,
+   1.0
+  ]
+ },
+ "43": {
+  "color": "43",
+  "finish": null,
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Light Blue",
+   "finish": null,
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   174,
+   233,
+   239,
+   0.502
+  ]
+ },
+ "430": {
+  "color": "430",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Warm Pink",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   247,
+   155,
+   155,
+   1.0
+  ]
+ },
+ "431": {
+  "color": "431",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Blue Violet",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   102,
+   94,
+   167,
+   1.0
+  ]
+ },
+ "44": {
+  "color": "44",
+  "finish": null,
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Bright Reddish Lilac",
+   "finish": null,
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   150,
+   112,
+   159,
+   0.502
+  ]
+ },
+ "449": {
+  "color": "22",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Bright Violet",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   103,
+   31,
+   129,
+   1.0
+  ]
+ },
+ "45": {
+  "color": "45",
+  "finish": null,
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Bright Pink",
+   "finish": null,
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   252,
+   151,
+   172,
+   0.502
+  ]
+ },
+ "450": {
+  "color": "450",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Brick Red",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   210,
+   119,
+   68,
+   1.0
+  ]
+ },
+ "46": {
+  "color": "46",
+  "finish": null,
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Yellow",
+   "finish": null,
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   245,
+   205,
+   47,
+   0.502
+  ]
+ },
+ "462": {
+  "color": "462",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Bright Yellowish Orange",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   245,
+   134,
+   36,
+   1.0
+  ]
+ },
+ "47": {
+  "color": "47",
+  "finish": null,
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent",
+   "finish": null,
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   252,
+   252,
+   252,
+   0.502
+  ]
+ },
+ "484": {
+  "color": "484",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Dark Orange",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   145,
+   80,
+   28,
+   1.0
+  ]
+ },
+ "490": {
+  "color": "27",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Bright Yellowish Green",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   165,
+   202,
+   24,
+   1.0
+  ]
+ },
+ "493": {
+  "color": "493",
+  "finish": "metallic",
+  "material": "abs",
+  "names": {
+   "color": "Magnet",
+   "finish": "Metallic",
+   "material": "ABS"
+  },
+  "rgba": [
+   101,
+   103,
+   97,
+   1.0
+  ]
+ },
+ "494": {
+  "color": "494",
+  "finish": "metallic",
+  "material": "abs",
+  "names": {
+   "color": "Electric Contact Alloy",
+   "finish": "Metallic",
+   "material": "ABS"
+  },
+  "rgba": [
+   208,
+   208,
+   208,
+   1.0
+  ]
+ },
+ "495": {
+  "color": "495",
+  "finish": "metallic",
+  "material": "abs",
+  "names": {
+   "color": "Electric Contact Copper",
+   "finish": "Metallic",
+   "material": "ABS"
+  },
+  "rgba": [
+   174,
+   122,
+   89,
+   1.0
+  ]
+ },
+ "496": {
+  "color": "71",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Medium Stone Grey",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   150,
+   150,
+   150,
+   1.0
+  ]
+ },
+ "5": {
+  "color": "5",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Bright Purple",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   211,
+   53,
+   157,
+   1.0
+  ]
+ },
+ "503": {
+  "color": "503",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Light Grey",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   188,
+   180,
+   165,
+   1.0
+  ]
+ },
+ "504": {
+  "color": "179",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Silver Flip-flop",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   137,
+   135,
+   136,
+   1.0
+  ]
+ },
+ "507": {
+  "color": "507",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Obsolete Light Orange Brown",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   250,
+   156,
+   28,
+   1.0
+  ]
+ },
+ "508": {
+  "color": "508",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Red Orange",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   198,
+   81,
+   39,
+   1.0
+  ]
+ },
+ "509": {
+  "color": "509",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Light Brown",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   207,
+   138,
+   71,
+   1.0
+  ]
+ },
+ "510": {
+  "color": "510",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Pastel Green",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   172,
+   227,
+   90,
+   1.0
+  ]
+ },
+ "511": {
+  "color": "15",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "White",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   244,
+   244,
+   244,
+   1.0
+  ]
+ },
+ "52": {
+  "color": "52",
+  "finish": null,
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Bright Bluish Violet",
+   "finish": null,
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   165,
+   165,
+   203,
+   0.502
+  ]
+ },
+ "54": {
+  "color": "54",
+  "finish": null,
+  "material": "polycarbonate",
+  "names": {
+   "color": "Transparent Fluorescent Yellow",
+   "finish": null,
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   218,
+   176,
+   0,
+   0.502
+  ]
+ },
+ "57": {
+  "color": "57",
+  "finish": null,
+  "material": "polycarbonate",
+  "names": {
+   "color": "Trans Bright Orange",
+   "finish": null,
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   240,
+   143,
+   28,
+   0.502
+  ]
+ },
+ "6": {
+  "color": "6",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Earth Orange",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   84,
+   51,
+   36,
+   1.0
+  ]
+ },
+ "60": {
+  "color": "60",
+  "finish": "chrome",
+  "material": "abs",
+  "names": {
+   "color": "Chrome Antique Brass",
+   "finish": "Chrome",
+   "material": "ABS"
+  },
+  "rgba": [
+   100,
+   90,
+   76,
+   1.0
+  ]
+ },
+ "61": {
+  "color": "61",
+  "finish": "chrome",
+  "material": "abs",
+  "names": {
+   "color": "Chrome Blue",
+   "finish": "Chrome",
+   "material": "ABS"
+  },
+  "rgba": [
+   108,
+   150,
+   191,
+   1.0
+  ]
+ },
+ "62": {
+  "color": "62",
+  "finish": "chrome",
+  "material": "abs",
+  "names": {
+   "color": "Chrome Green",
+   "finish": "Chrome",
+   "material": "ABS"
+  },
+  "rgba": [
+   60,
+   179,
+   113,
+   1.0
+  ]
+ },
+ "63": {
+  "color": "63",
+  "finish": "chrome",
+  "material": "abs",
+  "names": {
+   "color": "Chrome Pink",
+   "finish": "Chrome",
+   "material": "ABS"
+  },
+  "rgba": [
+   170,
+   77,
+   142,
+   1.0
+  ]
+ },
+ "64": {
+  "color": "64",
+  "finish": "chrome",
+  "material": "abs",
+  "names": {
+   "color": "Chrome Black",
+   "finish": "Chrome",
+   "material": "ABS"
+  },
+  "rgba": [
+   27,
+   42,
+   52,
+   1.0
+  ]
+ },
+ "65": {
+  "color": "14",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Bright Yellow",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   250,
+   200,
+   10,
+   1.0
+  ]
+ },
+ "66": {
+  "color": "46",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Transparent Yellow",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   245,
+   205,
+   47,
+   0.502
+  ]
+ },
+ "67": {
+  "color": "47",
+  "finish": null,
+  "material": "rubber",
+  "names": {
+   "color": "Transparent",
+   "finish": null,
+   "material": "Rubber"
+  },
+  "rgba": [
+   252,
+   252,
+   252,
+   0.502
+  ]
+ },
+ "68": {
+  "color": "68",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Light Yellowish Orange",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   253,
+   195,
+   131,
+   1.0
+  ]
+ },
+ "69": {
+  "color": "69",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Bright Reddish Lilac",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   138,
+   18,
+   168,
+   1.0
+  ]
+ },
+ "7": {
+  "color": "7",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Grey",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   138,
+   146,
+   141,
+   1.0
+  ]
+ },
+ "70": {
+  "color": "70",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Reddish Brown",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   95,
+   49,
+   9,
+   1.0
+  ]
+ },
+ "71": {
+  "color": "71",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Medium Stone Grey",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   150,
+   150,
+   150,
+   1.0
+  ]
+ },
+ "72": {
+  "color": "72",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Dark Stone Grey",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   100,
+   100,
+   100,
+   1.0
+  ]
+ },
+ "73": {
+  "color": "73",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Medium Blue",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   115,
+   150,
+   200,
+   1.0
+  ]
+ },
+ "74": {
+  "color": "74",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Medium Green",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   127,
+   196,
+   117,
+   1.0
+  ]
+ },
+ "75": {
+  "color": "75",
+  "finish": "speckle",
+  "material": "abs",
+  "names": {
+   "color": "Copper, Diffuse",
+   "finish": "Speckle",
+   "material": "ABS"
+  },
+  "rgba": [
+   0,
+   0,
+   0,
+   1.0
+  ]
+ },
+ "76": {
+  "color": "76",
+  "finish": "speckle",
+  "material": "abs",
+  "names": {
+   "color": "Speckle Dark Bluish Grey Silver",
+   "finish": "Speckle",
+   "material": "ABS"
+  },
+  "rgba": [
+   99,
+   95,
+   97,
+   1.0
+  ]
+ },
+ "77": {
+  "color": "77",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Light Pink",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   254,
+   204,
+   207,
+   1.0
+  ]
+ },
+ "78": {
+  "color": "78",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Light Nougat",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   255,
+   201,
+   149,
+   1.0
+  ]
+ },
+ "79": {
+  "color": "79",
+  "finish": null,
+  "material": "polycarbonate",
+  "names": {
+   "color": "Nature",
+   "finish": null,
+   "material": "Polycarbonate"
+  },
+  "rgba": [
+   238,
+   238,
+   238,
+   0.9412
+  ]
+ },
+ "8": {
+  "color": "8",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Dark Grey",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   84,
+   89,
+   85,
+   1.0
+  ]
+ },
+ "80": {
+  "color": "80",
+  "finish": "metallic",
+  "material": "abs",
+  "names": {
+   "color": "Cool Silver Drum Lacq / Silver Ink",
+   "finish": "Metallic",
+   "material": "ABS"
+  },
+  "rgba": [
+   118,
+   118,
+   118,
+   1.0
+  ]
+ },
+ "81": {
+  "color": "81",
+  "finish": "metallic",
+  "material": "abs",
+  "names": {
+   "color": "Metallic Green",
+   "finish": "Metallic",
+   "material": "ABS"
+  },
+  "rgba": [
+   194,
+   192,
+   111,
+   1.0
+  ]
+ },
+ "82": {
+  "color": "82",
+  "finish": "metallic",
+  "material": "abs",
+  "names": {
+   "color": "Warm Gold Drum Lacq / Gold Ink",
+   "finish": "Metallic",
+   "material": "ABS"
+  },
+  "rgba": [
+   219,
+   172,
+   52,
+   1.0
+  ]
+ },
+ "83": {
+  "color": "83",
+  "finish": "pearlescent",
+  "material": "abs",
+  "names": {
+   "color": "Metallic Black",
+   "finish": "Pearlescent",
+   "material": "ABS"
+  },
+  "rgba": [
+   10,
+   19,
+   39,
+   1.0
+  ]
+ },
+ "84": {
+  "color": "84",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Medium Nougat",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   170,
+   125,
+   85,
+   1.0
+  ]
+ },
+ "85": {
+  "color": "85",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Medium Lilac",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   68,
+   26,
+   145,
+   1.0
+  ]
+ },
+ "86": {
+  "color": "86",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Brown",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   123,
+   93,
+   65,
+   1.0
+  ]
+ },
+ "87": {
+  "color": "87",
+  "finish": "metallic",
+  "material": "abs",
+  "names": {
+   "color": "Titanium",
+   "finish": "Metallic",
+   "material": "ABS"
+  },
+  "rgba": [
+   62,
+   60,
+   57,
+   1.0
+  ]
+ },
+ "89": {
+  "color": "89",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Medium Royal Blue (LEGO 195)",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   28,
+   88,
+   167,
+   1.0
+  ]
+ },
+ "9": {
+  "color": "9",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Light Blue",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   151,
+   203,
+   217,
+   1.0
+  ]
+ },
+ "92": {
+  "color": "92",
+  "finish": null,
+  "material": "abs",
+  "names": {
+   "color": "Nougat",
+   "finish": null,
+   "material": "ABS"
+  },
+  "rgba": [
+   187,
+   128,
+   90,
+   1.0
+  ]
+ }
+}
