@@ -16,13 +16,13 @@ url: https://library.ldraw.org/
 
 # Requires the first PartCAD release that reads 'colors:', 'materials:' with
 # 'ids' and 'finishes:' - LEGO's colours, below - and converts what a part type
-# says its faces are in by them (see "Colours" in the README): 0.8.276 is the
-# first to read them (partcad/partcad#891), and the floor moves to the one that
-# converts them (#894) once it is cut. It also takes
+# says its faces are in by them (see "Colours" in the README): 0.8.280 is the
+# first with both, partcad/partcad#891 having come in 0.8.276 and #894, which
+# converts them, in 0.8.280. It also takes
 # 'turnZ' in an assembly's 'map:', which the plugin uses for a shortcut whose
 # part's port is the shortcut's turned about its axis, and reads the plugin's
 # own CACHE_VERSION, so this package states no 'cacheVersion' of its own.
-partcad: ">=0.8.276"
+partcad: ">=0.8.280"
 
 docs:
   name: LDraw for PartCAD
