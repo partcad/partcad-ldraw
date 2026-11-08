@@ -46,9 +46,9 @@ _FETCH_BACKOFF = 0.5
 # take however many requests that is. The second is the one that matters: four
 # attempts over four subdirectories is sixteen requests, and at sixty seconds
 # each a single file the server neither serves nor refuses costs sixteen
-# minutes - inside a part that references hundreds of them, inside a 'pc test'
-# with a deadline of its own. The budget is far above a healthy fetch (well
-# under a second) and far below that.
+# minutes - inside a part that references hundreds of them, inside a
+# 'pc qual test' with a deadline of its own. The budget is far above a healthy
+# fetch (well under a second) and far below that.
 _FETCH_TIMEOUT = 60
 _FETCH_SECONDS = 120.0
 
