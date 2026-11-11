@@ -1794,6 +1794,10 @@ materials:
   "ABS":
     desc: "Acrylonitrile butadiene styrene: the opaque bricks"
     density: 1040
+    youngsModulus: 2.3e+9 # Pa, general-purpose ABS (INEOS Terluran GP-35) as proxy; LEGO's own ABS grade is not published; ISO 527, injection-moulded, 23 C. INEOS Styrolution, Terluran GP-35 product data sheet (rev. 05/30/16), https://www.tekogehause.de/uploads/manuali/materiali/TERLURAN%20C-35.pdf
+    poissonsRatio: 0.35 # ABS, unfilled (handbook); 23 C. Machinery's Handbook, 31st ed. (Industrial Press, 2020), 'Stress and Strain in Plastics', Table 1 'Poisson's Ratio at 23 C for Resins and Compounds', p. 566; viewed at https://online.flippingbook.com/view/954192180/629/
+    yieldStrength: 4.4e+7 # Pa, general-purpose ABS (INEOS Terluran GP-35) as proxy; LEGO's own ABS grade is not published; ISO 527 tensile stress at yield, 23 C. INEOS Styrolution, Terluran GP-35 product data sheet (rev. 05/30/16), https://www.tekogehause.de/uploads/manuali/materiali/TERLURAN%20C-35.pdf
+    thermalConductivity: 0.17 # W/(m*K), general-purpose ABS (INEOS Terluran GP-35) as proxy; LEGO's own ABS grade is not published; DIN 52612-1. INEOS Styrolution, Terluran GP-35 product data sheet (rev. 05/30/16), https://www.tekogehause.de/uploads/manuali/materiali/TERLURAN%20C-35.pdf
     ids: {ldraw: "abs"}
   "Fabric":
     desc: "Capes, sails and other cloth elements"
@@ -1801,6 +1805,10 @@ materials:
   "Polycarbonate":
     desc: "The transparent elements"
     density: 1200
+    youngsModulus: 2.35e+9 # Pa, transparent general-purpose PC (Lexan 141R) as proxy; LEGO's grade is not published; ISO 527-1/-2, 1 mm/min, 23 C. GE Plastics, PC LEXAN 141R datasheet (09 Feb 2005), https://rolec.com/fileadmin/Media/58/d3/Datenblatt_technoCASE_PC_LEXAN%2B141R_en.pdf
+    poissonsRatio: 0.37 # Polycarbonate (handbook); 23 C. Machinery's Handbook, 31st ed. (Industrial Press, 2020), 'Stress and Strain in Plastics', Table 1 'Poisson's Ratio at 23 C for Resins and Compounds', p. 566; viewed at https://online.flippingbook.com/view/954192180/629/
+    yieldStrength: 6.3e+7 # Pa, transparent general-purpose PC (Lexan 141R) as proxy; LEGO's grade is not published; ISO 527 tensile stress at yield, 23 C. GE Plastics, PC LEXAN 141R datasheet (09 Feb 2005), https://rolec.com/fileadmin/Media/58/d3/Datenblatt_technoCASE_PC_LEXAN%2B141R_en.pdf
+    thermalConductivity: 0.2 # W/(m*K), transparent general-purpose PC (Lexan 141R) as proxy; LEGO's grade is not published; ISO 8302. GE Plastics, PC LEXAN 141R datasheet (09 Feb 2005), https://rolec.com/fileadmin/Media/58/d3/Datenblatt_technoCASE_PC_LEXAN%2B141R_en.pdf
     ids: {ldraw: "polycarbonate"}
   "Rubber":
     desc: "Tyres, bands and other rubber elements"
