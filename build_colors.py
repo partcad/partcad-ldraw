@@ -61,9 +61,99 @@ FINISH_KEYWORDS = {
 # The materials LEGO elements are made of, as far as LDraw's codes say: ABS for
 # the opaque colours, polycarbonate for the transparent ones, rubber for tyres
 # and bands, fabric for capes and sails. Densities in kg/m3, nominal.
+#
+# 'analysis' is what an analysis of a part made of one is solved with (PartCAD
+# 0.10.17 and later read it): each (key, value as written, where it comes from),
+# written into 'partcad.yaml' as the value with its source beside it. LEGO does
+# not publish its grades, so these are a widely used general-purpose grade's;
+# rubber and fabric state none, because nobody publishes LEGO's compounds.
 MATERIALS = {
-    "abs": {"name": "ABS", "desc": "Acrylonitrile butadiene styrene: the opaque bricks", "density": 1040},
-    "polycarbonate": {"name": "Polycarbonate", "desc": "The transparent elements", "density": 1200},
+    "abs": {
+        "name": "ABS",
+        "desc": "Acrylonitrile butadiene styrene: the opaque bricks",
+        "density": 1040,
+        "analysis": [
+            (
+                "youngsModulus",
+                "2.3e+9",
+                (
+                    "Pa, general-purpose ABS (INEOS Terluran GP-35) as proxy; LEGO's own ABS grade is not published; "
+                    "ISO 527, injection-moulded, 23 C. INEOS Styrolution, Terluran GP-35 product data sheet (rev. "
+                    "05/30/16), https://www.tekogehause.de/uploads/manuali/materiali/TERLURAN%20C-35.pdf"
+                ),
+            ),
+            (
+                "poissonsRatio",
+                "0.35",
+                (
+                    "ABS, unfilled (handbook); 23 C. Machinery's Handbook, 31st ed. (Industrial Press, 2020), 'Stress "
+                    "and Strain in Plastics', Table 1 'Poisson's Ratio at 23 C for Resins and Compounds', p. 566; "
+                    "viewed at https://online.flippingbook.com/view/954192180/629/"
+                ),
+            ),
+            (
+                "yieldStrength",
+                "4.4e+7",
+                (
+                    "Pa, general-purpose ABS (INEOS Terluran GP-35) as proxy; LEGO's own ABS grade is not published; "
+                    "ISO 527 tensile stress at yield, 23 C. INEOS Styrolution, Terluran GP-35 product data sheet (rev. "
+                    "05/30/16), https://www.tekogehause.de/uploads/manuali/materiali/TERLURAN%20C-35.pdf"
+                ),
+            ),
+            (
+                "thermalConductivity",
+                "0.17",
+                (
+                    "W/(m*K), general-purpose ABS (INEOS Terluran GP-35) as proxy; LEGO's own ABS grade is not "
+                    "published; DIN 52612-1. INEOS Styrolution, Terluran GP-35 product data sheet (rev. 05/30/16), "
+                    "https://www.tekogehause.de/uploads/manuali/materiali/TERLURAN%20C-35.pdf"
+                ),
+            ),
+        ],
+    },
+    "polycarbonate": {
+        "name": "Polycarbonate",
+        "desc": "The transparent elements",
+        "density": 1200,
+        "analysis": [
+            (
+                "youngsModulus",
+                "2.35e+9",
+                (
+                    "Pa, transparent general-purpose PC (Lexan 141R) as proxy; LEGO's grade is not published; ISO "
+                    "527-1/-2, 1 mm/min, 23 C. GE Plastics, PC LEXAN 141R datasheet (09 Feb 2005), "
+                    "https://rolec.com/fileadmin/Media/58/d3/Datenblatt_technoCASE_PC_LEXAN%2B141R_en.pdf"
+                ),
+            ),
+            (
+                "poissonsRatio",
+                "0.37",
+                (
+                    "Polycarbonate (handbook); 23 C. Machinery's Handbook, 31st ed. (Industrial Press, 2020), 'Stress "
+                    "and Strain in Plastics', Table 1 'Poisson's Ratio at 23 C for Resins and Compounds', p. 566; "
+                    "viewed at https://online.flippingbook.com/view/954192180/629/"
+                ),
+            ),
+            (
+                "yieldStrength",
+                "6.3e+7",
+                (
+                    "Pa, transparent general-purpose PC (Lexan 141R) as proxy; LEGO's grade is not published; ISO 527 "
+                    "tensile stress at yield, 23 C. GE Plastics, PC LEXAN 141R datasheet (09 Feb 2005), "
+                    "https://rolec.com/fileadmin/Media/58/d3/Datenblatt_technoCASE_PC_LEXAN%2B141R_en.pdf"
+                ),
+            ),
+            (
+                "thermalConductivity",
+                "0.2",
+                (
+                    "W/(m*K), transparent general-purpose PC (Lexan 141R) as proxy; LEGO's grade is not published; ISO "
+                    "8302. GE Plastics, PC LEXAN 141R datasheet (09 Feb 2005), "
+                    "https://rolec.com/fileadmin/Media/58/d3/Datenblatt_technoCASE_PC_LEXAN%2B141R_en.pdf"
+                ),
+            ),
+        ],
+    },
     "rubber": {"name": "Rubber", "desc": "Tyres, bands and other rubber elements", "density": 1150},
     "fabric": {"name": "Fabric", "desc": "Capes, sails and other cloth elements"},
 }
@@ -241,6 +331,8 @@ def yaml_block(declared):
         lines.append("    desc: %s" % _quoted(material["desc"]))
         if "density" in material:
             lines.append("    density: %d" % material["density"])
+        for field, value, source in material.get("analysis", ()):
+            lines.append("    %s: %s # %s" % (field, value, source))
         lines.append("    ids: {ldraw: %s}" % _quoted(key))
     lines.append("finishes:")
     for key in sorted(FINISHES):
