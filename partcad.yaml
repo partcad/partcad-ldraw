@@ -14,15 +14,22 @@ desc: |
   is vendored.
 url: https://library.ldraw.org/
 
-# Requires the first PartCAD release that reads 'colors:', 'materials:' with
-# 'ids' and 'finishes:' - LEGO's colours, below - and converts what a part type
-# says its faces are in by them (see "Colours" in the README): 0.8.280 is the
-# first with both, partcad/partcad#891 having come in 0.8.276 and #894, which
-# converts them, in 0.8.280. It also takes
-# 'turnZ' in an assembly's 'map:', which the plugin uses for a shortcut whose
-# part's port is the shortcut's turned about its axis, and reads the plugin's
-# own CACHE_VERSION, so this package states no 'cacheVersion' of its own.
-partcad: ">=0.8.280"
+# Requires 0.10.21, the first PartCAD release with partcad/partcad's
+# parametric-materials change: ABS and Polycarbonate below are each a
+# 'type: enrich' of the standard plastics catalogue's, answering to LDraw ids of
+# their own, and that catalogue requires the release too. An older PartCAD does
+# not know an enrich: it would read both as materials with no density and no
+# analysis values, so no brick would weigh anything.
+#
+# Before it, the floor was 0.8.280: the first release that reads 'colors:',
+# 'materials:' with 'ids' and 'finishes:' - LEGO's colours, below - and converts
+# what a part type says its faces are in by them (see "Colours" in the README),
+# partcad/partcad#891 having come in 0.8.276 and #894, which converts them, in
+# 0.8.280. It also takes 'turnZ' in an assembly's 'map:', which the plugin uses
+# for a shortcut whose part's port is the shortcut's turned about its axis, and
+# reads the plugin's own CACHE_VERSION, so this package states no
+# 'cacheVersion' of its own.
+partcad: ">=0.10.21"
 
 docs:
   name: LDraw for PartCAD
@@ -34,6 +41,15 @@ docs:
     ```
 
 dependencies:
+  # The public PartCAD index, for when this package is developed on its own
+  # rather than reached as //pub/universe/lego: it is where ABS and
+  # Polycarbonate are made from (//pub/std/manufacturing/material/plastic) and
+  # where the stores the parts are bought at are (//pub/svc/commerce). Inside
+  # the index those are its own packages, and this is not loaded ('onlyInRoot').
+  pub:
+    onlyInRoot: true
+    type: git
+    url: https://github.com/partcad/partcad-index/
   # The LDraw library root. Its children (the categories) are reported by the
   # plugin's 'deps', so this one dependency yields the whole category tree.
   ldraw:
@@ -1792,23 +1808,17 @@ colors:
     aliases: ["Pearl Yellow"]
 materials:
   "ABS":
-    desc: "Acrylonitrile butadiene styrene: the opaque bricks"
-    density: 1040
-    youngsModulus: 2.3e+9 # Pa, general-purpose ABS (INEOS Terluran GP-35) as proxy; LEGO's own ABS grade is not published; ISO 527, injection-moulded, 23 C. INEOS Styrolution, Terluran GP-35 product data sheet (rev. 05/30/16), https://www.tekogehause.de/uploads/manuali/materiali/TERLURAN%20C-35.pdf
-    poissonsRatio: 0.35 # ABS, unfilled (handbook); 23 C. Machinery's Handbook, 31st ed. (Industrial Press, 2020), 'Stress and Strain in Plastics', Table 1 'Poisson's Ratio at 23 C for Resins and Compounds', p. 566; viewed at https://online.flippingbook.com/view/954192180/629/
-    yieldStrength: 4.4e+7 # Pa, general-purpose ABS (INEOS Terluran GP-35) as proxy; LEGO's own ABS grade is not published; ISO 527 tensile stress at yield, 23 C. INEOS Styrolution, Terluran GP-35 product data sheet (rev. 05/30/16), https://www.tekogehause.de/uploads/manuali/materiali/TERLURAN%20C-35.pdf
-    thermalConductivity: 0.17 # W/(m*K), general-purpose ABS (INEOS Terluran GP-35) as proxy; LEGO's own ABS grade is not published; DIN 52612-1. INEOS Styrolution, Terluran GP-35 product data sheet (rev. 05/30/16), https://www.tekogehause.de/uploads/manuali/materiali/TERLURAN%20C-35.pdf
+    type: enrich
+    source: "//pub/std/manufacturing/material/plastic:abs"
+    desc: "Acrylonitrile butadiene styrene: the opaque bricks. LEGO does not publish its grade, so its density and analysis values are the standard general-purpose ABS's"
     ids: {ldraw: "abs"}
   "Fabric":
     desc: "Capes, sails and other cloth elements"
     ids: {ldraw: "fabric"}
   "Polycarbonate":
-    desc: "The transparent elements"
-    density: 1200
-    youngsModulus: 2.35e+9 # Pa, transparent general-purpose PC (Lexan 141R) as proxy; LEGO's grade is not published; ISO 527-1/-2, 1 mm/min, 23 C. GE Plastics, PC LEXAN 141R datasheet (09 Feb 2005), https://rolec.com/fileadmin/Media/58/d3/Datenblatt_technoCASE_PC_LEXAN%2B141R_en.pdf
-    poissonsRatio: 0.37 # Polycarbonate (handbook); 23 C. Machinery's Handbook, 31st ed. (Industrial Press, 2020), 'Stress and Strain in Plastics', Table 1 'Poisson's Ratio at 23 C for Resins and Compounds', p. 566; viewed at https://online.flippingbook.com/view/954192180/629/
-    yieldStrength: 6.3e+7 # Pa, transparent general-purpose PC (Lexan 141R) as proxy; LEGO's grade is not published; ISO 527 tensile stress at yield, 23 C. GE Plastics, PC LEXAN 141R datasheet (09 Feb 2005), https://rolec.com/fileadmin/Media/58/d3/Datenblatt_technoCASE_PC_LEXAN%2B141R_en.pdf
-    thermalConductivity: 0.2 # W/(m*K), transparent general-purpose PC (Lexan 141R) as proxy; LEGO's grade is not published; ISO 8302. GE Plastics, PC LEXAN 141R datasheet (09 Feb 2005), https://rolec.com/fileadmin/Media/58/d3/Datenblatt_technoCASE_PC_LEXAN%2B141R_en.pdf
+    type: enrich
+    source: "//pub/std/manufacturing/material/plastic:pc"
+    desc: "The transparent elements. LEGO does not publish its grade, so its density and analysis values are the standard general-purpose polycarbonate's"
     ids: {ldraw: "polycarbonate"}
   "Rubber":
     desc: "Tyres, bands and other rubber elements"

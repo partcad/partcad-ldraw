@@ -747,6 +747,11 @@ nothing. The materials and finishes LDraw's codes imply are declared beside
 them: ABS, Polycarbonate (the transparent colours), Rubber and Fabric;
 Chrome, Pearlescent, Metallic, Matte Metallic, Glitter and Speckle. An LDraw
 code is all three at once: `256` is Black in Rubber, `334` a chrome gold.
+LEGO does not publish its grades, so ABS and Polycarbonate are the standard
+plastics catalogue's general-purpose ones (`type: enrich` of
+`//pub/std/manufacturing/material/plastic:abs` and `:pc`), with that
+catalogue's density and analysis values and their sources, under LDraw's ids;
+Rubber and Fabric have no equivalent there and are declared here.
 
 **A part is drawn in the colours its file gives it.** LDraw draws a triangle in
 a code, and in `16` where it takes the colour of whatever places it - which is
@@ -874,11 +879,14 @@ everything that failed without re-fetching what did not.
 
 ## Requirements
 
-Requires PartCAD 0.8.174 or newer (`partcad: ">=0.8.174"` in `partcad.yaml`):
-the first release whose assemblies take `turnZ` in their `map:`, which some
-shortcuts' ports need (see [Shortcuts](#shortcuts-are-assemblies)). Because parts are fetched
-on demand, first use of a part or category needs network access; afterwards the
-cache is used.
+Requires PartCAD 0.10.21 or newer (`partcad: ">=0.10.21"` in `partcad.yaml`):
+the first release that knows `type: enrich`, which ABS and Polycarbonate are
+(see [Colours](#colours)). Older floors were 0.8.280, the first release that
+converts LDraw's colour codes by the colours here, and 0.8.174, the first whose
+assemblies take `turnZ` in their `map:`, which some shortcuts' ports need (see
+[Shortcuts](#shortcuts-are-assemblies)). Because parts are fetched on demand,
+first use of a part or category needs network access; afterwards the cache is
+used.
 
 ## Licensing
 
