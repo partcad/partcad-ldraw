@@ -88,8 +88,11 @@ import zipfile
 # codes, which the package's colours, materials and finishes claim through
 # 'ids: {ldraw: ...}' - and joins faces in one plane only within one colour,
 # and every shortcut with the colour its file draws each part in on that
-# part's link ('params:').
-CACHE_VERSION = 19
+# part's link ('params:'); v20 serves the ldraw.py that finds a face's colour
+# only on a triangle facing the way the face does, so a narrow face the mesh
+# repairs moved off its own triangle no longer takes the colour of the face
+# across its edge.
+CACHE_VERSION = 20
 
 _BASE = "https://library.ldraw.org"
 _CATEGORY_LIST_URL = _BASE + "/parts/category-list"
