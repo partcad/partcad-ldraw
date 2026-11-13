@@ -2259,6 +2259,16 @@ def _manifold(tris):
 # neighbour; where two triangles hold a face all the same, the nearer wins.
 _FACE_ON_TRIANGLE_MM = (_WELD_LDU + _TJUNCTION_LDU) * _LDU_MM
 
+# How far a face may turn from the triangle it was cut from and still be that
+# triangle's: the cosine of 30 degrees. Within that reach a face's centre can
+# also lie on the plane of a triangle at right angles to it - along the edge
+# they share - and inside it as projected; that one faces another way and is
+# not where the face came from. The repairs move a vertex by
+# _WELD_LDU + _TJUNCTION_LDU at most, which tilts a triangle of even one LDU by
+# about 14 degrees; the facets of a stud's 16-gon are 22.5 degrees apart and
+# still compete as they always did.
+_FACE_ALONG_TRIANGLE_COS = math.cos(math.radians(30.0))
+
 _COLOR_TABLE = None
 
 # What a part's faces are said to be in: LDraw's codes, read the way the
@@ -2351,15 +2361,19 @@ def _face_codes(solid, tris, colors):
                 for z in span[2]:
                     grid.setdefault((x, y, z), []).append(number)
 
-    def holding(p):
+    def holding(p, facing):
         """The code of the triangle 'p' lies on: one it is inside, then the nearest, then one in a code of its own.
 
         A print drawn over its part's body is two triangles holding one face,
         and the print's code - not the body's 16 - is what the face is drawn in.
+        Only a triangle that faces the way the face does ('facing', its unit
+        normal, either way round) can be the one it was cut from.
         """
         best = None
         for number in grid.get(tuple(key(p[k], k) for k in range(3)), ()):
             a, b, c, n, code = placed[number]
+            if facing is not None and abs(sum(n[k] * facing[k] for k in range(3))) < _FACE_ALONG_TRIANGLE_COS:
+                continue
             off = abs(sum(n[k] * (p[k] - a[k]) for k in range(3)))
             if off > reach or not _inside_triangle(p, a, b, c, n, reach):
                 continue
@@ -2378,8 +2392,24 @@ def _face_codes(solid, tris, colors):
         props = GProp_GProps()
         BRepGProp.SurfaceProperties_s(face, props)
         centre = props.CentreOfMass()
-        codes.set(face, holding((centre.X(), centre.Y(), centre.Z())))
+        codes.set(face, holding((centre.X(), centre.Y(), centre.Z()), _face_normal(face)))
     return codes
+
+
+def _face_normal(face):
+    """The unit normal of a planar face, or None for one that is not a plane.
+
+    Every face of a part built from LDraw's triangles is a plane; None leaves
+    the match as it was rather than guessing a direction.
+    """
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from OCP.GeomAbs import GeomAbs_Plane
+
+    surface = BRepAdaptor_Surface(face)
+    if surface.GetType() != GeomAbs_Plane:
+        return None
+    direction = surface.Plane().Axis().Direction()
+    return (direction.X(), direction.Y(), direction.Z())
 
 
 def _inside_triangle(p, a, b, c, n, margin=0.0):

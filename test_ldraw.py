@@ -1821,6 +1821,28 @@ def test_a_face_the_mesh_repairs_moved_is_still_its_triangle_s():
     assert _codes_of(solid, drawn, ["4", "4"] + ["16"] * 10).count("4") == 1
 
 
+def test_a_narrow_face_moved_off_its_triangle_is_not_the_colour_of_the_face_across_its_edge():
+    """A face the repairs moved beside its triangle is still that triangle's, not a perpendicular neighbour's.
+
+    The side of a slab 0.2 LDU thick has its centre within the match's reach of
+    the top's plane, and on the top's edge - inside the top's triangles, as
+    projected onto them. Its own triangles, as drawn, are 0.15 LDU above it,
+    so the centre is only beside them. The top faces another way entirely and
+    is not a triangle this face can have been cut from.
+    """
+    pytest.importorskip("OCP")
+    tris = _box((0, 0, 0), (10, 10, 0.2))
+    solid = ldraw._build_shape(tris, False, ["16"] * 12, {})
+    # In '_box''s order: y-, y+, x-, x+, z-, z+, two triangles each.
+    drawn = list(tris)
+    drawn[6:8] = [tuple((v[0], v[1], v[2] + 0.15) for v in t) for t in tris[6:8]]
+    colors = ["16"] * 6 + ["15", "15"] + ["16", "16"] + ["4", "4"]
+
+    found = _codes_of(solid, drawn, colors)
+    assert found.count("15") == 1
+    assert found.count("4") == 1
+
+
 def test_a_print_drawn_over_its_body_is_the_colour_of_the_print():
     """Two triangles hold the face: the body's, in 16, and the print's, in a code of its own."""
     pytest.importorskip("OCP")
